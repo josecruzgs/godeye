@@ -1,26 +1,262 @@
 @import "tailwindcss";
 
+/* Toggle-driven dark mode: `.dark` on <html> wins over OS preference.
+   ThemeScript (src/components/ThemeScript.tsx) stamps the class before
+   paint to avoid a flash of the wrong theme. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+
+  /* Chart/app chrome — see dataviz skill palette.md */
+  --surface-1: #fcfcfb;
+  --page-plane: #f4f4f2;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --gridline: #e1e0d9;
+  --baseline: #c3c2b7;
+  --border-hairline: rgba(11, 11, 11, 0.08);
+
+  /* Brand accent — independent of the chart categorical palette below, so
+     changing it never collapses two chart series into the same hue.
+     Azul por defecto en toda la app; Agua (Tareas/Likes/Comentar) lo pisa a
+     verde con .accent-agua más abajo. Contraste vs blanco 6.43:1, vs
+     surface clara 6.26:1. */
+  --primary: #1a5cb8;
+  /* Aqua/teal de Agua — independiente de --primary para que .accent-agua
+     pueda reasignarlo sin depender de cuál sea el azul del momento. */
+  --agua: #0d9488;
+
+  /* Marcas de redes sociales — solo para el selector de plataforma, no para
+     datos de gráfico. X usa el mismo valor que --text-primary (negro en
+     claro) a propósito: su identidad de marca actual literalmente es "negro
+     en claro, blanco en oscuro". */
+  --brand-facebook: #1877f2;
+  --brand-instagram: #e4405f;
+  --brand-tiktok: #fe2c55;
+  --brand-x: #0b0b0b;
+  --brand-linkedin: #0a66c2;
+
+  /* Categorical series (fixed order — never cycled) */
+  --series-1: #2a78d6; /* blue */
+  --series-2: #008300; /* green */
+  --series-3: #e87ba4; /* magenta */
+  --series-4: #eda100; /* yellow */
+  --series-5: #1baf7a; /* aqua */
+  --series-6: #eb6834; /* orange */
+  --series-7: #4a3aa7; /* violet */
+  --series-8: #e34948; /* red */
+
+  /* Sequential blue ramp (magnitude) */
+  --seq-100: #cde2fb;
+  --seq-250: #86b6ef;
+  --seq-400: #3987e5;
+  --seq-450: #2a78d6;
+  --seq-550: #1c5cab;
+
+  /* Status (fixed — never themed) */
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-serious: #ec835a;
+  --status-critical: #d03b3b;
+  --success-text: #006300;
+}
+
+:root.dark {
+  color-scheme: dark;
+
+  /* Azul acero oscuro en vez de negro puro — misma función que el set
+     "warm neutral" de la skill de dataviz, pero con un tinte frío. */
+  --surface-1: #161928;
+  --page-plane: #0c0c12;
+  --text-primary: #ffffff;
+  --text-secondary: #b6c3d3;
+  --text-muted: #7d8ea3;
+  --gridline: #26364a;
+  --baseline: #3d5066;
+  --border-hairline: rgba(176, 199, 224, 0.12);
+
+  /* Contrast-checked against the dark surface (as text) and white (as
+     button-on-fill text): 4.44:1 / 4.01:1. */
+  --primary: #2f78d1;
+  --agua: #2dd4bf;
+
+  --brand-facebook: #1877f2;
+  --brand-instagram: #e4405f;
+  --brand-tiktok: #fe2c55;
+  --brand-x: #ffffff;
+  --brand-linkedin: #0a66c2;
+
+  --series-1: #3987e5;
+  --series-2: #008300;
+  --series-3: #d55181;
+  --series-4: #c98500;
+  --series-5: #199e70;
+  --series-6: #d95926;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+
+  --seq-100: #184f95;
+  --seq-250: #1c5cab;
+  --seq-400: #2a78d6;
+  --seq-450: #3987e5;
+  --seq-550: #6da7ec;
+
+  --success-text: #0ca30c;
+}
+
+/* Las páginas de Agua (Tareas, Likes, Comentar) reasignan --primary a
+   verde acá adentro — todo lo que ya usa bg-primary/text-primary/
+   accent-primary/focus:border-primary dentro de este scope se pone verde
+   sin tocar esos archivos uno por uno. Fuera de este scope, --primary
+   sigue siendo el azul de arriba (Dashboard, Perfiles, Grupos, etc). */
+.accent-agua {
+  --primary: var(--agua);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-page: var(--page-plane);
+  --color-surface: var(--surface-1);
+  --color-ink: var(--text-primary);
+  --color-ink-secondary: var(--text-secondary);
+  --color-ink-muted: var(--text-muted);
+  --color-hairline: var(--border-hairline);
+  --color-gridline: var(--gridline);
+  --color-baseline: var(--baseline);
+
+  --color-primary: var(--primary);
+  --color-primary-fg: #ffffff;
+  --color-agua: var(--agua);
+  --color-brand-facebook: var(--brand-facebook);
+  --color-brand-instagram: var(--brand-instagram);
+  --color-brand-tiktok: var(--brand-tiktok);
+  --color-brand-x: var(--brand-x);
+  --color-brand-linkedin: var(--brand-linkedin);
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
+  --color-series-3: var(--series-3);
+  --color-series-4: var(--series-4);
+  --color-series-5: var(--series-5);
+  --color-series-6: var(--series-6);
+  --color-series-7: var(--series-7);
+  --color-series-8: var(--series-8);
+
+  --color-success: var(--status-good);
+  --color-warning: var(--status-warning);
+  --color-serious: var(--status-serious);
+  --color-critical: var(--status-critical);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+body {
+  background: var(--page-plane);
+  color: var(--text-primary);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* En @layer base para que las utilidades de Tailwind (@layer utilities,
+   más prioritario) puedan pisar este default — sin layer, esta regla le
+   ganaría a CUALQUIER utilidad de color de borde sin importar especificidad. */
+@layer base {
+  * {
+    border-color: var(--border-hairline);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+::selection {
+  background: color-mix(in oklab, var(--primary) 30%, transparent);
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 1.6s ease-in-out infinite;
+}
+
+/* Borde con brillo giratorio (efecto "spinning highlight"), técnica de
+   https://cruip.com/animated-gradient-borders-with-tailwind-css/ adaptada a
+   nuestros tokens. Un conic-gradient rota alrededor del borde vía la
+   variable animada --border-angle; el registro con @property es lo que
+   permite que el ángulo interpole suave en vez de saltar. Solo Chromium
+   soporta @property hoy — en otros navegadores el borde queda fijo (sin
+   girar) en vez de romperse, así que es una degradación segura. */
+@property --border-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes border-spin {
+  to {
+    --border-angle: 360deg;
+  }
+}
+
+/* Solo botones primarios importantes, y solo en dark mode (en claro el
+   fondo ya es casi blanco y el brillo giratorio no se distingue del
+   borde normal, así que no vale la pena el costo visual). El relleno del
+   padding-box es el mismo --primary sólido del botón (no un tono
+   translúcido como en la versión de tarjetas) para no taparle el fondo. */
+:root.dark .glow-btn {
+  position: relative;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--primary), var(--primary)) padding-box,
+    conic-gradient(
+        from var(--border-angle),
+        var(--gridline) 80%,
+        var(--primary) 86%,
+        color-mix(in oklab, var(--primary) 55%, white) 90%,
+        var(--primary) 94%,
+        var(--gridline)
+      )
+      border-box;
+  animation: border-spin 4s linear infinite;
+}
+
+/* Misma técnica que .glow-btn pero en --status-critical fijo en vez de
+   --primary — para botones destructivos (ej. "Parar campañas"), que deben
+   verse rojos sin importar el color de acento de la página en la que estén
+   (Tareas usa .accent-agua, que pisa --primary a verde). */
+:root.dark .glow-btn-critical {
+  position: relative;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--status-critical), var(--status-critical)) padding-box,
+    conic-gradient(
+        from var(--border-angle),
+        var(--gridline) 80%,
+        var(--status-critical) 86%,
+        color-mix(in oklab, var(--status-critical) 55%, white) 90%,
+        var(--status-critical) 94%,
+        var(--gridline)
+      )
+      border-box;
+  animation: border-spin 4s linear infinite;
 }

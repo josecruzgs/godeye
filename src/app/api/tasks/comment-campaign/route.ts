@@ -1,0 +1,104 @@
+import { NextRequest, NextResponse } from "next/server";
+import { dbConnect } from "@/lib/mongodb";
+import TaskModel from "@/lib/models/Task";
+import ProfileModel from "@/lib/models/Profile";
+import CommentModel from "@/lib/models/Comment";
+import { withApiErrors } from "@/lib/apiHandler";
+import { loginIfNeededSteps } from "@/lib/automation/loginSteps";
+
+// Crea una tarea de "comment" por cada perfil elegido: cada una toma un
+// comentario distinto y sin usar del banco (/api/comments) y lo marca como
+// usado, así ninguna otra campaña vuelve a repetirlo.
+export const POST = withApiErrors(async (req: NextRequest) => {
+  const body = await req.json();
+  const url = typeof body.url === "string" ? body.url.trim() : "";
+  const selector = typeof body.selector === "string" ? body.selector.trim() : "";
+  const submitMethod = body.submitMethod === "button" ? "button" : "enter";
+  const submitSelector = typeof body.submitSelector === "string" ? body.submitSelector.trim() : "";
+  const profileIds: string[] = Array.isArray(body.profileIds) ? body.profileIds : [];
+
+  if (!url || !selector || profileIds.length === 0) {
+    return NextResponse.json(
+      { error: "'url', 'selector' y al menos un perfil en 'profileIds' son requeridos" },
+      { status: 400 },
+    );
+  }
+  if (submitMethod === "button" && !submitSelector) {
+    return NextResponse.json({ error: "Falta el selector del botón para enviar el comentario" }, { status: 400 });
+  }
+
+  await dbConnect();
+
+  const profiles = await ProfileModel.find({ _id: { $in: profileIds } }).sort({ name: 1 });
+  if (!profiles.length) {
+    return NextResponse.json({ error: "No se encontraron los perfiles seleccionados" }, { status: 404 });
+  }
+
+  // Reserva N comentarios sin usar (uno por perfil) antes de crear nada: si
+  // no alcanza, no se crea ninguna tarea a medias.
+  const pool = await CommentModel.find({ used: false }).sort({ createdAt: 1 }).limit(profiles.length);
+  if (pool.length < profiles.length) {
+    return NextResponse.json(
+      {
+        error: `Solo hay ${pool.length} comentario(s) disponibles en el banco para ${profiles.length} perfil(es) elegidos. Importa más comentarios o elige menos perfiles.`,
+      },
+      { status: 409 },
+    );
+  }
+
+  const waitMs = Number(body.waitMs) > 0 ? Number(body.waitMs) : 3000;
+  const staggerSeconds = Number(body.staggerSeconds) >= 0 ? Number(body.staggerSeconds) : 0;
+  const autoRun = Boolean(body.autoRun);
+  const namePrefix =
+    typeof body.namePrefix === "string" && body.namePrefix.trim() ? body.namePrefix.trim() : "comment";
+  const now = Date.now();
+
+  const claimedIds = pool.map((c) => c._id);
+
+  const submitStep =
+    submitMethod === "button"
+      ? { action: "click" as const, selector: submitSelector }
+      : { action: "press" as const, selector, key: "Enter" };
+
+  const docs = profiles.map((p, i) => ({
+    name: `${namePrefix} · ${p.name}`,
+    profileId: p._id,
+    type: "comment" as const,
+    steps: [
+      { action: "goto" as const, url },
+      { action: "waitForTimeout" as const, ms: waitMs },
+      ...loginIfNeededSteps(),
+      { action: "waitForSelector" as const, selector, ms: 15000 },
+      { action: "click" as const, selector },
+      { action: "type" as const, selector, value: pool[i].text },
+      { action: "waitForTimeout" as const, ms: 800 },
+      submitStep,
+      { action: "waitForTimeout" as const, ms: 1500 },
+    ],
+    status: autoRun ? ("queued" as const) : ("pending" as const),
+    scheduledAt: new Date(now + i * staggerSeconds * 1000),
+  }));
+
+  // Solo se marcan usados los comentarios una vez que las tareas ya
+  // existen: si insertMany falla, el banco queda intacto para reintentar.
+  const created = await TaskModel.insertMany(docs);
+
+  await Promise.all(
+    created.map((t, i) =>
+      CommentModel.updateOne(
+        { _id: claimedIds[i] },
+        { $set: { used: true, usedAt: new Date(), usedByTaskId: t._id } },
+      ),
+    ),
+  );
+
+  const tasks = created.map((t, i) => ({
+    _id: t._id,
+    name: t.name,
+    status: t.status,
+    comment: pool[i].text,
+    profile: { _id: profiles[i]._id, name: profiles[i].name },
+  }));
+
+  return NextResponse.json({ tasks }, { status: 201 });
+});
