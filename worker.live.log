@@ -1,0 +1,40 @@
+
+> adsfroy@0.1.0 worker
+> tsx watch src/worker/index.ts
+
+◇ injected env (5) from .env.local // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+[worker] conectado a MongoDB, poll cada 5000ms
+[worker] ejecutando tarea 6a62573977f99f1a97515b5c (comment · Alejandra Guzman)
+[worker] ejecutando tarea 6a625b5477f99f1a97515ea7 (like · Brenda Dominguez)
+[worker] ejecutando tarea 6a625c4977f99f1a97516653 (like · Manuel Herrera)
+11:24:21 a.m. [tsx] change in ./src\lib\automation\runner.ts Restarting...
+◇ injected env (5) from .env.local // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+[worker] conectado a MongoDB, poll cada 5000ms
+11:24:59 a.m. [tsx] change in ./src\lib\automation\runner.ts Restarting...
+◇ injected env (5) from .env.local // tip: ⌘ enable debugging { debug: true }
+[worker] conectado a MongoDB, poll cada 5000ms
+11:25:03 a.m. [tsx] change in ./src\lib\automation\runner.ts Restarting...
+◇ injected env (5) from .env.local // tip: ⌁ auth for agents [www.vestauth.com]
+[worker] conectado a MongoDB, poll cada 5000ms
+11:25:23 a.m. [tsx] change in ./src\lib\automation\runner.ts Restarting...
+◇ injected env (5) from .env.local // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+[worker] conectado a MongoDB, poll cada 5000ms
+11:25:28 a.m. [tsx] change in ./src\lib\automation\runner.ts Restarting...
+◇ injected env (5) from .env.local // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+[worker] conectado a MongoDB, poll cada 5000ms
+11:25:47 a.m. [tsx] change in ./src\lib\automation\runner.ts Restarting...
+◇ injected env (5) from .env.local // tip: ⌘ suppress logs { quiet: true }
+[worker] conectado a MongoDB, poll cada 5000ms
+11:25:56 a.m. [tsx] change in ./src\lib\automation\runner.ts Restarting...
+◇ injected env (5) from .env.local // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+[worker] conectado a MongoDB, poll cada 5000ms
+11:26:03 a.m. [tsx] change in ./src\lib\automation\runner.ts Restarting...
+◇ injected env (5) from .env.local // tip: ◈ secrets for agents [www.dotenvx.com]
+[worker] conectado a MongoDB, poll cada 5000ms
+[worker] ejecutando tarea 6a625e9c77f99f1a97516e05 (comment · Sergio Bojorquez Salazar)
+11:42:29 a.m. [tsx] change in ./src\lib\automation\runner.ts Restarting...
+◇ injected env (5) from .env.local // tip: ◈ encrypted .env [www.dotenvx.com]
+[worker] conectado a MongoDB, poll cada 5000ms
+11:42:42 a.m. [tsx] change in ./src\lib\automation\runner.ts Restarting...
+◇ injected env (5) from .env.local // tip: ⌁ auth for agents [www.vestauth.com]
+[worker] conectado a MongoDB, poll cada 5000ms

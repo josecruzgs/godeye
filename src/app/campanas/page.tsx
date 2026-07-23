@@ -13,6 +13,7 @@ import {
   Play,
   RefreshCw,
   Search,
+  Trash2,
   X,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
@@ -107,6 +108,7 @@ function CampaignsContent() {
   const [detail, setDetail] = useState<CampaignDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [runningPending, setRunningPending] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -211,10 +213,11 @@ function CampaignsContent() {
           acc.tasks += campaign.taskCount;
           acc.running += campaign.counts.running;
           acc.queued += campaign.counts.queued;
+          acc.success += campaign.counts.success;
           acc.failed += campaign.counts.failed;
           return acc;
         },
-        { tasks: 0, running: 0, queued: 0, failed: 0 },
+        { tasks: 0, running: 0, queued: 0, success: 0, failed: 0 },
       ),
     [campaigns],
   );
@@ -230,6 +233,37 @@ function CampaignsContent() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setRunningPending(false);
+    }
+  }
+
+  async function deleteCampaign(campaign: Campaign) {
+    if (campaign.counts.running > 0) return;
+
+    const ok = confirm(
+      `¿Eliminar la campaña "${campaign.name}"? También se eliminarán sus ${campaign.taskCount} tareas.`,
+    );
+    if (!ok) return;
+
+    setDeletingId(campaign._id);
+    setError(null);
+    try {
+      await apiFetch<{ deletedCampaignId: string; deletedTaskCount: number }>(`/api/campaigns/${campaign._id}`, {
+        method: "DELETE",
+      });
+
+      if (selectedId === campaign._id) closeCampaign();
+      setCampaigns((prev) => prev.filter((item) => item._id !== campaign._id));
+      setTotal((prev) => Math.max(0, prev - 1));
+
+      if (campaigns.length === 1 && page > 1) {
+        setPage(page - 1);
+      } else {
+        await load();
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -278,7 +312,7 @@ function CampaignsContent() {
 
       {error && <p className="rounded-xl bg-critical/10 p-3 text-sm text-critical">{error}</p>}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Card className="p-4">
           <p className="text-xs uppercase tracking-wide text-ink-muted">Tareas</p>
           <p className="mt-2 text-2xl font-semibold text-ink">{totals.tasks}</p>
@@ -290,6 +324,10 @@ function CampaignsContent() {
         <Card className="p-4">
           <p className="text-xs uppercase tracking-wide text-ink-muted">En cola</p>
           <p className="mt-2 text-2xl font-semibold text-primary">{totals.queued}</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs uppercase tracking-wide text-ink-muted">Exitosas</p>
+          <p className="mt-2 text-2xl font-semibold text-success">{totals.success}</p>
         </Card>
         <Card className="p-4">
           <p className="text-xs uppercase tracking-wide text-ink-muted">Fallidas</p>
@@ -358,7 +396,6 @@ function CampaignsContent() {
             <thead className="border-b border-hairline text-left text-xs uppercase tracking-wide text-ink-muted">
               <tr>
                 <th className="px-4 py-3 font-medium">Campaña</th>
-                <th className="px-4 py-3 font-medium">Estado</th>
                 <th className="px-4 py-3 font-medium">Avance</th>
                 <th className="px-4 py-3 font-medium">Tareas</th>
                 <th className="px-4 py-3 font-medium">Tipo</th>
@@ -369,13 +406,13 @@ function CampaignsContent() {
             <tbody>
               {loading && campaigns.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-ink-muted">
+                  <td colSpan={6} className="px-4 py-10 text-center text-ink-muted">
                     Cargando...
                   </td>
                 </tr>
               ) : campaigns.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-ink-muted">
+                  <td colSpan={6} className="px-4 py-10 text-center text-ink-muted">
                     Sin campañas todavía.
                   </td>
                 </tr>
@@ -394,9 +431,6 @@ function CampaignsContent() {
                         </button>
                       </td>
                       <td className="px-4 py-3">
-                        <StatusBadge status={campaign.status} />
-                      </td>
-                      <td className="px-4 py-3">
                         <div className="flex min-w-36 items-center gap-2">
                           <div className="h-2 flex-1 overflow-hidden rounded-full bg-page">
                             <div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} />
@@ -413,14 +447,29 @@ function CampaignsContent() {
                       <td className="px-4 py-3 text-ink-secondary">{TYPE_LABELS[campaign.type] ?? campaign.type}</td>
                       <td className="px-4 py-3 text-ink-secondary">{formatDate(campaign.createdAt)}</td>
                       <td className="px-4 py-3">
-                        <button
-                          type="button"
-                          onClick={() => openCampaign(campaign._id)}
-                          title="Ver perfiles y tareas"
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink-muted transition-colors hover:bg-page hover:text-ink"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openCampaign(campaign._id)}
+                            title="Ver perfiles y tareas"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink-muted transition-colors hover:bg-page hover:text-ink"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={deletingId === campaign._id || campaign.counts.running > 0}
+                            onClick={() => deleteCampaign(campaign)}
+                            title={
+                              campaign.counts.running > 0
+                                ? "No se puede eliminar mientras hay tareas corriendo"
+                                : "Eliminar campaña"
+                            }
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink-muted transition-colors hover:border-critical/40 hover:bg-critical/10 hover:text-critical disabled:pointer-events-none disabled:opacity-40"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

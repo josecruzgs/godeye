@@ -33,7 +33,83 @@ type Step = {
 const DEFAULT_ACTION_TIMEOUT_MS = 30000;
 const DEFAULT_CLICK_TIMEOUT_MS = 8000;
 const DEFAULT_GOTO_TIMEOUT_MS = 60000;
+const GOTO_DOMCONTENTLOADED_GRACE_MS = 10000;
 const VISIBLE_POLL_MS = 250;
+const BLOCKER_CHECK_INTERVAL_MS = 1000;
+
+const FACEBOOK_COMMENT_BOX_SELECTOR = [
+  'div[role="textbox"][contenteditable="true"][aria-label*="Write a comment"]',
+  'div[role="textbox"][contenteditable="true"][aria-label*="Escribe un comentario"]',
+  'div[role="textbox"][contenteditable="true"][aria-placeholder*="Write a comment"]',
+  'div[role="textbox"][contenteditable="true"][aria-placeholder*="Escribe un comentario"]',
+  'div[aria-label*="Write a comment"]',
+  'div[aria-label*="Escribe un comentario"]',
+  'form div[role="textbox"][contenteditable="true"]',
+].join(", ");
+
+const FACEBOOK_COMMENT_OPEN_SELECTOR = [
+  '[role="button"][aria-label="Comment"]',
+  '[role="button"][aria-label="Comentar"]',
+  '[aria-label="Comment"]',
+  '[aria-label="Comentar"]',
+  'div[role="button"]:has(svg[aria-label="Comment"])',
+  'div[role="button"]:has(svg[aria-label="Comentar"])',
+  'svg[aria-label="Comment"]',
+  'svg[aria-label="Comentar"]',
+].join(", ");
+
+const FACEBOOK_LIKE_SELECTOR = [
+  'div[role="dialog"] [aria-label="Like"]',
+  '[role="button"][aria-label="Like"]',
+  '[aria-label="Like"]',
+  'div[role="dialog"] [aria-label="Me gusta"]',
+  '[role="button"][aria-label="Me gusta"]',
+  '[aria-label="Me gusta"]',
+  'div[role="dialog"] [aria-label="React"]',
+  '[role="button"][aria-label="React"]',
+  '[aria-label="React"]',
+  'div[role="dialog"] [aria-label="Reaccionar"]',
+  '[role="button"][aria-label="Reaccionar"]',
+  '[aria-label="Reaccionar"]',
+  'div[role="dialog"] [aria-label="Reacciona"]',
+  '[role="button"][aria-label="Reacciona"]',
+  '[aria-label="Reacciona"]',
+  'div[role="button"]:has(svg[aria-label="Like"])',
+  'div[role="button"]:has(svg[aria-label="Me gusta"])',
+  'div[role="button"]:has(svg[aria-label="React"])',
+  'div[role="button"]:has(svg[aria-label="Reaccionar"])',
+  'div[role="button"]:has(svg[aria-label="Reacciona"])',
+  'svg[aria-label="Like"]',
+  'svg[aria-label="Me gusta"]',
+  'svg[aria-label="React"]',
+  'svg[aria-label="Reaccionar"]',
+  'svg[aria-label="Reacciona"]',
+].join(", ");
+
+const FACEBOOK_BLOCKERS = [
+  {
+    label: "cuenta bloqueada",
+    text: ["desbloquear tu cuenta", "bloqueamos tu cuenta", "unlock your account", "locked your account"],
+  },
+  {
+    label: "checkpoint de persona real",
+    text: [
+      "confirma que eres una persona real",
+      "ingresa el texto de la imagen",
+      "confirm that you are a real person",
+      "confirm that you're a real person",
+      "enter the text from the image",
+    ],
+  },
+  {
+    label: "sesion requerida",
+    text: ["iniciar sesion en facebook", "log in to facebook"],
+  },
+  {
+    label: "revision de seguridad",
+    text: ["checkpoint", "suspicious activity", "actividad sospechosa"],
+  },
+];
 
 type ClickableTarget = {
   locator: Locator;
@@ -41,6 +117,121 @@ type ClickableTarget = {
 };
 
 type StepContext = { taskId: string; profileName: string; taskType: string };
+
+function normalizePageText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+async function knownFacebookBlocker(page: Page): Promise<string | null> {
+  const url = page.url();
+  if (!url.includes("facebook.com")) return null;
+
+  const normalizedUrl = url.toLowerCase();
+  const bodyText = await page
+    .locator("body")
+    .innerText({ timeout: 1000 })
+    .then(normalizePageText)
+    .catch(() => "");
+
+  for (const blocker of FACEBOOK_BLOCKERS) {
+    if (blocker.text.some((pattern) => bodyText.includes(pattern) || normalizedUrl.includes(pattern))) {
+      return `Facebook detuvo este perfil por ${blocker.label}. Requiere accion manual en la cuenta antes de volver a usarla.`;
+    }
+  }
+
+  return null;
+}
+
+async function assertNoKnownBlocker(page: Page) {
+  const blocker = await knownFacebookBlocker(page);
+  if (blocker) throw new Error(blocker);
+}
+
+function isFacebookCommentBoxSelector(selector: string) {
+  return /Write a comment|Escribe un comentario/i.test(selector);
+}
+
+function isFacebookLikeSelector(selector: string) {
+  return /aria-label="(Like|Me gusta|React|Reaccionar|Reacciona)"/i.test(selector);
+}
+
+function selectorForStep(selector: string, ctx: StepContext) {
+  if (ctx.taskType === "comment" && isFacebookCommentBoxSelector(selector)) {
+    return `${selector}, ${FACEBOOK_COMMENT_BOX_SELECTOR}`;
+  }
+  if (ctx.taskType === "like" && isFacebookLikeSelector(selector)) {
+    return `${selector}, ${FACEBOOK_LIKE_SELECTOR}`;
+  }
+  return selector;
+}
+
+async function hasVisibleLocator(page: Page, selector: string) {
+  const locator = page.locator(selector);
+  const count = await locator.count().catch(() => 0);
+  for (let i = 0; i < count; i += 1) {
+    if (await locator.nth(i).isVisible().catch(() => false)) return true;
+  }
+  return false;
+}
+
+async function prepareSelectorTarget(page: Page, rawSelector: string, ctx: StepContext) {
+  if (ctx.taskType !== "comment" || !isFacebookCommentBoxSelector(rawSelector)) return;
+  if (await hasVisibleLocator(page, FACEBOOK_COMMENT_BOX_SELECTOR)) return;
+
+  let target: ClickableTarget | null = null;
+  try {
+    target = await firstClickableLocator(page, FACEBOOK_COMMENT_OPEN_SELECTOR, 2500);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.startsWith("Facebook detuvo este perfil")) throw err;
+  }
+  if (!target) return;
+
+  await log(ctx.taskId, "info", "Abriendo panel/caja de comentarios de Facebook.");
+  await target.locator.click({ position: target.position, timeout: 2500 }).catch(() => {});
+  await page.waitForTimeout(1000);
+}
+
+function isNavigationTimeout(err: unknown) {
+  const message = err instanceof Error ? err.message : String(err);
+  return /page\.goto: Timeout|Timeout .* exceeded|waiting until "domcontentloaded"/i.test(message);
+}
+
+async function gotoPage(page: Page, url: string, timeoutMs: number, ctx: StepContext) {
+  const beforeUrl = page.url();
+  try {
+    await page.goto(url, { waitUntil: "commit", timeout: timeoutMs });
+  } catch (err) {
+    const currentUrl = page.url();
+    const hasUsableDocument =
+      currentUrl !== "about:blank" && currentUrl !== beforeUrl && (await page.locator("body").count().catch(() => 0)) > 0;
+    if (!isNavigationTimeout(err) || !hasUsableDocument) throw err;
+
+    await log(
+      ctx.taskId,
+      "warn",
+      "La navegacion tardo demasiado, pero la pagina ya tiene documento cargado; se continua con los selectores.",
+    );
+  }
+
+  await page
+    .locator("body")
+    .waitFor({ state: "attached", timeout: Math.min(10000, timeoutMs) })
+    .catch(() => {});
+
+  await page.waitForLoadState("domcontentloaded", { timeout: GOTO_DOMCONTENTLOADED_GRACE_MS }).catch(() =>
+    log(
+      ctx.taskId,
+      "warn",
+      "Facebook no termino domcontentloaded a tiempo; se continua porque la navegacion ya inicio.",
+    ),
+  );
+
+  await assertNoKnownBlocker(page);
+}
 
 async function clickablePosition(locator: Locator): Promise<{ x: number; y: number } | null> {
   const box = await locator.boundingBox().catch(() => null);
@@ -79,8 +270,14 @@ async function firstVisibleLocator(page: Page, selector: string, timeoutMs: numb
   const locator = page.locator(selector);
   const deadline = Date.now() + timeoutMs;
   let lastCount = 0;
+  let lastBlockerCheckAt = 0;
 
   while (Date.now() <= deadline) {
+    if (Date.now() - lastBlockerCheckAt >= BLOCKER_CHECK_INTERVAL_MS) {
+      lastBlockerCheckAt = Date.now();
+      await assertNoKnownBlocker(page);
+    }
+
     lastCount = await locator.count();
 
     for (let i = 0; i < lastCount; i += 1) {
@@ -95,6 +292,7 @@ async function firstVisibleLocator(page: Page, selector: string, timeoutMs: numb
     await page.waitForTimeout(Math.min(VISIBLE_POLL_MS, remainingMs));
   }
 
+  await assertNoKnownBlocker(page);
   throw new Error(
     `Timeout ${timeoutMs}ms esperando elemento visible para selector "${selector}" (${lastCount} match(es), ninguno visible)`,
   );
@@ -105,8 +303,14 @@ async function firstClickableLocator(page: Page, selector: string, timeoutMs: nu
   const deadline = Date.now() + timeoutMs;
   let lastCount = 0;
   let visibleCount = 0;
+  let lastBlockerCheckAt = 0;
 
   while (Date.now() <= deadline) {
+    if (Date.now() - lastBlockerCheckAt >= BLOCKER_CHECK_INTERVAL_MS) {
+      lastBlockerCheckAt = Date.now();
+      await assertNoKnownBlocker(page);
+    }
+
     lastCount = await locator.count();
     visibleCount = 0;
 
@@ -125,6 +329,7 @@ async function firstClickableLocator(page: Page, selector: string, timeoutMs: nu
     await page.waitForTimeout(Math.min(VISIBLE_POLL_MS, remainingMs));
   }
 
+  await assertNoKnownBlocker(page);
   throw new Error(
     `Timeout ${timeoutMs}ms esperando elemento clickeable para selector "${selector}" (${lastCount} match(es), ${visibleCount} visible(s), ninguno recibe el puntero)`,
   );
@@ -134,14 +339,16 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
   switch (step.action) {
     case "goto":
       if (!step.url) throw new Error("Step 'goto' requiere 'url'");
-      await page.goto(step.url, { waitUntil: "domcontentloaded", timeout: step.ms ?? DEFAULT_GOTO_TIMEOUT_MS });
+      await gotoPage(page, step.url, step.ms ?? DEFAULT_GOTO_TIMEOUT_MS, ctx);
       return;
     case "click":
       if (!step.selector) throw new Error("Step 'click' requiere 'selector'");
       {
         const timeoutMs = step.ms ?? DEFAULT_CLICK_TIMEOUT_MS;
+        const selector = selectorForStep(step.selector, ctx);
+        await prepareSelectorTarget(page, step.selector, ctx);
         try {
-          const target = await firstClickableLocator(page, step.selector, timeoutMs);
+          const target = await firstClickableLocator(page, selector, timeoutMs);
           await target.locator.click({ position: target.position, timeout: timeoutMs });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -153,7 +360,7 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
             "warn",
             "El botón de like está visible pero cubierto por otra capa; se intenta activarlo con teclado.",
           );
-          const fallback = await firstVisibleLocator(page, step.selector, Math.min(3000, timeoutMs));
+          const fallback = await firstVisibleLocator(page, selector, Math.min(3000, timeoutMs));
           await fallback.focus({ timeout: 3000 });
           await page.keyboard.press("Enter");
           await page.waitForTimeout(700);
@@ -164,29 +371,55 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
       // Dispara el picker de reacciones de Facebook (aparece al mantener el
       // cursor sobre el botón de "Me gusta" en vez de clickearlo directo).
       if (!step.selector) throw new Error("Step 'hover' requiere 'selector'");
-      await (await firstVisibleLocator(page, step.selector, step.ms ?? DEFAULT_ACTION_TIMEOUT_MS)).hover({
-        timeout: step.ms ?? DEFAULT_ACTION_TIMEOUT_MS,
-      });
+      {
+        const selector = selectorForStep(step.selector, ctx);
+        await prepareSelectorTarget(page, step.selector, ctx);
+        await (await firstVisibleLocator(page, selector, step.ms ?? DEFAULT_ACTION_TIMEOUT_MS)).hover({
+          timeout: step.ms ?? DEFAULT_ACTION_TIMEOUT_MS,
+        });
+      }
       return;
     case "fill":
       if (!step.selector) throw new Error("Step 'fill' requiere 'selector'");
-      await page.fill(step.selector, step.value ?? "");
+      {
+        const selector = selectorForStep(step.selector, ctx);
+        await prepareSelectorTarget(page, step.selector, ctx);
+        const target = await firstVisibleLocator(page, selector, step.ms ?? DEFAULT_ACTION_TIMEOUT_MS);
+        await target.fill(step.value ?? "", { timeout: step.ms ?? DEFAULT_ACTION_TIMEOUT_MS });
+      }
       return;
     case "type":
       if (!step.selector) throw new Error("Step 'type' requiere 'selector'");
-      await page.type(step.selector, step.value ?? "", { delay: 60 });
+      {
+        const selector = selectorForStep(step.selector, ctx);
+        await prepareSelectorTarget(page, step.selector, ctx);
+        const target = await firstVisibleLocator(page, selector, step.ms ?? DEFAULT_ACTION_TIMEOUT_MS);
+        await target.click({ timeout: 5000 }).catch(() => {});
+        await target.type(step.value ?? "", { delay: 60, timeout: step.ms ?? DEFAULT_ACTION_TIMEOUT_MS });
+      }
       return;
     case "press":
       if (!step.key) throw new Error("Step 'press' requiere 'key'");
-      if (step.selector) await page.press(step.selector, step.key);
-      else await page.keyboard.press(step.key);
+      if (step.selector) {
+        const selector = selectorForStep(step.selector, ctx);
+        await prepareSelectorTarget(page, step.selector, ctx);
+        const target = await firstVisibleLocator(page, selector, step.ms ?? DEFAULT_ACTION_TIMEOUT_MS);
+        await target.press(step.key, { timeout: step.ms ?? DEFAULT_ACTION_TIMEOUT_MS });
+      } else {
+        await page.keyboard.press(step.key);
+      }
       return;
     case "waitForSelector":
       if (!step.selector) throw new Error("Step 'waitForSelector' requiere 'selector'");
-      await firstVisibleLocator(page, step.selector, step.ms ?? DEFAULT_ACTION_TIMEOUT_MS);
+      {
+        const selector = selectorForStep(step.selector, ctx);
+        await prepareSelectorTarget(page, step.selector, ctx);
+        await firstVisibleLocator(page, selector, step.ms ?? DEFAULT_ACTION_TIMEOUT_MS);
+      }
       return;
     case "waitForTimeout":
       await page.waitForTimeout(step.ms ?? 1000);
+      await assertNoKnownBlocker(page);
       return;
     case "scroll":
       await page.mouse.wheel(0, step.ms ?? 800);

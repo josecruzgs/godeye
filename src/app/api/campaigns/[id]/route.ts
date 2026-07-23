@@ -30,3 +30,29 @@ export const GET = withApiErrors(
     });
   },
 );
+
+export const DELETE = withApiErrors(
+  async (_req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+    const { id } = await params;
+    await dbConnect();
+
+    const campaign = await CampaignModel.findById(id).select("_id").lean();
+    if (!campaign) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+
+    const runningCount = await TaskModel.countDocuments({ campaignId: id, status: "running" });
+    if (runningCount > 0) {
+      return NextResponse.json(
+        { error: "No se puede eliminar una campaña con tareas corriendo" },
+        { status: 409 },
+      );
+    }
+
+    const taskResult = await TaskModel.deleteMany({ campaignId: id });
+    await CampaignModel.deleteOne({ _id: id });
+
+    return NextResponse.json({
+      deletedCampaignId: id,
+      deletedTaskCount: taskResult.deletedCount,
+    });
+  },
+);

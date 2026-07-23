@@ -1,0 +1,46 @@
+[worker] error fatal: MongoServerSelectionError: getaddrinfo ENOTFOUND ac-fq1bzl3-shard-00-00.dpafutt.mongodb.net
+    at Topology.selectServer (C:\Users\josec\Documents\Github\adsfroy\node_modules\mongodb\src\sdam\topology.ts:638:30)
+    at async executeOperationWithRetries (C:\Users\josec\Documents\Github\adsfroy\node_modules\mongodb\src\operations\execute_operation.ts:348:16)
+    at async executeOperation (C:\Users\josec\Documents\Github\adsfroy\node_modules\mongodb\src\operations\execute_operation.ts:127:12)
+    at async Collection.findOneAndUpdate (C:\Users\josec\Documents\Github\adsfroy\node_modules\mongodb\src\collection.ts:1041:12)
+    at async model.Query._findOneAndUpdate (C:\Users\josec\Documents\Github\adsfroy\node_modules\mongoose\lib\query.js:3623:13)
+    at async maybeTracedQueryExec (C:\Users\josec\Documents\Github\adsfroy\node_modules\mongoose\lib\query.js:4801:65)
+    at async heartbeat (C:\Users\josec\Documents\Github\adsfroy\src\worker\index.ts:16:3)
+    at async main (C:\Users\josec\Documents\Github\adsfroy\src\worker\index.ts:47:5) {
+  errorLabelSet: Set(0) {},
+  reason: TopologyDescription {
+    type: 'ReplicaSetNoPrimary',
+    servers: Map(3) {
+      'ac-fq1bzl3-shard-00-00.dpafutt.mongodb.net:27017' => [ServerDescription],
+      'ac-fq1bzl3-shard-00-01.dpafutt.mongodb.net:27017' => [ServerDescription],
+      'ac-fq1bzl3-shard-00-02.dpafutt.mongodb.net:27017' => [ServerDescription]
+    },
+    stale: false,
+    compatible: true,
+    heartbeatFrequencyMS: 10000,
+    localThresholdMS: 15,
+    setName: 'atlas-4xxbc2-shard-0',
+    maxElectionId: new ObjectId('7fffffff00000000000000d8'),
+    maxSetVersion: 34,
+    commonWireVersion: 25,
+    logicalSessionTimeoutMinutes: null
+  },
+  code: undefined,
+  [cause]: MongoNetworkError: getaddrinfo ENOTFOUND ac-fq1bzl3-shard-00-00.dpafutt.mongodb.net
+      at TLSSocket.<anonymous> (C:\Users\josec\Documents\Github\adsfroy\node_modules\mongodb\src\cmap\connect.ts:430:16)
+      at Object.onceWrapper (node:events:631:26)
+      at TLSSocket.emit (node:events:509:28)
+      at emitErrorNT (node:internal/streams/destroy:170:8)
+      at emitErrorCloseNT (node:internal/streams/destroy:129:3)
+      at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+    errorLabelSet: Set(3) { 'SystemOverloadedError', 'RetryableError', 'ResetPool' },
+    beforeHandshake: false,
+    [cause]: Error: getaddrinfo ENOTFOUND ac-fq1bzl3-shard-00-00.dpafutt.mongodb.net
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26) {
+      errno: -3008,
+      code: 'ENOTFOUND',
+      syscall: 'getaddrinfo',
+      hostname: 'ac-fq1bzl3-shard-00-00.dpafutt.mongodb.net'
+    }
+  }
+}

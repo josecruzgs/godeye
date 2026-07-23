@@ -35,10 +35,20 @@ type PlatformPreset = {
   submitSelector: string;
 };
 
+const FACEBOOK_COMMENT_BOX_SELECTOR = [
+  'div[role="textbox"][contenteditable="true"][aria-label*="Write a comment"]',
+  'div[role="textbox"][contenteditable="true"][aria-label*="Escribe un comentario"]',
+  'div[role="textbox"][contenteditable="true"][aria-placeholder*="Write a comment"]',
+  'div[role="textbox"][contenteditable="true"][aria-placeholder*="Escribe un comentario"]',
+  'div[aria-label*="Write a comment"]',
+  'div[aria-label*="Escribe un comentario"]',
+  'form div[role="textbox"][contenteditable="true"]',
+].join(", ");
+
 const PLATFORM_PRESETS: Record<string, PlatformPreset> = {
   facebook: {
     label: "Facebook",
-    selector: 'div[aria-label="Write a comment…"], div[aria-label="Escribe un comentario…"]',
+    selector: FACEBOOK_COMMENT_BOX_SELECTOR,
     submitMethod: "enter",
     submitSelector: "",
   },

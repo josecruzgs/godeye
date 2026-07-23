@@ -29,6 +29,8 @@ function selectorForAriaLabels(labels: string[]): string {
     .flatMap((label) => [
       `div[role="dialog"] [aria-label="${label}"]`,
       `[role="button"][aria-label="${label}"]`,
+      `div[role="button"]:has(svg[aria-label="${label}"])`,
+      `svg[aria-label="${label}"]`,
       `[aria-label="${label}"]`,
     ])
     .join(", ");
