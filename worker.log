@@ -1,0 +1,53 @@
+
+> adsfroy@0.1.0 worker
+> tsx watch src/worker/index.ts
+
+◇ injected env (5) from .env.local // tip: ◈ secrets for agents [www.dotenvx.com]
+[worker] conectado a MongoDB, poll cada 5000ms
+[worker] ejecutando tarea 6a61359104652d4d8e044591 (like · Alejandra Guzman)
+[worker] ejecutando tarea 6a61359104652d4d8e044592 (like · Alejandra Martinez)
+[worker] ejecutando tarea 6a61359104652d4d8e044593 (like · Brenda Dominguez)
+[worker] ejecutando tarea 6a61359104652d4d8e044594 (like · Cristina Fierro Romero / 25)
+[worker] ejecutando tarea 6a61359104652d4d8e044595 (like · Denisse Almada Bernal)
+3:39:14 p.m. [tsx] change in ./src\lib\models\Task.ts Restarting...
+◇ injected env (5) from .env.local // tip: ◈ secrets for agents [www.dotenvx.com]
+[worker] conectado a MongoDB, poll cada 5000ms
+[worker] ejecutando tarea 6a614b424343bb401851f073 (like · Adriana Rozo)
+[worker] ejecutando tarea 6a614b424343bb401851f075 (like · Alejandra Martinez)
+4:01:34 p.m. [tsx] change in ./src\lib\models\Task.ts Restarting...
+◇ injected env (5) from .env.local // tip: ⌘ enable debugging { debug: true }
+[worker] conectado a MongoDB, poll cada 5000ms
+[worker] ejecutando tarea 6a614ce14343bb401851f850 (like · Alejandra Guzman)
+[worker] ejecutando tarea 6a614ce14343bb401851f852 (like · Brenda Dominguez)
+[worker] ejecutando tarea 6a614ce14343bb401851f853 (like · Cristina Fierro Romero / 25)
+4:09:42 p.m. [tsx] change in ./src\lib\automation\runner.ts Restarting...
+◇ injected env (5) from .env.local // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+[worker] conectado a MongoDB, poll cada 5000ms
+[worker] ejecutando tarea 6a614ce14343bb401851f853 (like · Cristina Fierro Romero / 25)
+[worker] ejecutando tarea 6a614ce14343bb401851f856 (like · Francisco Javier)
+4:12:40 p.m. [tsx] change in ./src\lib\automation\runner.ts Restarting...
+◇ injected env (5) from .env.local // tip: ⌘ enable debugging { debug: true }
+[worker] conectado a MongoDB, poll cada 5000ms
+[worker] ejecutando tarea 6a614ce14343bb401851f856 (like · Francisco Javier)
+[worker] ejecutando tarea 6a614ce14343bb401851f85a (like · Karina Mendivil Ortega / 28)
+[worker] ejecutando tarea 6a614ce14343bb401851f85d (like · Karla Zazueta)
+[worker] ejecutando tarea 6a614ce14343bb401851f861 (like · Natalia Avila)
+[worker] ejecutando tarea 6a614ce14343bb401851f864 (like · Ruben Mendivil Sanchez)
+[worker] ejecutando tarea 6a614ce14343bb401851f867 (like · Veronica Cabrera)
+[worker] ejecutando tarea 6a614ce14343bb401851f868 (like · Veronica Cabrera)
+[worker] ejecutando tarea 6a6153164343bb401852053e (comment · Adriana Rozo)
+[worker] ejecutando tarea 6a6153164343bb401852053f (comment · Alejandra Guzman)
+[worker] ejecutando tarea 6a6153164343bb4018520540 (comment · Alejandra Martinez)
+[worker] ejecutando tarea 6a6153164343bb4018520541 (comment · Antonio Ramirez)
+[worker] ejecutando tarea 6a6153164343bb4018520542 (comment · Brenda Dominguez)
+[worker] ejecutando tarea 6a6153164343bb4018520545 (comment · Ernesto Elenes Gamez)
+[worker] ejecutando tarea 6a6153164343bb4018520546 (comment · Francisco Javier)
+[worker] ejecutando tarea 6a6153164343bb4018520549 (comment · Kara Murillo / 30)
+[worker] ejecutando tarea 6a6153164343bb401852054c (comment · Karla Fuentes)
+[worker] ejecutando tarea 6a6153164343bb401852054d (comment · Karla Zazueta)
+[worker] ejecutando tarea 6a6153164343bb401852054e (comment · Manuel Herrera)
+[worker] ejecutando tarea 6a6153164343bb4018520550 (comment · Miguel Cardenas)
+[worker] ejecutando tarea 6a6153164343bb4018520551 (comment · Natalia Avila)
+[worker] ejecutando tarea 6a6153164343bb4018520553 (comment · Roberto Fuentes)
+[worker] ejecutando tarea 6a6153164343bb4018520554 (comment · Ruben Mendivil Sanchez)
+[worker] ejecutando tarea 6a6153164343bb4018520555 (comment · Sergio Bojorquez Salazar)

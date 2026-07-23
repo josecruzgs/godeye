@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
-import TaskModel from "@/lib/models/Task";
 import ProfileModel from "@/lib/models/Profile";
 import { withApiErrors } from "@/lib/apiHandler";
 import { loginIfNeededSteps } from "@/lib/automation/loginSteps";
+import { createCampaignWithTasks, readCampaignName } from "@/lib/campaigns";
 
 type Step = {
   action: "goto" | "waitForTimeout" | "scroll" | "click";
@@ -44,6 +44,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
   const autoRun = Boolean(body.autoRun);
   const namePrefix =
     typeof body.namePrefix === "string" && body.namePrefix.trim() ? body.namePrefix.trim() : "warmup";
+  const campaignName = readCampaignName(body, "warmup", namePrefix);
   const now = Date.now();
 
   const cycleSteps: Step[] = [];
@@ -66,7 +67,12 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     scheduledAt: new Date(now + i * staggerSeconds * 1000),
   }));
 
-  const created = await TaskModel.insertMany(docs);
+  const { campaign, tasks: created } = await createCampaignWithTasks({
+    name: campaignName,
+    type: "warmup",
+    autoRun,
+    docs,
+  });
 
   const tasks = created.map((t, i) => ({
     _id: t._id,
@@ -75,5 +81,17 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     profile: { _id: profiles[i]._id, name: profiles[i].name },
   }));
 
-  return NextResponse.json({ tasks }, { status: 201 });
+  return NextResponse.json(
+    {
+      campaign: {
+        _id: campaign._id,
+        name: campaign.name,
+        type: campaign.type,
+        status: autoRun ? "queued" : "pending",
+        taskCount: created.length,
+      },
+      tasks,
+    },
+    { status: 201 },
+  );
 });

@@ -12,6 +12,7 @@ import {
   FolderKanban,
   UserCog,
   Activity,
+  ListChecks,
   type LucideIcon,
 } from "lucide-react";
 import RouteLoading from "./RouteLoading";
@@ -26,6 +27,7 @@ const DEFAULT_CONFIG: Config = { icon: LayoutDashboard, accentBg: "bg-primary" }
 // casi nunca alcanza a mostrarse. Este componente fuerza que la animación
 // dure lo suficiente para notarse en cada cambio de página.
 const ROUTE_CONFIG: { prefix: string; config: Config }[] = [
+  { prefix: "/campanas", config: { icon: ListChecks, accentBg: "bg-agua" } },
   { prefix: "/tasks/warmup", config: { icon: Activity, accentBg: "bg-primary" } },
   { prefix: "/tasks", config: { icon: Droplets, accentBg: "bg-agua" } },
   { prefix: "/scrapping", config: { icon: Wind, accentBg: "bg-series-1" } },

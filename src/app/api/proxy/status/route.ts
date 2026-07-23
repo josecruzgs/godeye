@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
+import { dbConnect } from "@/lib/mongodb";
 import { decodo, type DecodoSubscription } from "@/lib/decodo/client";
 import { withApiErrors } from "@/lib/apiHandler";
+import ProfileModel from "@/lib/models/Profile";
+import TaskModel from "@/lib/models/Task";
 
 function num(v: unknown): number | null {
   const n = typeof v === "string" ? Number(v) : v;
@@ -28,8 +31,70 @@ function normalize(sub: DecodoSubscription) {
   };
 }
 
+const PROXY_ERROR_RE =
+  /proxy|tunnel|407|ERR_|ECONN|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|net::|page\.goto: Timeout|navigating to|AdsPower API HTTP/i;
+
+async function getLocalStats() {
+  await dbConnect();
+
+  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const proxyIssueFilter = {
+    status: "failed",
+    error: PROXY_ERROR_RE,
+  };
+
+  const [profileCount, activeProfileCount, recentProxyIssueCount, lastProxyIssue] = await Promise.all([
+    ProfileModel.countDocuments(),
+    ProfileModel.countDocuments({ lastStatus: "active" }),
+    TaskModel.countDocuments({ ...proxyIssueFilter, updatedAt: { $gte: since24h } }),
+    TaskModel.findOne(proxyIssueFilter).sort({ updatedAt: -1 }).select("name type error updatedAt").lean(),
+  ]);
+
+  return {
+    profileCount,
+    activeProfileCount,
+    recentProxyIssueCount,
+    lastProxyIssue: lastProxyIssue
+      ? {
+          name: lastProxyIssue.name,
+          type: lastProxyIssue.type,
+          error: lastProxyIssue.error,
+          updatedAt: lastProxyIssue.updatedAt,
+        }
+      : null,
+  };
+}
+
 export const GET = withApiErrors(async () => {
-  const data = await decodo.getSubscriptions();
-  const subscriptions = Array.isArray(data) ? data : [data];
-  return NextResponse.json({ subscriptions: subscriptions.map(normalize) });
+  const local = await getLocalStats();
+
+  try {
+    const data = await decodo.getSubscriptions();
+    const subscriptions = Array.isArray(data) ? data : [data];
+    const normalizedSubscriptions = subscriptions.map(normalize);
+
+    return NextResponse.json({
+      subscriptions: normalizedSubscriptions,
+      smartproxy: {
+        connected: true,
+        balanceAvailable: normalizedSubscriptions.length > 0,
+      },
+      local,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("SMARTPROXY_API_KEY") || message.includes("DECODO_API_KEY") || message.includes("Decodo API HTTP")) {
+      return NextResponse.json({
+        subscriptions: [],
+        unavailable: true,
+        reason: message,
+        smartproxy: {
+          connected: false,
+          balanceAvailable: false,
+        },
+        local,
+      });
+    }
+    throw err;
+  }
 });

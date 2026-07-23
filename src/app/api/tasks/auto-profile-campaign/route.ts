@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { dbConnect } from "@/lib/mongodb";
-import TaskModel from "@/lib/models/Task";
 import ProfileModel, { type Profile } from "@/lib/models/Profile";
 import { parseCsv } from "@/lib/csv";
 import { withApiErrors } from "@/lib/apiHandler";
 import { loginIfNeededSteps } from "@/lib/automation/loginSteps";
+import { createCampaignWithTasks, readCampaignName } from "@/lib/campaigns";
 
 type SheetRow = { profileName: string; name: string; city: string };
 type Step = { action: string; selector?: string; value?: string; url?: string; key?: string; ms?: number; optional?: boolean };
@@ -112,7 +112,7 @@ function readSelectors(body: Record<string, unknown>): Selectors {
 }
 
 export const POST = withApiErrors(async (req: NextRequest) => {
-  const body = await req.json();
+  const body = (await req.json()) as Record<string, unknown>;
   const mode = body.mode === "manual" ? "manual" : "sheet";
   const dryRun = Boolean(body.dryRun);
 
@@ -157,10 +157,20 @@ export const POST = withApiErrors(async (req: NextRequest) => {
       });
     }
 
-    const selectedProfileIds: string[] = Array.isArray(body.selectedProfileIds) ? body.selectedProfileIds : [];
-    const selected = matched.filter(({ profile }) => selectedProfileIds.includes(String(profile._id)));
+    const rawSelectedProfileIds: unknown[] = Array.isArray(body.selectedProfileIds) ? body.selectedProfileIds : [];
+    const selectedProfileIds = new Set(
+      rawSelectedProfileIds
+        .filter((id): id is string => typeof id === "string" && Boolean(id.trim()))
+        .map((id) => id.trim()),
+    );
+    const selected = matched.filter(
+      ({ row, profile }) => selectedProfileIds.has(String(profile._id)) && Boolean(row.name || row.city),
+    );
     if (selected.length === 0) {
-      return NextResponse.json({ error: "No hay perfiles seleccionados para actualizar" }, { status: 400 });
+      return NextResponse.json(
+        { error: "No hay perfiles seleccionados con Nombre o Ciudad para actualizar" },
+        { status: 400 },
+      );
     }
 
     const selectors = readSelectors(body);
@@ -184,6 +194,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     const autoRun = Boolean(body.autoRun);
     const namePrefix =
       typeof body.namePrefix === "string" && body.namePrefix.trim() ? body.namePrefix.trim() : "auto-profile";
+    const campaignName = readCampaignName(body, "custom", namePrefix);
     const now = Date.now();
 
     const docs = selected.map(({ row, profile }, i) => ({
@@ -195,19 +206,47 @@ export const POST = withApiErrors(async (req: NextRequest) => {
       scheduledAt: new Date(now + i * staggerSeconds * 1000),
     }));
 
-    const created = await TaskModel.insertMany(docs);
+    const { campaign, tasks: created } = await createCampaignWithTasks({
+      name: campaignName,
+      type: "custom",
+      autoRun,
+      docs,
+    });
     const tasks = created.map((t, i) => ({
       _id: t._id,
       name: t.name,
       status: t.status,
       profile: { _id: selected[i].profile._id, name: selected[i].profile.name },
     }));
-    return NextResponse.json({ tasks }, { status: 201 });
+    return NextResponse.json(
+      {
+        campaign: {
+          _id: campaign._id,
+          name: campaign.name,
+          type: campaign.type,
+          status: autoRun ? "queued" : "pending",
+          taskCount: created.length,
+        },
+        tasks,
+      },
+      { status: 201 },
+    );
   }
 
   // --- Modo manual: una tarea por perfil, campos elegidos uno por uno ------
   type Assignment = { profileId: string; name?: string; city?: string };
-  const assignments: Assignment[] = Array.isArray(body.assignments) ? body.assignments : [];
+  const rawAssignments: unknown[] = Array.isArray(body.assignments) ? body.assignments : [];
+  const assignments: Assignment[] = rawAssignments
+    .map((assignment): Assignment | null => {
+      if (!assignment || typeof assignment !== "object") return null;
+      const record = assignment as Record<string, unknown>;
+      const profileId = typeof record.profileId === "string" ? record.profileId.trim() : "";
+      const name = typeof record.name === "string" ? record.name.trim() : "";
+      const city = typeof record.city === "string" ? record.city.trim() : "";
+      if (!profileId || (!name && !city)) return null;
+      return { profileId, name: name || undefined, city: city || undefined };
+    })
+    .filter((assignment): assignment is Assignment => Boolean(assignment));
   if (assignments.length === 0) {
     return NextResponse.json({ error: "No hay perfiles con algún campo asignado" }, { status: 400 });
   }
@@ -235,9 +274,10 @@ export const POST = withApiErrors(async (req: NextRequest) => {
   const autoRun = Boolean(body.autoRun);
   const namePrefix =
     typeof body.namePrefix === "string" && body.namePrefix.trim() ? body.namePrefix.trim() : "auto-profile";
+  const campaignName = readCampaignName(body, "custom", namePrefix);
   const now = Date.now();
 
-  const docs = [];
+  const docs: Record<string, unknown>[] = [];
   const matchedProfiles: ProfileDoc[] = [];
   let i = 0;
   for (const a of assignments) {
@@ -259,12 +299,29 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     return NextResponse.json({ error: "No se encontraron los perfiles asignados" }, { status: 404 });
   }
 
-  const created = await TaskModel.insertMany(docs);
+  const { campaign, tasks: created } = await createCampaignWithTasks({
+    name: campaignName,
+    type: "custom",
+    autoRun,
+    docs,
+  });
   const tasks = created.map((t, idx) => ({
     _id: t._id,
     name: t.name,
     status: t.status,
     profile: { _id: matchedProfiles[idx]._id, name: matchedProfiles[idx].name },
   }));
-  return NextResponse.json({ tasks }, { status: 201 });
+  return NextResponse.json(
+    {
+      campaign: {
+        _id: campaign._id,
+        name: campaign.name,
+        type: campaign.type,
+        status: autoRun ? "queued" : "pending",
+        taskCount: created.length,
+      },
+      tasks,
+    },
+    { status: 201 },
+  );
 });

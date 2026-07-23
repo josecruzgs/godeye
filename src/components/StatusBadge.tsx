@@ -4,6 +4,8 @@ const CONFIG: Record<string, { dot: string; text: string; bg: string }> = {
   running: { dot: "bg-warning", text: "text-warning", bg: "bg-warning/10" },
   success: { dot: "bg-success", text: "text-success", bg: "bg-success/10" },
   failed: { dot: "bg-critical", text: "text-critical", bg: "bg-critical/10" },
+  partial: { dot: "bg-serious", text: "text-serious", bg: "bg-serious/10" },
+  empty: { dot: "bg-ink-muted", text: "text-ink-secondary", bg: "bg-page" },
   cancelled: { dot: "bg-ink-muted", text: "text-ink-secondary", bg: "bg-page" },
   active: { dot: "bg-success", text: "text-success", bg: "bg-success/10" },
   inactive: { dot: "bg-ink-muted", text: "text-ink-secondary", bg: "bg-page" },

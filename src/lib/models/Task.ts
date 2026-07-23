@@ -1,4 +1,4 @@
-import { Schema, models, model, type InferSchemaType } from "mongoose";
+import mongoose, { Schema, models, model, type InferSchemaType } from "mongoose";
 
 // Un "step" es una acción atómica de Playwright que el runner interpreta.
 // Ver src/lib/automation/runner.ts para la lista de acciones soportadas.
@@ -34,6 +34,7 @@ const StepSchema = new Schema(
 const TaskSchema = new Schema(
   {
     name: { type: String, required: true },
+    campaignId: { type: Schema.Types.ObjectId, ref: "Campaign" },
     profileId: { type: Schema.Types.ObjectId, ref: "Profile", required: true },
     type: {
       type: String,
@@ -55,7 +56,12 @@ const TaskSchema = new Schema(
 );
 
 TaskSchema.index({ status: 1, scheduledAt: 1 });
+TaskSchema.index({ campaignId: 1, status: 1 });
 
 export type Task = InferSchemaType<typeof TaskSchema>;
+
+if (models.Task && !models.Task.schema.path("campaignId")) {
+  mongoose.deleteModel("Task");
+}
 
 export default models.Task ?? model("Task", TaskSchema);

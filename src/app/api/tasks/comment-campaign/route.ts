@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
-import TaskModel from "@/lib/models/Task";
 import ProfileModel from "@/lib/models/Profile";
 import CommentModel from "@/lib/models/Comment";
 import { withApiErrors } from "@/lib/apiHandler";
 import { loginIfNeededSteps } from "@/lib/automation/loginSteps";
+import { createCampaignWithTasks, readCampaignName } from "@/lib/campaigns";
 
 // Crea una tarea de "comment" por cada perfil elegido: cada una toma un
 // comentario distinto y sin usar del banco (/api/comments) y lo marca como
@@ -51,6 +51,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
   const autoRun = Boolean(body.autoRun);
   const namePrefix =
     typeof body.namePrefix === "string" && body.namePrefix.trim() ? body.namePrefix.trim() : "comment";
+  const campaignName = readCampaignName(body, "comment", namePrefix);
   const now = Date.now();
 
   const claimedIds = pool.map((c) => c._id);
@@ -81,7 +82,12 @@ export const POST = withApiErrors(async (req: NextRequest) => {
 
   // Solo se marcan usados los comentarios una vez que las tareas ya
   // existen: si insertMany falla, el banco queda intacto para reintentar.
-  const created = await TaskModel.insertMany(docs);
+  const { campaign, tasks: created } = await createCampaignWithTasks({
+    name: campaignName,
+    type: "comment",
+    autoRun,
+    docs,
+  });
 
   await Promise.all(
     created.map((t, i) =>
@@ -100,5 +106,17 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     profile: { _id: profiles[i]._id, name: profiles[i].name },
   }));
 
-  return NextResponse.json({ tasks }, { status: 201 });
+  return NextResponse.json(
+    {
+      campaign: {
+        _id: campaign._id,
+        name: campaign.name,
+        type: campaign.type,
+        status: autoRun ? "queued" : "pending",
+        taskCount: created.length,
+      },
+      tasks,
+    },
+    { status: 201 },
+  );
 });

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
-import TaskModel from "@/lib/models/Task";
 import ProfileModel from "@/lib/models/Profile";
 import PostModel from "@/lib/models/Post";
 import { withApiErrors } from "@/lib/apiHandler";
 import { loginIfNeededSteps } from "@/lib/automation/loginSteps";
+import { createCampaignWithTasks, readCampaignName } from "@/lib/campaigns";
 
 // Crea una tarea de "post" por cada perfil elegido: cada una toma un texto
 // distinto y sin usar del banco (/api/posts) y lo marca como usado, así
@@ -52,6 +52,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
   const autoRun = Boolean(body.autoRun);
   const namePrefix =
     typeof body.namePrefix === "string" && body.namePrefix.trim() ? body.namePrefix.trim() : "post";
+  const campaignName = readCampaignName(body, "post", namePrefix);
   const now = Date.now();
 
   const claimedIds = pool.map((c) => c._id);
@@ -100,7 +101,12 @@ export const POST = withApiErrors(async (req: NextRequest) => {
 
   // Solo se marcan usadas las publicaciones una vez que las tareas ya
   // existen: si insertMany falla, el banco queda intacto para reintentar.
-  const created = await TaskModel.insertMany(docs);
+  const { campaign, tasks: created } = await createCampaignWithTasks({
+    name: campaignName,
+    type: "post",
+    autoRun,
+    docs,
+  });
 
   await Promise.all(
     created.map((t, i) =>
@@ -119,5 +125,17 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     profile: { _id: profiles[i]._id, name: profiles[i].name },
   }));
 
-  return NextResponse.json({ tasks }, { status: 201 });
+  return NextResponse.json(
+    {
+      campaign: {
+        _id: campaign._id,
+        name: campaign.name,
+        type: campaign.type,
+        status: autoRun ? "queued" : "pending",
+        taskCount: created.length,
+      },
+      tasks,
+    },
+    { status: 201 },
+  );
 });

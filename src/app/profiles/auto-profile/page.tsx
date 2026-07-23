@@ -85,16 +85,42 @@ const PLATFORM_PRESETS: Record<string, SelectorPreset> = {
 };
 
 // Meta rechaza texto libre que no matchee una ciudad real de su propio
-// autocompletado (ver nota del preset de Facebook) — en vez de arriesgarse a
-// que el modo manual escriba algo mal, se limita a un puñado de ciudades de
-// México ya confirmadas, en vez de una lista exhaustiva.
-const CITY_OPTIONS = ["Baja California", "Sonora", "Guadalajara", "Monterrey", "Ciudad de México"];
+// autocompletado (ver nota del preset de Facebook). En manual se elige
+// primero estado y luego ciudad para no terminar escribiendo el estado entero.
+const CITY_OPTIONS_BY_STATE: Record<string, string[]> = {
+  "Baja California": ["Tijuana", "Mexicali", "Ensenada", "Tecate", "Playas de Rosarito"],
+  Sonora: ["Hermosillo", "Ciudad Obregón", "Nogales", "San Luis Río Colorado", "Navojoa"],
+  Jalisco: ["Guadalajara", "Zapopan", "San Pedro Tlaquepaque", "Tonalá", "Puerto Vallarta"],
+  "Nuevo León": ["Monterrey", "San Pedro Garza García", "San Nicolás de los Garza", "Guadalupe", "Apodaca"],
+  "Ciudad de México": ["Ciudad de México", "Coyoacán", "Miguel Hidalgo", "Benito Juárez", "Cuauhtémoc"],
+  Sinaloa: ["Culiacán", "Mazatlán", "Los Mochis", "Guasave"],
+  Chihuahua: ["Chihuahua", "Ciudad Juárez", "Delicias", "Cuauhtémoc"],
+  "Estado de México": ["Toluca", "Naucalpan de Juárez", "Tlalnepantla", "Ecatepec", "Metepec"],
+  Puebla: ["Puebla", "Tehuacán", "San Andrés Cholula", "Atlixco"],
+};
+
+const STATE_OPTIONS = Object.keys(CITY_OPTIONS_BY_STATE);
+
+type ManualProfileDraft = {
+  name: string;
+  state: string;
+  city: string;
+};
+
+const EMPTY_MANUAL_DRAFT: ManualProfileDraft = { name: "", state: "", city: "" };
 
 type CreatedTask = {
   _id: string;
   name: string;
   status: string;
   profile: { _id: string; name: string };
+};
+
+type CreatedCampaign = {
+  _id: string;
+  name: string;
+  status: string;
+  taskCount: number;
 };
 
 type MatchedRow = {
@@ -247,6 +273,8 @@ export default function AutoProfilePage() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CreatedTask[] | null>(null);
+  const [createdCampaign, setCreatedCampaign] = useState<CreatedCampaign | null>(null);
+  const [campaignName, setCampaignName] = useState("");
 
   function applyPlatformPreset(key: string) {
     setPlatformPreset(key);
@@ -273,11 +301,9 @@ export default function AutoProfilePage() {
   const [sheetAgeMin, setSheetAgeMin] = useState("");
   const [sheetAgeMax, setSheetAgeMax] = useState("");
 
-  // --- modo manual: 4 campos independientes, cada uno con su propia lista
-  const [nameValue, setNameValue] = useState("");
-  const [nameSelected, setNameSelected] = useState<Set<string>>(new Set());
-  const [cityValue, setCityValue] = useState("");
-  const [citySelected, setCitySelected] = useState<Set<string>>(new Set());
+  // --- modo manual: una tabla editable, una fila por perfil elegido
+  const [manualSelected, setManualSelected] = useState<Set<string>>(new Set());
+  const [manualDrafts, setManualDrafts] = useState<Record<string, ManualProfileDraft>>({});
 
   useEffect(() => {
     Promise.all([
@@ -301,6 +327,7 @@ export default function AutoProfilePage() {
     setLoadingPreview(true);
     setPreviewError(null);
     setResult(null);
+    setCreatedCampaign(null);
     try {
       const data = await apiFetch<{ matched: MatchedRow[]; unmatchedNames: string[] }>(
         "/api/tasks/auto-profile-campaign",
@@ -308,7 +335,7 @@ export default function AutoProfilePage() {
       );
       setMatched(data.matched);
       setUnmatchedNames(data.unmatchedNames);
-      setSheetSelected(new Set(data.matched.map((m) => m.profileId)));
+      setSheetSelected(new Set(data.matched.filter((m) => m.name || m.city).map((m) => m.profileId)));
     } catch (e) {
       setPreviewError(e instanceof Error ? e.message : String(e));
       setMatched([]);
@@ -345,18 +372,21 @@ export default function AutoProfilePage() {
     setCreating(true);
     setError(null);
     setResult(null);
+    setCreatedCampaign(null);
     try {
-      const { tasks } = await apiFetch<{ tasks: CreatedTask[] }>("/api/tasks/auto-profile-campaign", {
+      const { campaign, tasks } = await apiFetch<{ campaign: CreatedCampaign; tasks: CreatedTask[] }>("/api/tasks/auto-profile-campaign", {
         method: "POST",
         body: JSON.stringify({
           mode: "sheet",
           dryRun: false,
           sheetUrl,
+          campaignName,
           selectedProfileIds: Array.from(sheetSelected),
           ...selectorPayload(settings),
         }),
       });
       setResult(tasks);
+      setCreatedCampaign(campaign);
       setMatched([]);
       setSheetSelected(new Set());
     } catch (e) {
@@ -366,9 +396,45 @@ export default function AutoProfilePage() {
     }
   }
 
-  const manualProfileIds = useMemo(
-    () => new Set([...nameSelected, ...citySelected]),
-    [nameSelected, citySelected],
+  function manualDraftFor(profileId: string): ManualProfileDraft {
+    return manualDrafts[profileId] ?? EMPTY_MANUAL_DRAFT;
+  }
+
+  function updateManualDraft(profileId: string, patch: Partial<ManualProfileDraft>) {
+    setManualDrafts((prev) => {
+      const current = prev[profileId] ?? { name: "", state: "", city: "" };
+      const next = { ...current, ...patch };
+      return { ...prev, [profileId]: next };
+    });
+  }
+
+  function clearManualDraft(profileId: string) {
+    setManualDrafts((prev) => {
+      const next = { ...prev };
+      delete next[profileId];
+      return next;
+    });
+  }
+
+  const manualProfiles = useMemo(
+    () => profiles.filter((p) => manualSelected.has(p._id)),
+    [profiles, manualSelected],
+  );
+  const canEditName = Boolean(settings.nameFieldSelector.trim());
+
+  const manualAssignments = useMemo(
+    () =>
+      manualProfiles
+        .map((profile) => {
+          const draft = manualDrafts[profile._id] ?? EMPTY_MANUAL_DRAFT;
+          return {
+            profileId: profile._id,
+            name: canEditName ? draft.name.trim() || undefined : undefined,
+            city: draft.city.trim() || undefined,
+          };
+        })
+        .filter((assignment) => assignment.name || assignment.city),
+    [manualProfiles, manualDrafts, canEditName],
   );
 
   async function submitManual(e: React.FormEvent) {
@@ -376,21 +442,16 @@ export default function AutoProfilePage() {
     setCreating(true);
     setError(null);
     setResult(null);
+    setCreatedCampaign(null);
     try {
-      const assignments = Array.from(manualProfileIds).map((profileId) => ({
-        profileId,
-        name: nameSelected.has(profileId) && nameValue.trim() ? nameValue.trim() : undefined,
-        city: citySelected.has(profileId) && cityValue.trim() ? cityValue.trim() : undefined,
-      }));
-      const { tasks } = await apiFetch<{ tasks: CreatedTask[] }>("/api/tasks/auto-profile-campaign", {
+      const { campaign, tasks } = await apiFetch<{ campaign: CreatedCampaign; tasks: CreatedTask[] }>("/api/tasks/auto-profile-campaign", {
         method: "POST",
-        body: JSON.stringify({ mode: "manual", assignments, ...selectorPayload(settings) }),
+        body: JSON.stringify({ mode: "manual", campaignName, assignments: manualAssignments, ...selectorPayload(settings) }),
       });
       setResult(tasks);
-      setNameSelected(new Set());
-      setCitySelected(new Set());
-      setNameValue("");
-      setCityValue("");
+      setCreatedCampaign(campaign);
+      setManualSelected(new Set());
+      setManualDrafts({});
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -413,7 +474,7 @@ export default function AutoProfilePage() {
   }
 
   const sheetCount = sheetSelected.size;
-  const manualCount = manualProfileIds.size;
+  const manualCount = manualAssignments.length;
 
   // Si un campo trae valor pero su selector está vacío, ese paso se
   // saltaría en silencio y la tarea terminaría "success" sin haber cambiado
@@ -431,13 +492,23 @@ export default function AutoProfilePage() {
     sheetSelectedRows.some((m) => m.city),
   );
   const manualMissing = computeMissingLabels(
-    nameSelected.size > 0 && Boolean(nameValue.trim()),
-    citySelected.size > 0 && Boolean(cityValue.trim()),
+    manualAssignments.some((a) => a.name),
+    manualAssignments.some((a) => a.city),
   );
 
   function renderFooter(count: number, missing: string[]) {
     return (
     <>
+      <div className="flex flex-col gap-1">
+        <label className="text-xs text-ink-muted">Nombre de campaña</label>
+        <input
+          value={campaignName}
+          onChange={(e) => setCampaignName(e.target.value)}
+          placeholder="Ej. Auto Profile julio"
+          className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
+        />
+      </div>
+
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-1">
           <label className="text-xs text-ink-muted">Espaciado entre tareas (minutos)</label>
@@ -510,7 +581,7 @@ export default function AutoProfilePage() {
         disabled={creating || count === 0 || !settings.profileEditUrl || missing.length > 0}
         className="glow-btn w-fit rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-fg shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md disabled:pointer-events-none disabled:opacity-50"
       >
-        {creating ? "Creando..." : `Crear ${count || ""} tarea${count === 1 ? "" : "s"} de Auto Profile`}
+        {creating ? "Creando..." : `Crear campaña de Auto Profile (${count || 0})`}
       </button>
     </>
     );
@@ -539,7 +610,17 @@ export default function AutoProfilePage() {
         <Card className="flex animate-fade-in-up flex-col gap-3 border-success/20 bg-success/5 p-4 text-sm">
           <p className="flex items-center gap-2 font-medium text-success">
             <CheckCircle2 className="h-4 w-4" />
-            Se crearon {result.length} tarea{result.length === 1 ? "" : "s"} de Auto Profile.
+            {createdCampaign ? (
+              <>
+                Se creó la campaña{" "}
+                <Link href={`/campanas?campaignId=${createdCampaign._id}`} className="underline">
+                  {createdCampaign.name}
+                </Link>{" "}
+                con {result.length} tarea{result.length === 1 ? "" : "s"}.
+              </>
+            ) : (
+              <>Se crearon {result.length} tarea{result.length === 1 ? "" : "s"} de Auto Profile.</>
+            )}
           </p>
           <div className="flex flex-col gap-1.5">
             {result.map((t) => (
@@ -551,25 +632,36 @@ export default function AutoProfilePage() {
               </div>
             ))}
           </div>
-          <Link href="/tasks" className="mt-1 w-fit text-xs text-primary underline">Ver todas las tareas →</Link>
+          <div className="mt-1 flex flex-wrap gap-3 text-xs">
+            {createdCampaign && (
+              <Link href={`/campanas?campaignId=${createdCampaign._id}`} className="w-fit text-primary underline">
+                Abrir campaña →
+              </Link>
+            )}
+            <Link href="/tasks" className="w-fit text-primary underline">Ver todas las tareas →</Link>
+          </div>
         </Card>
       )}
 
-      <div className="flex gap-2">
+      <div role="tablist" aria-label="Modo de actualización" className="flex w-fit rounded-lg border border-hairline bg-surface p-1 shadow-sm">
         <button
           type="button"
+          role="tab"
+          aria-selected={mode === "sheet"}
           onClick={() => setMode("sheet")}
-          className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-all duration-150 ${
-            mode === "sheet" ? "border-primary bg-primary/10 text-primary" : "border-hairline text-ink-secondary hover:bg-page hover:text-ink"
+          className={`inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-all duration-150 ${
+            mode === "sheet" ? "bg-primary text-primary-fg shadow-sm" : "text-ink-secondary hover:bg-page hover:text-ink"
           }`}
         >
           <FileSpreadsheet className="h-4 w-4" /> Sheet (masivo)
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={mode === "manual"}
           onClick={() => setMode("manual")}
-          className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-all duration-150 ${
-            mode === "manual" ? "border-primary bg-primary/10 text-primary" : "border-hairline text-ink-secondary hover:bg-page hover:text-ink"
+          className={`inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-all duration-150 ${
+            mode === "manual" ? "bg-primary text-primary-fg shadow-sm" : "text-ink-secondary hover:bg-page hover:text-ink"
           }`}
         >
           <MousePointerClick className="h-4 w-4" /> Manual (uno por uno)
@@ -676,11 +768,18 @@ export default function AutoProfilePage() {
                 <div className="max-h-80 overflow-y-auto rounded-lg border border-hairline">
                   <ul className="divide-y divide-hairline">
                     {filteredMatched.map((m) => {
-                      const checked = sheetSelected.has(m.profileId);
+                      const hasSheetChange = Boolean(m.name || m.city);
+                      const checked = hasSheetChange && sheetSelected.has(m.profileId);
                       return (
                         <li key={m.profileId}>
-                          <label className={`flex cursor-pointer flex-wrap items-center gap-3 px-3 py-2 text-sm transition-colors ${checked ? "bg-primary/5" : "hover:bg-page"}`}>
-                            <input type="checkbox" checked={checked} onChange={() => toggleSheetRow(m.profileId)} className="h-4 w-4 accent-primary" />
+                          <label className={`flex flex-wrap items-center gap-3 px-3 py-2 text-sm transition-colors ${!hasSheetChange ? "opacity-60" : checked ? "cursor-pointer bg-primary/5" : "cursor-pointer hover:bg-page"}`}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={!hasSheetChange}
+                              onChange={() => toggleSheetRow(m.profileId)}
+                              className="h-4 w-4 accent-primary disabled:cursor-not-allowed"
+                            />
                             <span className="font-medium text-ink">{m.profileName}</span>
                             <span className="text-xs text-ink-muted">{groupName(m.groupId)}</span>
                             <span className="text-xs text-ink-muted">{m.platform || "-"}</span>
@@ -692,6 +791,7 @@ export default function AutoProfilePage() {
                             <span className="ml-auto flex flex-wrap gap-2">
                               {m.name && <span className="text-xs text-ink-muted">nombre → {m.name}</span>}
                               {m.city && <span className="text-xs text-ink-muted">ciudad → {m.city}</span>}
+                              {!hasSheetChange && <span className="text-xs text-ink-muted">sin cambios</span>}
                             </span>
                           </label>
                         </li>
@@ -725,33 +825,139 @@ export default function AutoProfilePage() {
         </>
       ) : (
         <form onSubmit={submitManual} className="flex flex-col gap-6">
-          <ManualFieldBlock
-            title="Nombre"
-            placeholder="Nuevo nombre a poner"
-            value={nameValue}
-            onValueChange={setNameValue}
-            profiles={profiles}
-            groups={groups}
-            loading={loadingProfiles}
-            selected={nameSelected}
-            onSelectedChange={setNameSelected}
-          />
-          <ManualFieldBlock
-            title="Ciudad"
-            placeholder="Nueva ciudad a poner"
-            value={cityValue}
-            onValueChange={setCityValue}
-            options={CITY_OPTIONS}
-            profiles={profiles}
-            groups={groups}
-            loading={loadingProfiles}
-            selected={citySelected}
-            onSelectedChange={setCitySelected}
-          />
+          <Card className="flex flex-col gap-3 p-5">
+            <h2 className="text-sm font-semibold text-ink">1. Elige perfiles</h2>
+            <ProfilePicker
+              profiles={profiles}
+              groups={groups}
+              loading={loadingProfiles}
+              selected={manualSelected}
+              onChange={setManualSelected}
+            />
+          </Card>
+
+          <Card className="flex flex-col gap-3 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-ink">
+                2. Escribe los cambios por perfil: <span className="text-primary">{manualCount}</span> con cambios
+              </h2>
+              {manualProfiles.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setManualDrafts({})}
+                  className="text-xs text-ink-muted underline"
+                >
+                  limpiar cambios
+                </button>
+              )}
+            </div>
+            {!canEditName && (
+              <p className="flex items-center gap-1.5 rounded-lg bg-warning/10 p-3 text-xs text-warning">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                El cambio de nombre queda desactivado hasta configurar un selector real. En Facebook normalmente no es
+                confiable porque pasa por Account Center y puede pedir verificación; ciudad sí puede usarse con el preset.
+              </p>
+            )}
+
+            {manualProfiles.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-hairline p-4 text-sm text-ink-muted">
+                Selecciona perfiles arriba para editar nombre y ciudad en una tabla.
+              </p>
+            ) : (
+              <div className="overflow-hidden rounded-lg border border-hairline">
+                <div className="max-h-96 overflow-auto">
+                  <table className="w-full min-w-[860px] text-sm">
+                    <thead className="sticky top-0 border-b border-hairline bg-surface text-left text-xs uppercase tracking-wide text-ink-muted">
+                      <tr>
+                        <th className="px-3 py-2 font-medium">Perfil</th>
+                        <th className="px-3 py-2 font-medium">Nuevo nombre</th>
+                        <th className="px-3 py-2 font-medium">Estado</th>
+                        <th className="px-3 py-2 font-medium">Ciudad</th>
+                        <th className="w-20 px-3 py-2 font-medium">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {manualProfiles.map((profile) => {
+                        const draft = manualDraftFor(profile._id);
+                        const cityOptions = draft.state ? CITY_OPTIONS_BY_STATE[draft.state] ?? [] : [];
+                        const hasNameChange = canEditName && Boolean(draft.name.trim());
+                        const hasChange = hasNameChange || Boolean(draft.city.trim());
+
+                        return (
+                          <tr key={profile._id} className={hasChange ? "border-t border-hairline bg-primary/5" : "border-t border-hairline"}>
+                            <td className="max-w-56 px-3 py-2">
+                              <span className="block truncate font-medium text-ink" title={profile.name}>
+                                {profile.name}
+                              </span>
+                              <span className="text-xs text-ink-muted">{groupName(profile.groupId)}</span>
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                value={canEditName ? draft.name : ""}
+                                onChange={(e) => updateManualDraft(profile._id, { name: e.target.value })}
+                                disabled={!canEditName}
+                                placeholder={canEditName ? "Dejar igual" : "Configura selector primero"}
+                                title={canEditName ? undefined : "Facebook no trae selector de nombre confiable en el preset actual."}
+                                className="w-full min-w-44 rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none transition-colors focus:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <select
+                                value={draft.state}
+                                onChange={(e) =>
+                                  updateManualDraft(profile._id, {
+                                    state: e.target.value,
+                                    city: "",
+                                  })
+                                }
+                                className="w-full min-w-40 rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none focus:border-primary"
+                              >
+                                <option value="">Sin cambio</option>
+                                {STATE_OPTIONS.map((state) => (
+                                  <option key={state} value={state}>
+                                    {state}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="px-3 py-2">
+                              <select
+                                value={draft.city}
+                                onChange={(e) => updateManualDraft(profile._id, { city: e.target.value })}
+                                disabled={!draft.state}
+                                className="w-full min-w-44 rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none focus:border-primary disabled:opacity-50"
+                              >
+                                <option value="">Dejar igual</option>
+                                {cityOptions.map((city) => (
+                                  <option key={city} value={city}>
+                                    {city}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="px-3 py-2">
+                              <button
+                                type="button"
+                                onClick={() => clearManualDraft(profile._id)}
+                                disabled={!hasChange}
+                                className="text-xs text-critical underline disabled:pointer-events-none disabled:opacity-40"
+                              >
+                                limpiar
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </Card>
 
           <div className="flex flex-col gap-5 rounded-2xl border border-hairline bg-surface/70 p-5 shadow-sm backdrop-blur-xl">
             <h2 className="text-sm font-semibold text-ink">
-              Perfiles con algún campo asignado: <span className="text-primary">{manualCount}</span>
+              3. Configura y crea tareas: <span className="text-primary">{manualCount}</span> perfil{manualCount === 1 ? "" : "es"} con cambios
             </h2>
             {renderFooter(manualCount, manualMissing)}
           </div>
@@ -760,63 +966,5 @@ export default function AutoProfilePage() {
 
       <AdvancedSettingsModal open={showAdvanced} onClose={() => setShowAdvanced(false)} values={settings} />
     </div>
-  );
-}
-
-function ManualFieldBlock({
-  title,
-  placeholder,
-  value,
-  onValueChange,
-  options,
-  profiles,
-  groups,
-  loading,
-  selected,
-  onSelectedChange,
-}: {
-  title: string;
-  placeholder: string;
-  value: string;
-  onValueChange: (v: string) => void;
-  options?: string[];
-  profiles: PickerProfile[];
-  groups: PickerGroup[];
-  loading: boolean;
-  selected: Set<string>;
-  onSelectedChange: (s: Set<string>) => void;
-}) {
-  return (
-    <Card className="flex flex-col gap-3 p-5">
-      <h2 className="text-sm font-semibold text-ink">{title}</h2>
-      {options ? (
-        <select
-          value={value}
-          onChange={(e) => onValueChange(e.target.value)}
-          className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
-        >
-          <option value="" disabled>
-            {placeholder}
-          </option>
-          {options.map((o) => (
-            <option key={o} value={o}>
-              {o}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <input
-          value={value}
-          onChange={(e) => onValueChange(e.target.value)}
-          placeholder={placeholder}
-          className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
-        />
-      )}
-      <p className="text-xs text-ink-muted">
-        Elige a quién se le aplica este valor. Un mismo perfil puede aparecer marcado en varios campos — se combina
-        todo en una sola tarea por perfil.
-      </p>
-      <ProfilePicker profiles={profiles} groups={groups} loading={loading} selected={selected} onChange={onSelectedChange} />
-    </Card>
   );
 }

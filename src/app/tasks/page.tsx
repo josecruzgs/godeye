@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Heart, MessageSquare, Megaphone, Activity, Plus, Search, OctagonX } from "lucide-react";
+import { Heart, MessageSquare, Megaphone, Activity, Plus, Search, OctagonX, FolderKanban } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
 import Pagination from "@/components/Pagination";
@@ -167,6 +167,12 @@ function TasksContent() {
           <p className="mt-1 text-sm text-ink-secondary">{total} en total</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link
+            href="/campanas"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-surface px-3 py-2 text-sm font-medium text-ink-secondary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:text-ink hover:shadow-md"
+          >
+            <FolderKanban className="h-4 w-4" /> Ver campañas
+          </Link>
           <Link
             href="/tasks/like"
             className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-surface px-3 py-2 text-sm font-medium text-ink-secondary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:text-ink hover:shadow-md"

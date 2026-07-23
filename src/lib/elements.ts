@@ -38,6 +38,7 @@ export const ELEMENT_BACKGROUNDS: Record<ElementKey, string> = {
 export const GENERAL_BACKGROUND = "/media/backgrounds/general.jpg";
 
 const ELEMENT_PATH_PREFIXES: { prefix: string; key: ElementKey }[] = [
+  { prefix: "/campanas", key: "agua" },
   { prefix: "/tasks", key: "agua" },
   { prefix: "/scrapping", key: "viento" },
   { prefix: "/actividades", key: "tierra" },

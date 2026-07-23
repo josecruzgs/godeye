@@ -19,6 +19,13 @@ type CreatedTask = {
   profile: { _id: string; name: string };
 };
 
+type CreatedCampaign = {
+  _id: string;
+  name: string;
+  status: string;
+  taskCount: number;
+};
+
 type PoolPost = { _id: string; text: string };
 
 type PostPlatformPreset = {
@@ -98,6 +105,7 @@ export default function PostCampaignPage() {
   const [staggerSeconds, setStaggerSeconds] = useState(300);
   const [autoRun, setAutoRun] = useState(true);
   const [namePrefix, setNamePrefix] = useState("post");
+  const [campaignName, setCampaignName] = useState("");
 
   const [platformNote, setPlatformNote] = useState(PLATFORM_PRESETS.facebook.note);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -105,6 +113,7 @@ export default function PostCampaignPage() {
 
   const [creating, setCreating] = useState(false);
   const [result, setResult] = useState<CreatedTask[] | null>(null);
+  const [createdCampaign, setCreatedCampaign] = useState<CreatedCampaign | null>(null);
 
   // Banco de publicaciones
   const [poolTotal, setPoolTotal] = useState(0);
@@ -251,10 +260,12 @@ export default function PostCampaignPage() {
     setCreating(true);
     setError(null);
     setResult(null);
+    setCreatedCampaign(null);
     try {
-      const { tasks } = await apiFetch<{ tasks: CreatedTask[] }>("/api/tasks/post-campaign", {
+      const { campaign, tasks } = await apiFetch<{ campaign: CreatedCampaign; tasks: CreatedTask[] }>("/api/tasks/post-campaign", {
         method: "POST",
         body: JSON.stringify({
+          campaignName,
           homeUrl,
           openSelector,
           dismissSelectors,
@@ -268,6 +279,7 @@ export default function PostCampaignPage() {
         }),
       });
       setResult(tasks);
+      setCreatedCampaign(campaign);
       setSelected(new Set());
       await loadPool();
     } catch (e) {
@@ -303,7 +315,17 @@ export default function PostCampaignPage() {
         <Card className="flex animate-fade-in-up flex-col gap-3 border-success/20 bg-success/5 p-4 text-sm">
           <p className="flex items-center gap-2 font-medium text-success">
             <CheckCircle2 className="h-4 w-4" />
-            Se crearon {result.length} tarea{result.length === 1 ? "" : "s"} de publicación.
+            {createdCampaign ? (
+              <>
+                Se creó la campaña{" "}
+                <Link href={`/campanas?campaignId=${createdCampaign._id}`} className="underline">
+                  {createdCampaign.name}
+                </Link>{" "}
+                con {result.length} tarea{result.length === 1 ? "" : "s"}.
+              </>
+            ) : (
+              <>Se crearon {result.length} tarea{result.length === 1 ? "" : "s"} de publicación.</>
+            )}
           </p>
           <div className="flex flex-col gap-1.5">
             {result.map((t) => (
@@ -318,7 +340,14 @@ export default function PostCampaignPage() {
               </div>
             ))}
           </div>
-          <Link href="/tasks" className="mt-1 w-fit text-xs text-primary underline">Ver todas las tareas →</Link>
+          <div className="mt-1 flex flex-wrap gap-3 text-xs">
+            {createdCampaign && (
+              <Link href={`/campanas?campaignId=${createdCampaign._id}`} className="w-fit text-primary underline">
+                Abrir campaña →
+              </Link>
+            )}
+            <Link href="/tasks" className="w-fit text-primary underline">Ver todas las tareas →</Link>
+          </div>
         </Card>
       )}
 
@@ -433,6 +462,16 @@ export default function PostCampaignPage() {
 
       <form onSubmit={submit} className="flex flex-col gap-5 rounded-2xl border border-hairline bg-surface/70 p-5 shadow-sm backdrop-blur-xl">
         <div className="flex flex-col gap-1">
+          <label className="text-xs text-ink-muted">Nombre de campaña</label>
+          <input
+            value={campaignName}
+            onChange={(e) => setCampaignName(e.target.value)}
+            placeholder="Ej. Publicaciones Froy"
+            className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
           <label className="text-xs text-ink-muted">Plataforma</label>
           <PlatformPicker
             options={Object.entries(PLATFORM_PRESETS).map(([key, p]) => ({ key, label: p.label }))}
@@ -488,7 +527,7 @@ export default function PostCampaignPage() {
           disabled={creating || count === 0 || !homeUrl || !textSelector || !submitSelector || notEnough}
           className="glow-btn w-fit rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-fg shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md disabled:pointer-events-none disabled:opacity-50"
         >
-          {creating ? "Creando..." : `Crear ${count || ""} tarea${count === 1 ? "" : "s"} de publicación`}
+          {creating ? "Creando..." : `Crear campaña de publicación (${count || 0})`}
         </button>
       </form>
 

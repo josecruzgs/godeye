@@ -6,9 +6,9 @@
 // motivo que src/lib/adspower/client.ts: en el worker standalone, dotenv
 // carga .env.local después de que los imports ya se resolvieron.
 async function request<T>(path: string): Promise<T> {
-  const apiKey = process.env.DECODO_API_KEY;
+  const apiKey = process.env.SMARTPROXY_API_KEY ?? process.env.DECODO_API_KEY;
   if (!apiKey) {
-    throw new Error("Falta DECODO_API_KEY en .env.local");
+    throw new Error("Falta SMARTPROXY_API_KEY o DECODO_API_KEY en .env.local");
   }
 
   const res = await fetch(`https://api.decodo.com${path}`, {

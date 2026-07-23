@@ -62,6 +62,7 @@ const NAV_SECTIONS: NavSection[] = [
     accentBg: "bg-agua/10",
     accentSolid: "bg-agua",
     items: [
+      { href: "/campanas", label: "Campañas", icon: FolderKanban },
       { href: "/tasks", label: "Tareas", icon: ListChecks },
       { href: "/tasks/like", label: "Likes", icon: Heart },
       { href: "/tasks/comment", label: "Comentar", icon: MessageSquare },
