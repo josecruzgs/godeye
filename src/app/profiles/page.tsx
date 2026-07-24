@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { RefreshCw, Search, Plus } from "lucide-react";
+import { RefreshCw, Search, Plus, Trash2 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
 import Pagination from "@/components/Pagination";
@@ -22,7 +22,39 @@ type Profile = {
   tags?: Tag[];
 };
 
+type DeleteProfileResponse = {
+  ok?: boolean;
+  error?: string;
+  canDeleteLocal?: boolean;
+};
+
 const PAGE_SIZE = 20;
+
+async function requestProfileDelete(id: string, localOnly = false) {
+  const path = `/api/profiles/${id}${localOnly ? "?localOnly=true" : ""}`;
+  const res = await fetch(path, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+  });
+  const text = await res.text();
+  let json: DeleteProfileResponse | undefined;
+  try {
+    json = text ? (JSON.parse(text) as DeleteProfileResponse) : undefined;
+  } catch {
+    // El servidor deberia responder JSON, pero dejamos un fallback claro.
+  }
+
+  if (!res.ok) {
+    return {
+      ok: false as const,
+      status: res.status,
+      message: json?.error ?? `Error ${res.status} en ${path}`,
+      canDeleteLocal: Boolean(json?.canDeleteLocal),
+    };
+  }
+
+  return { ok: true as const, status: res.status };
+}
 
 export default function ProfilesPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -33,6 +65,9 @@ export default function ProfilesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const selectAllRef = useRef<HTMLInputElement>(null);
 
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -49,6 +84,11 @@ export default function ProfilesPage() {
   const [platform, setPlatform] = useState("");
   const [creating, setCreating] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const visibleProfileIds = profiles.map((profile) => profile._id);
+  const selectedIdSet = new Set(selectedIds);
+  const selectedCount = selectedIds.length;
+  const allVisibleSelected = visibleProfileIds.length > 0 && visibleProfileIds.every((id) => selectedIdSet.has(id));
+  const someVisibleSelected = visibleProfileIds.some((id) => selectedIdSet.has(id));
 
   async function loadGroups() {
     try {
@@ -128,6 +168,20 @@ export default function ProfilesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, groupFilter, platformFilter, statusFilter, search, genderFilter, tagFilter, ageMinFilter, ageMaxFilter]);
 
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someVisibleSelected && !allVisibleSelected;
+    }
+  }, [allVisibleSelected, someVisibleSelected]);
+
+  useEffect(() => {
+    const visibleIds = new Set(profiles.map((profile) => profile._id));
+    setSelectedIds((current) => {
+      const next = current.filter((id) => visibleIds.has(id));
+      return next.length === current.length ? current : next;
+    });
+  }, [profiles]);
+
   function updateGroupFilter(v: string) {
     setGroupFilter(v);
     setPage(1);
@@ -167,6 +221,86 @@ export default function ProfilesPage() {
     setAgeMinFilter("");
     setAgeMaxFilter("");
     setPage(1);
+  }
+
+  function toggleProfileSelection(id: string, checked: boolean) {
+    setSelectedIds((current) => {
+      if (checked) return current.includes(id) ? current : [...current, id];
+      return current.filter((selectedId) => selectedId !== id);
+    });
+  }
+
+  function toggleVisibleSelection(checked: boolean) {
+    setSelectedIds(checked ? visibleProfileIds : []);
+  }
+
+  function profileName(id: string) {
+    return profiles.find((profile) => profile._id === id)?.name ?? id;
+  }
+
+  async function deleteSelectedProfiles() {
+    if (selectedIds.length === 0) return;
+
+    const ids = [...selectedIds];
+    const label = ids.length === 1 ? "1 perfil" : `${ids.length} perfiles`;
+    if (!confirm(`Eliminar ${label} seleccionados de forma permanente?`)) return;
+
+    setBulkDeleting(true);
+    setError(null);
+
+    const failures: string[] = [];
+    const failedIds = new Set<string>();
+    const localOnlyCandidates: { id: string; message: string }[] = [];
+
+    try {
+      for (const id of ids) {
+        const result = await requestProfileDelete(id);
+        if (!result.ok) {
+          if (result.status === 409 && result.canDeleteLocal) {
+            localOnlyCandidates.push({ id, message: result.message });
+          } else {
+            failedIds.add(id);
+            failures.push(`${profileName(id)}: ${result.message}`);
+          }
+        }
+      }
+
+      if (localOnlyCandidates.length > 0) {
+        const localLabel =
+          localOnlyCandidates.length === 1 ? "1 perfil sigue" : `${localOnlyCandidates.length} perfiles siguen`;
+        const deleteLocal = confirm(
+          `${localLabel} en uso en AdsPower.\n\nEliminarlos solo de esta app/Mongo? Si sincronizas y todavia existen en AdsPower, volveran a aparecer.`,
+        );
+
+        if (deleteLocal) {
+          for (const { id } of localOnlyCandidates) {
+            const localResult = await requestProfileDelete(id, true);
+            if (!localResult.ok) {
+              failedIds.add(id);
+              failures.push(`${profileName(id)}: ${localResult.message}`);
+            }
+          }
+        } else {
+          for (const { id, message } of localOnlyCandidates) {
+            failedIds.add(id);
+            failures.push(`${profileName(id)}: ${message}`);
+          }
+        }
+      }
+
+      setSelectedIds((current) => current.filter((id) => failedIds.has(id)));
+      await loadProfiles();
+
+      if (failures.length > 0) {
+        const detail = failures.slice(0, 4).join(" | ");
+        const extra = failures.length > 4 ? ` (+${failures.length - 4} mas)` : "";
+        setError(`No se pudieron eliminar ${failures.length} perfil(es): ${detail}${extra}`);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBulkDeleting(false);
+    }
   }
 
   async function sync() {
@@ -236,7 +370,21 @@ export default function ProfilesPage() {
     setBusyId(id);
     setError(null);
     try {
-      await apiFetch(`/api/profiles/${id}`, { method: "DELETE" });
+      const result = await requestProfileDelete(id);
+      if (!result.ok) {
+        if (
+          result.status === 409 &&
+          result.canDeleteLocal &&
+          confirm(
+            `${result.message}\n\nEliminarlo solo de esta app/Mongo? Si sincronizas y todavia existe en AdsPower, volvera a aparecer.`,
+          )
+        ) {
+          const localResult = await requestProfileDelete(id, true);
+          if (!localResult.ok) throw new Error(localResult.message);
+        } else {
+          throw new Error(result.message);
+        }
+      }
       await loadProfiles();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -416,11 +564,49 @@ export default function ProfilesPage() {
         )}
       </Card>
 
+      {selectedCount > 0 && (
+        <Card className="flex flex-wrap items-center justify-between gap-3 p-3">
+          <p className="text-sm font-medium text-ink">
+            {selectedCount} perfil{selectedCount === 1 ? "" : "es"} seleccionado{selectedCount === 1 ? "" : "s"}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedIds([])}
+              disabled={bulkDeleting}
+              className="rounded-lg border border-hairline px-3 py-2 text-sm font-medium transition-colors hover:bg-page disabled:opacity-40"
+            >
+              Limpiar seleccion
+            </button>
+            <button
+              type="button"
+              onClick={deleteSelectedProfiles}
+              disabled={bulkDeleting}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-critical/20 bg-critical/10 px-3 py-2 text-sm font-medium text-critical transition-colors hover:bg-critical/15 disabled:opacity-40"
+            >
+              <Trash2 className="h-4 w-4" />
+              {bulkDeleting ? "Eliminando..." : "Eliminar seleccionados"}
+            </button>
+          </div>
+        </Card>
+      )}
+
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="border-b border-hairline text-left text-xs uppercase tracking-wide text-ink-muted">
               <tr>
+                <th className="w-12 px-4 py-3 font-medium">
+                  <input
+                    ref={selectAllRef}
+                    type="checkbox"
+                    aria-label="Seleccionar perfiles visibles"
+                    checked={allVisibleSelected}
+                    disabled={loading || bulkDeleting || profiles.length === 0}
+                    onChange={(e) => toggleVisibleSelection(e.target.checked)}
+                    className="h-4 w-4 rounded border-hairline accent-primary disabled:opacity-40"
+                  />
+                </th>
                 <th className="px-4 py-3 font-medium">Nombre</th>
                 <th className="px-4 py-3 font-medium">Grupo</th>
                 <th className="px-4 py-3 font-medium">Plataforma</th>
@@ -432,12 +618,22 @@ export default function ProfilesPage() {
             </thead>
             <tbody>
               {loading && profiles.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-10 text-center text-ink-muted">Cargando...</td></tr>
+                <tr><td colSpan={8} className="px-4 py-10 text-center text-ink-muted">Cargando...</td></tr>
               ) : profiles.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-10 text-center text-ink-muted">Sin perfiles que coincidan.</td></tr>
+                <tr><td colSpan={8} className="px-4 py-10 text-center text-ink-muted">Sin perfiles que coincidan.</td></tr>
               ) : (
                 profiles.map((p) => (
                   <tr key={p._id} className="border-t border-hairline transition-colors hover:bg-page/60">
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        aria-label={`Seleccionar ${p.name}`}
+                        checked={selectedIdSet.has(p._id)}
+                        disabled={bulkDeleting || busyId === p._id}
+                        onChange={(e) => toggleProfileSelection(p._id, e.target.checked)}
+                        className="h-4 w-4 rounded border-hairline accent-primary disabled:opacity-40"
+                      />
+                    </td>
                     <td className="px-4 py-3 font-medium text-ink">{p.name}</td>
                     <td className="px-4 py-3 text-ink-secondary">{groupName(p.groupId)}</td>
                     <td className="px-4 py-3 text-ink-secondary">{p.platform || "-"}</td>
@@ -459,14 +655,14 @@ export default function ProfilesPage() {
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">
                         <button
-                          disabled={busyId === p._id}
+                          disabled={bulkDeleting || busyId === p._id}
                           onClick={() => startProfile(p._id)}
                           className="rounded-lg border border-hairline px-2.5 py-1 text-xs font-medium transition-colors hover:bg-page disabled:opacity-40"
                         >
                           Iniciar
                         </button>
                         <button
-                          disabled={busyId === p._id}
+                          disabled={bulkDeleting || busyId === p._id}
                           onClick={() => stopProfile(p._id)}
                           className="rounded-lg border border-hairline px-2.5 py-1 text-xs font-medium transition-colors hover:bg-page disabled:opacity-40"
                         >
@@ -474,12 +670,14 @@ export default function ProfilesPage() {
                         </button>
                         <Link
                           href={`/tasks/new?profileId=${p._id}`}
-                          className="rounded-lg border border-hairline px-2.5 py-1 text-xs font-medium transition-colors hover:bg-page"
+                          className={`rounded-lg border border-hairline px-2.5 py-1 text-xs font-medium transition-colors hover:bg-page ${
+                            bulkDeleting ? "pointer-events-none opacity-40" : ""
+                          }`}
                         >
                           + Tarea
                         </Link>
                         <button
-                          disabled={busyId === p._id}
+                          disabled={bulkDeleting || busyId === p._id}
                           onClick={() => deleteProfile(p._id)}
                           className="rounded-lg border border-critical/20 px-2.5 py-1 text-xs font-medium text-critical transition-colors hover:bg-critical/10 disabled:opacity-40"
                         >
