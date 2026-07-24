@@ -14,6 +14,42 @@ import type {
 // empíricamente contra la instancia local; ni query param ni header
 // `api-key`/`x-api-key` funcionan).
 
+const DEFAULT_MIN_REQUEST_INTERVAL_MS = 1100;
+const RATE_LIMIT_RETRY_DELAYS_MS = [1200, 2200, 3500];
+
+let requestQueue = Promise.resolve();
+let lastRequestStartedAt = 0;
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+function getMinRequestIntervalMs() {
+  const raw = process.env.ADSPOWER_MIN_REQUEST_INTERVAL_MS;
+  if (!raw) return DEFAULT_MIN_REQUEST_INTERVAL_MS;
+
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_MIN_REQUEST_INTERVAL_MS;
+}
+
+function isRateLimitMessage(message: string) {
+  return /too many request|request per second|rate.?limit/i.test(message);
+}
+
+async function runQueuedRequest<T>(operation: () => Promise<T>) {
+  const queued = requestQueue.then(async () => {
+    const minInterval = getMinRequestIntervalMs();
+    const elapsed = Date.now() - lastRequestStartedAt;
+    if (elapsed < minInterval) await sleep(minInterval - elapsed);
+
+    lastRequestStartedAt = Date.now();
+    return operation();
+  });
+
+  requestQueue = queued.catch(() => undefined).then(() => undefined);
+  return queued;
+}
+
 async function request<T>(
   path: string,
   { method = "GET", query, body }: { method?: string; query?: Record<string, string | number | undefined>; body?: unknown } = {},
@@ -36,31 +72,37 @@ async function request<T>(
   if (body) headers["Content-Type"] = "application/json";
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
-  const res = await fetch(url, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-    cache: "no-store",
+  return runQueuedRequest(async () => {
+    for (let attempt = 0; ; attempt += 1) {
+      const res = await fetch(url, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        cache: "no-store",
+      });
+
+      if (!res.ok) {
+        throw new Error(`AdsPower API HTTP ${res.status} en ${path}`);
+      }
+
+      const json = (await res.json()) as AdsPowerListResponse<T>;
+      if (json.code === 0) {
+        return json.data;
+      }
+
+      const retryDelay = RATE_LIMIT_RETRY_DELAYS_MS[attempt];
+      if (!isRateLimitMessage(json.msg) || retryDelay === undefined) {
+        throw new Error(`AdsPower API error (${path}): ${json.msg}`);
+      }
+
+      await sleep(retryDelay);
+    }
   });
-
-  if (!res.ok) {
-    throw new Error(`AdsPower API HTTP ${res.status} en ${path}`);
-  }
-
-  const json = (await res.json()) as AdsPowerListResponse<T>;
-  if (json.code !== 0) {
-    throw new Error(`AdsPower API error (${path}): ${json.msg}`);
-  }
-  return json.data;
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // La Local API de AdsPower limita a ~1 request/seg; entre páginas de un
 // mismo listado esperamos un poco para no pegarle un "Too many request".
-const PAGINATION_DELAY_MS = 600;
+const PAGINATION_DELAY_MS = DEFAULT_MIN_REQUEST_INTERVAL_MS;
 
 export const adsPower = {
   async listGroups(page = 1, pageSize = 100) {

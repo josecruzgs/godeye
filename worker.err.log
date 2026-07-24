@@ -44,3 +44,43 @@
     }
   }
 }
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+Error: Transform failed with 1 error:
+C:\Users\josec\Documents\Github\adsfroy\src\lib\adspower\client.ts:93:9: ERROR: The symbol "sleep" has already been declared
+    at failureErrorWithLog (C:\Users\josec\Documents\Github\adsfroy\node_modules\esbuild\lib\main.js:1748:15)
+    at C:\Users\josec\Documents\Github\adsfroy\node_modules\esbuild\lib\main.js:1017:50
+    at responseCallbacks.<computed> (C:\Users\josec\Documents\Github\adsfroy\node_modules\esbuild\lib\main.js:884:9)
+    at handleIncomingPacket (C:\Users\josec\Documents\Github\adsfroy\node_modules\esbuild\lib\main.js:939:12)
+    at Socket.readFromStdout (C:\Users\josec\Documents\Github\adsfroy\node_modules\esbuild\lib\main.js:862:7)
+    at Socket.emit (node:events:509:28)
+    at addChunk (node:internal/streams/readable:563:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:514:3)
+    at Readable.push (node:internal/streams/readable:394:5)
+    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23) {
+  name: 'TransformError'
+}
+
+Node.js v24.16.0
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+Error: Transform failed with 1 error:
+C:\Users\josec\Documents\Github\adsfroy\src\lib\adspower\client.ts:103:0: ERROR: Unexpected "export"
+    at failureErrorWithLog (C:\Users\josec\Documents\Github\adsfroy\node_modules\esbuild\lib\main.js:1748:15)
+    at C:\Users\josec\Documents\Github\adsfroy\node_modules\esbuild\lib\main.js:1017:50
+    at responseCallbacks.<computed> (C:\Users\josec\Documents\Github\adsfroy\node_modules\esbuild\lib\main.js:884:9)
+    at handleIncomingPacket (C:\Users\josec\Documents\Github\adsfroy\node_modules\esbuild\lib\main.js:939:12)
+    at Socket.readFromStdout (C:\Users\josec\Documents\Github\adsfroy\node_modules\esbuild\lib\main.js:862:7)
+    at Socket.emit (node:events:509:28)
+    at addChunk (node:internal/streams/readable:563:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:514:3)
+    at Readable.push (node:internal/streams/readable:394:5)
+    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23) {
+  name: 'TransformError'
+}
+
+Node.js v24.16.0
