@@ -44,9 +44,12 @@ const TaskSchema = new Schema(
     steps: { type: [StepSchema], default: [] },
     status: {
       type: String,
-      enum: ["pending", "queued", "running", "success", "failed", "cancelled"],
+      enum: ["pending", "queued", "running", "success", "failed", "cancelled", "paused"],
       default: "pending",
     },
+    // Solo se usa mientras status === "paused": guarda a qué estado volver
+    // al reanudar (una tarea "pending" no debe reanudar directo a "queued").
+    resumeStatus: { type: String, enum: ["pending", "queued"] },
     scheduledAt: { type: Date, default: () => new Date() },
     startedAt: { type: Date },
     finishedAt: { type: Date },

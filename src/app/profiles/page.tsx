@@ -84,6 +84,7 @@ export default function ProfilesPage() {
   const [platform, setPlatform] = useState("");
   const [creating, setCreating] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const visibleProfileIds = profiles.map((profile) => profile._id);
   const selectedIdSet = new Set(selectedIds);
   const selectedCount = selectedIds.length;
@@ -306,14 +307,16 @@ export default function ProfilesPage() {
   async function sync() {
     setSyncing(true);
     setError(null);
+    setSyncNotice(null);
     try {
       // Secuencial (no en paralelo): la Local API de AdsPower rate-limitea
       // ~1 req/seg y estas llamadas ya paginan internamente.
       await apiFetch<{ groups: Group[] }>("/api/groups/sync", { method: "POST" });
-      await apiFetch("/api/profiles/sync", { method: "POST" });
+      const { removed } = await apiFetch<{ removed?: number }>("/api/profiles/sync", { method: "POST" });
       await loadGroups();
       await loadTags();
       await loadProfiles();
+      if (removed) setSyncNotice(`Se quitaron ${removed} perfil(es) que ya no existen en AdsPower.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -420,6 +423,9 @@ export default function ProfilesPage() {
       </div>
 
       {error && <p className="rounded-xl bg-critical/10 p-3 text-sm text-critical">{error}</p>}
+      {!error && syncNotice && (
+        <p className="rounded-xl bg-success/10 p-3 text-sm text-success">{syncNotice}</p>
+      )}
 
       <Card className="p-4">
         <form onSubmit={createProfile} className="flex flex-wrap items-end gap-3">

@@ -10,6 +10,7 @@ import {
   Heart,
   Megaphone,
   MessageSquare,
+  Pause,
   Play,
   RefreshCw,
   Search,
@@ -25,6 +26,7 @@ type Counts = {
   pending: number;
   queued: number;
   running: number;
+  paused: number;
   success: number;
   failed: number;
   cancelled: number;
@@ -59,7 +61,7 @@ type CampaignDetail = {
 };
 
 const PAGE_SIZE = 20;
-const STATUSES = ["pending", "queued", "running", "success", "failed", "partial", "cancelled", "empty"];
+const STATUSES = ["pending", "queued", "running", "paused", "success", "failed", "partial", "cancelled", "empty"];
 const TYPES = ["like", "comment", "post", "warmup", "scrape", "custom"];
 
 const TYPE_LABELS: Record<string, string> = {
@@ -108,6 +110,8 @@ function CampaignsContent() {
   const [detail, setDetail] = useState<CampaignDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [runningPending, setRunningPending] = useState(false);
+  const [pausingCampaign, setPausingCampaign] = useState(false);
+  const [resumingCampaign, setResumingCampaign] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
@@ -204,6 +208,8 @@ function CampaignsContent() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const selectedCampaign = detail?.campaign;
   const pendingInDetail = selectedCampaign?.counts.pending ?? 0;
+  const pausableInDetail = (selectedCampaign?.counts.queued ?? 0) + (selectedCampaign?.counts.pending ?? 0);
+  const pausedInDetail = selectedCampaign?.counts.paused ?? 0;
   const hasFilters = Boolean(search || status || type);
 
   const totals = useMemo(
@@ -233,6 +239,34 @@ function CampaignsContent() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setRunningPending(false);
+    }
+  }
+
+  async function pauseCampaign() {
+    if (!selectedId) return;
+    setPausingCampaign(true);
+    setError(null);
+    try {
+      await apiFetch(`/api/campaigns/${selectedId}/pause`, { method: "POST" });
+      await Promise.all([load(), loadCampaign(selectedId)]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPausingCampaign(false);
+    }
+  }
+
+  async function resumeCampaign() {
+    if (!selectedId) return;
+    setResumingCampaign(true);
+    setError(null);
+    try {
+      await apiFetch(`/api/campaigns/${selectedId}/resume`, { method: "POST" });
+      await Promise.all([load(), loadCampaign(selectedId)]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setResumingCampaign(false);
     }
   }
 
@@ -517,6 +551,27 @@ function CampaignsContent() {
                 >
                   <Play className="h-4 w-4" /> {runningPending ? "Encolando..." : "Ejecutar pendientes"}
                 </button>
+                {pausedInDetail > 0 ? (
+                  <button
+                    type="button"
+                    disabled={resumingCampaign}
+                    onClick={resumeCampaign}
+                    title="Reanudar las tareas pausadas de esta campaña"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-success/40 bg-success/10 px-3 py-2 text-sm font-medium text-success transition-colors hover:bg-success/20 disabled:pointer-events-none disabled:opacity-40"
+                  >
+                    <Play className="h-4 w-4" /> {resumingCampaign ? "Reanudando..." : "Reanudar"}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={!pausableInDetail || pausingCampaign}
+                    onClick={pauseCampaign}
+                    title="Pausar tareas pendientes/en cola para corregir algo antes de seguir"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-page px-3 py-2 text-sm font-medium text-ink-secondary transition-colors hover:text-ink disabled:pointer-events-none disabled:opacity-40"
+                  >
+                    <Pause className="h-4 w-4" /> {pausingCampaign ? "Pausando..." : "Pausar"}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => loadCampaign(selectedId)}

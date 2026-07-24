@@ -22,7 +22,7 @@ type Task = {
 type Profile = { _id: string; name: string };
 
 const PAGE_SIZE = 20;
-const STATUSES = ["pending", "queued", "running", "success", "failed", "cancelled"];
+const STATUSES = ["pending", "queued", "running", "paused", "success", "failed", "cancelled"];
 const TYPES = ["login", "post", "warmup", "scrape", "like", "comment", "custom"];
 
 export default function TasksPage() {

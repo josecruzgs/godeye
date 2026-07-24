@@ -84,3 +84,21 @@ C:\Users\josec\Documents\Github\adsfroy\src\lib\adspower\client.ts:103:0: ERROR:
 }
 
 Node.js v24.16.0
+[worker] error en tarea 6a62f19277f99f1a9751881c: DocumentNotFoundError: No document found for query "{ _id: new ObjectId('6a62f19277f99f1a9751881c') }" on model "Task"
+    at model.$__save (C:\Users\josec\Documents\Github\adsfroy\node_modules\mongoose\lib\model.js:547:21)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async maybeTracedSave (C:\Users\josec\Documents\Github\adsfroy\node_modules\mongoose\lib\model.js:675:7)
+    at async runTask (C:\Users\josec\Documents\Github\adsfroy\src\lib\automation\runner.ts:515:5)
+    at async tick (C:\Users\josec\Documents\Github\adsfroy\src\worker\index.ts:36:5)
+    at async main (C:\Users\josec\Documents\Github\adsfroy\src\worker\index.ts:48:5) {
+  result: {
+    acknowledged: true,
+    modifiedCount: 0,
+    upsertedId: null,
+    upsertedCount: 0,
+    matchedCount: 0
+  },
+  numAffected: 0,
+  filter: { _id: new ObjectId('6a62f19277f99f1a9751881c') },
+  query: { _id: new ObjectId('6a62f19277f99f1a9751881c') }
+}

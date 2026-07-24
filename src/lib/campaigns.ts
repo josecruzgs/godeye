@@ -2,7 +2,17 @@ import type { Types } from "mongoose";
 import CampaignModel from "@/lib/models/Campaign";
 import TaskModel from "@/lib/models/Task";
 
-export const CAMPAIGN_STATUSES = ["pending", "queued", "running", "success", "failed", "partial", "cancelled", "empty"];
+export const CAMPAIGN_STATUSES = [
+  "pending",
+  "queued",
+  "running",
+  "paused",
+  "success",
+  "failed",
+  "partial",
+  "cancelled",
+  "empty",
+];
 
 export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
 
@@ -36,6 +46,10 @@ export function computeCampaignStatus(counts: TaskStatusCounts): CampaignStatus 
   const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
   if (total === 0) return "empty";
   if ((counts.running ?? 0) > 0) return "running";
+  // Pausada tiene prioridad sobre queued/pending: al pausar se mueven ahí
+  // los pendientes/en cola, así que si queda algo en paused es porque el
+  // usuario detuvo la campaña a propósito.
+  if ((counts.paused ?? 0) > 0) return "paused";
   if ((counts.queued ?? 0) > 0) return "queued";
   if ((counts.pending ?? 0) > 0) return "pending";
   if ((counts.failed ?? 0) > 0 && (counts.success ?? 0) > 0) return "partial";
@@ -49,6 +63,7 @@ export function normalizeStatusCounts(counts: TaskStatusCounts = {}) {
     pending: counts.pending ?? 0,
     queued: counts.queued ?? 0,
     running: counts.running ?? 0,
+    paused: counts.paused ?? 0,
     success: counts.success ?? 0,
     failed: counts.failed ?? 0,
     cancelled: counts.cancelled ?? 0,

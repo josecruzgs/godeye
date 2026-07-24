@@ -370,13 +370,18 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
     case "hover":
       // Dispara el picker de reacciones de Facebook (aparece al mantener el
       // cursor sobre el botón de "Me gusta" en vez de clickearlo directo).
+      // Usa firstClickableLocator (igual que "click") en vez de
+      // firstVisibleLocator: un post abierto en dialog suele tener la barra
+      // de reacciones fuera del scroll interno del modal, y isVisible() no
+      // detecta eso — hacía falta el scrollIntoViewIfNeeded + validación de
+      // "recibe el puntero" que ya tiene firstClickableLocator.
       if (!step.selector) throw new Error("Step 'hover' requiere 'selector'");
       {
+        const timeoutMs = step.ms ?? DEFAULT_ACTION_TIMEOUT_MS;
         const selector = selectorForStep(step.selector, ctx);
         await prepareSelectorTarget(page, step.selector, ctx);
-        await (await firstVisibleLocator(page, selector, step.ms ?? DEFAULT_ACTION_TIMEOUT_MS)).hover({
-          timeout: step.ms ?? DEFAULT_ACTION_TIMEOUT_MS,
-        });
+        const target = await firstClickableLocator(page, selector, timeoutMs);
+        await target.locator.hover({ position: target.position, timeout: timeoutMs });
       }
       return;
     case "fill":

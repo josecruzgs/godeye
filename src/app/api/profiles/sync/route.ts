@@ -37,6 +37,14 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     await ProfileModel.updateOne({ adsPowerProfileId: p.user_id }, { $set: update }, { upsert: true });
   }
 
+  // AdsPower es la fuente de verdad: cualquier perfil que ya no aparezca ahi
+  // (borrado, renombrado de user_id, etc.) se elimina tambien de Mongo para
+  // que /profiles no muestre perfiles fantasma.
+  const currentIds = list.map((p) => p.user_id);
+  const staleFilter: Record<string, unknown> = { adsPowerProfileId: { $nin: currentIds } };
+  if (groupId) staleFilter.groupId = groupId;
+  const { deletedCount } = await ProfileModel.deleteMany(staleFilter);
+
   const profiles = await ProfileModel.find(groupId ? { groupId } : {}).sort({ name: 1 });
-  return NextResponse.json({ profiles });
+  return NextResponse.json({ profiles, removed: deletedCount ?? 0 });
 });
