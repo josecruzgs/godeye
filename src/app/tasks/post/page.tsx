@@ -10,6 +10,7 @@ import Meter from "@/components/Meter";
 import Modal from "@/components/Modal";
 import PlatformPicker from "@/components/PlatformPicker";
 import ProfilePicker, { type PickerGroup, type PickerProfile } from "@/components/ProfilePicker";
+import ExistingCampaignPicker from "@/components/ExistingCampaignPicker";
 
 type CreatedTask = {
   _id: string;
@@ -106,6 +107,8 @@ export default function PostCampaignPage() {
   const [autoRun, setAutoRun] = useState(true);
   const [namePrefix, setNamePrefix] = useState("post");
   const [campaignName, setCampaignName] = useState("");
+  const [campaignMode, setCampaignMode] = useState<"new" | "existing">("new");
+  const [existingCampaignId, setExistingCampaignId] = useState("");
 
   const [platformNote, setPlatformNote] = useState(PLATFORM_PRESETS.facebook.note);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -158,6 +161,16 @@ export default function PostCampaignPage() {
   useEffect(() => {
     loadProfiles();
     loadPool();
+  }, []);
+
+  // Deep-link desde el modal de /campanas ("Agregar tareas"): preselecciona
+  // el modo "agregar a campaña existente" con esa campaña ya elegida.
+  useEffect(() => {
+    const cid = new URLSearchParams(window.location.search).get("campaignId");
+    if (cid) {
+      setCampaignMode("existing");
+      setExistingCampaignId(cid);
+    }
   }, []);
 
   function applyPlatformPreset(key: string) {
@@ -265,7 +278,8 @@ export default function PostCampaignPage() {
       const { campaign, tasks } = await apiFetch<{ campaign: CreatedCampaign; tasks: CreatedTask[] }>("/api/tasks/post-campaign", {
         method: "POST",
         body: JSON.stringify({
-          campaignName,
+          campaignName: campaignMode === "new" ? campaignName : undefined,
+          campaignId: campaignMode === "existing" ? existingCampaignId : undefined,
           homeUrl,
           openSelector,
           dismissSelectors,
@@ -317,11 +331,11 @@ export default function PostCampaignPage() {
             <CheckCircle2 className="h-4 w-4" />
             {createdCampaign ? (
               <>
-                Se creó la campaña{" "}
+                {campaignMode === "existing" ? "Se agregaron tareas a la campaña" : "Se creó la campaña"}{" "}
                 <Link href={`/campanas?campaignId=${createdCampaign._id}`} className="underline">
                   {createdCampaign.name}
                 </Link>{" "}
-                con {result.length} tarea{result.length === 1 ? "" : "s"}.
+                ({result.length} nueva{result.length === 1 ? "" : "s"}).
               </>
             ) : (
               <>Se crearon {result.length} tarea{result.length === 1 ? "" : "s"} de publicación.</>
@@ -461,15 +475,25 @@ export default function PostCampaignPage() {
       </Card>
 
       <form onSubmit={submit} className="flex flex-col gap-5 rounded-2xl border border-hairline bg-surface/70 p-5 shadow-sm backdrop-blur-xl">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-ink-muted">Nombre de campaña</label>
-          <input
-            value={campaignName}
-            onChange={(e) => setCampaignName(e.target.value)}
-            placeholder="Ej. Publicaciones Froy"
-            className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
-          />
-        </div>
+        <ExistingCampaignPicker
+          type="post"
+          mode={campaignMode}
+          onModeChange={setCampaignMode}
+          campaignId={existingCampaignId}
+          onCampaignIdChange={setExistingCampaignId}
+        />
+
+        {campaignMode === "new" && (
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-ink-muted">Nombre de campaña</label>
+            <input
+              value={campaignName}
+              onChange={(e) => setCampaignName(e.target.value)}
+              placeholder="Ej. Publicaciones Froy"
+              className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
+            />
+          </div>
+        )}
 
         <div className="flex flex-col gap-1">
           <label className="text-xs text-ink-muted">Plataforma</label>
@@ -524,10 +548,22 @@ export default function PostCampaignPage() {
         )}
 
         <button
-          disabled={creating || count === 0 || !homeUrl || !textSelector || !submitSelector || notEnough}
+          disabled={
+            creating ||
+            count === 0 ||
+            !homeUrl ||
+            !textSelector ||
+            !submitSelector ||
+            notEnough ||
+            (campaignMode === "existing" && !existingCampaignId)
+          }
           className="glow-btn w-fit rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-fg shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md disabled:pointer-events-none disabled:opacity-50"
         >
-          {creating ? "Creando..." : `Crear campaña de publicación (${count || 0})`}
+          {creating
+            ? "Creando..."
+            : campaignMode === "existing"
+              ? `Agregar tareas de publicación (${count || 0})`
+              : `Crear campaña de publicación (${count || 0})`}
         </button>
       </form>
 

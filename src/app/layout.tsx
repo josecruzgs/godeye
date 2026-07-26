@@ -1,11 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import Sidebar from "@/components/Sidebar";
-import Topbar from "@/components/Topbar";
 import ThemeScript from "@/components/ThemeScript";
 import SectionBackdrop from "@/components/SectionBackdrop";
-import RouteTransitionOverlay from "@/components/RouteTransitionOverlay";
-import TopGlow from "@/components/TopGlow";
+import AppShell from "@/components/AppShell";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -51,15 +48,7 @@ export default function RootLayout({
       <body className="relative flex min-h-full overflow-hidden bg-page text-ink">
         <ThemeScript />
         <SectionBackdrop />
-        <Sidebar />
-        <div className="relative flex h-screen flex-1 flex-col overflow-hidden">
-          <TopGlow />
-          <Topbar />
-          <main className="relative flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-7xl px-6 py-8">{children}</div>
-            <RouteTransitionOverlay />
-          </main>
-        </div>
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

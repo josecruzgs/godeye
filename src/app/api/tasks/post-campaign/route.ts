@@ -4,7 +4,7 @@ import ProfileModel from "@/lib/models/Profile";
 import PostModel from "@/lib/models/Post";
 import { withApiErrors } from "@/lib/apiHandler";
 import { loginIfNeededSteps } from "@/lib/automation/loginSteps";
-import { createCampaignWithTasks, readCampaignName } from "@/lib/campaigns";
+import { addTasksToCampaign, createCampaignWithTasks, readCampaignName } from "@/lib/campaigns";
 
 // Crea una tarea de "post" por cada perfil elegido: cada una toma un texto
 // distinto y sin usar del banco (/api/posts) y lo marca como usado, así
@@ -99,14 +99,29 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     scheduledAt: new Date(now + i * staggerSeconds * 1000),
   }));
 
+  const campaignId = typeof body.campaignId === "string" ? body.campaignId.trim() : "";
+
   // Solo se marcan usadas las publicaciones una vez que las tareas ya
   // existen: si insertMany falla, el banco queda intacto para reintentar.
-  const { campaign, tasks: created } = await createCampaignWithTasks({
-    name: campaignName,
-    type: "post",
-    autoRun,
-    docs,
-  });
+  let campaign;
+  let created;
+  if (campaignId) {
+    const result = await addTasksToCampaign({ campaignId, type: "post", docs });
+    if (!result.ok) {
+      return result.error === "not_found"
+        ? NextResponse.json({ error: "Campaña no encontrada" }, { status: 404 })
+        : NextResponse.json(
+            { error: `La campaña elegida es de tipo "${result.campaignType}", no "post"` },
+            { status: 400 },
+          );
+    }
+    campaign = result.campaign;
+    created = result.tasks;
+  } else {
+    const r = await createCampaignWithTasks({ name: campaignName, type: "post", autoRun, docs });
+    campaign = r.campaign;
+    created = r.tasks;
+  }
 
   await Promise.all(
     created.map((t, i) =>
@@ -132,7 +147,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
         name: campaign.name,
         type: campaign.type,
         status: autoRun ? "queued" : "pending",
-        taskCount: created.length,
+        taskCount: campaign.taskCount ?? created.length,
       },
       tasks,
     },

@@ -3,7 +3,7 @@ import { dbConnect } from "@/lib/mongodb";
 import ProfileModel from "@/lib/models/Profile";
 import { withApiErrors } from "@/lib/apiHandler";
 import { loginIfNeededSteps } from "@/lib/automation/loginSteps";
-import { createCampaignWithTasks, readCampaignName } from "@/lib/campaigns";
+import { addTasksToCampaign, createCampaignWithTasks, readCampaignName } from "@/lib/campaigns";
 
 type Step = {
   action: "goto" | "waitForTimeout" | "scroll" | "click";
@@ -67,12 +67,27 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     scheduledAt: new Date(now + i * staggerSeconds * 1000),
   }));
 
-  const { campaign, tasks: created } = await createCampaignWithTasks({
-    name: campaignName,
-    type: "warmup",
-    autoRun,
-    docs,
-  });
+  const campaignId = typeof body.campaignId === "string" ? body.campaignId.trim() : "";
+
+  let campaign;
+  let created;
+  if (campaignId) {
+    const result = await addTasksToCampaign({ campaignId, type: "warmup", docs });
+    if (!result.ok) {
+      return result.error === "not_found"
+        ? NextResponse.json({ error: "Campaña no encontrada" }, { status: 404 })
+        : NextResponse.json(
+            { error: `La campaña elegida es de tipo "${result.campaignType}", no "warmup"` },
+            { status: 400 },
+          );
+    }
+    campaign = result.campaign;
+    created = result.tasks;
+  } else {
+    const r = await createCampaignWithTasks({ name: campaignName, type: "warmup", autoRun, docs });
+    campaign = r.campaign;
+    created = r.tasks;
+  }
 
   const tasks = created.map((t, i) => ({
     _id: t._id,
@@ -88,7 +103,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
         name: campaign.name,
         type: campaign.type,
         status: autoRun ? "queued" : "pending",
-        taskCount: created.length,
+        taskCount: campaign.taskCount ?? created.length,
       },
       tasks,
     },

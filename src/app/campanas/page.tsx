@@ -12,8 +12,10 @@ import {
   MessageSquare,
   Pause,
   Play,
+  Plus,
   RefreshCw,
   Search,
+  Share2,
   Trash2,
   X,
 } from "lucide-react";
@@ -72,6 +74,16 @@ const TYPE_LABELS: Record<string, string> = {
   scrape: "Scrapping",
   custom: "Auto Profile",
   login: "Login",
+};
+
+// Solo los tipos con un formulario que soporta "agregar a campaña
+// existente" (ver ExistingCampaignPicker) tienen a dónde mandar el botón.
+const TYPE_ROUTES: Record<string, string> = {
+  like: "/tasks/like",
+  comment: "/tasks/comment",
+  post: "/tasks/post",
+  warmup: "/tasks/warmup",
+  scrape: "/scrapping",
 };
 
 export default function CampaignsPage() {
@@ -318,6 +330,12 @@ function CampaignsContent() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
+            href="/campanas/compartir"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-surface px-3 py-2 text-sm font-medium text-ink-secondary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:text-ink hover:shadow-md"
+          >
+            <Share2 className="h-4 w-4" /> Compartir
+          </Link>
+          <Link
             href="/tasks/like"
             className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-surface px-3 py-2 text-sm font-medium text-ink-secondary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:text-ink hover:shadow-md"
           >
@@ -543,6 +561,15 @@ function CampaignsContent() {
                 )}
               </div>
               <div className="flex items-center gap-2">
+                {selectedCampaign && TYPE_ROUTES[selectedCampaign.type] && (
+                  <Link
+                    href={`${TYPE_ROUTES[selectedCampaign.type]}?campaignId=${selectedCampaign._id}`}
+                    title="Elegir más perfiles y sumarlos a esta campaña"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-page px-3 py-2 text-sm font-medium text-ink-secondary transition-colors hover:text-ink"
+                  >
+                    <Plus className="h-4 w-4" /> Agregar tareas
+                  </Link>
+                )}
                 <button
                   type="button"
                   disabled={!pendingInDetail || runningPending}

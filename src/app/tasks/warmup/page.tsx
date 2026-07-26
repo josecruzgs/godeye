@@ -9,6 +9,7 @@ import Card from "@/components/Card";
 import Modal from "@/components/Modal";
 import PlatformPicker from "@/components/PlatformPicker";
 import ProfilePicker, { type PickerGroup, type PickerProfile } from "@/components/ProfilePicker";
+import ExistingCampaignPicker from "@/components/ExistingCampaignPicker";
 
 type CreatedTask = {
   _id: string;
@@ -56,6 +57,8 @@ export default function WarmupCampaignPage() {
   const [autoRun, setAutoRun] = useState(true);
   const [namePrefix, setNamePrefix] = useState("warmup");
   const [campaignName, setCampaignName] = useState("");
+  const [campaignMode, setCampaignMode] = useState<"new" | "existing">("new");
+  const [existingCampaignId, setExistingCampaignId] = useState("");
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -77,6 +80,16 @@ export default function WarmupCampaignPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Deep-link desde el modal de /campanas ("Agregar tareas"): preselecciona
+  // el modo "agregar a campaña existente" con esa campaña ya elegida.
+  useEffect(() => {
+    const cid = new URLSearchParams(window.location.search).get("campaignId");
+    if (cid) {
+      setCampaignMode("existing");
+      setExistingCampaignId(cid);
+    }
+  }, []);
+
   function applyPlatformPreset(key: string) {
     setPlatformPreset(key);
     setHomeUrl(PLATFORM_HOME_URLS[key] ?? "");
@@ -92,7 +105,8 @@ export default function WarmupCampaignPage() {
       const { campaign, tasks } = await apiFetch<{ campaign: CreatedCampaign; tasks: CreatedTask[] }>("/api/tasks/warmup-campaign", {
         method: "POST",
         body: JSON.stringify({
-          campaignName,
+          campaignName: campaignMode === "new" ? campaignName : undefined,
+          campaignId: campaignMode === "existing" ? existingCampaignId : undefined,
           homeUrl,
           cycles,
           initialWaitMs,
@@ -143,11 +157,11 @@ export default function WarmupCampaignPage() {
             <CheckCircle2 className="h-4 w-4" />
             {createdCampaign ? (
               <>
-                Se creó la campaña{" "}
+                {campaignMode === "existing" ? "Se agregaron tareas a la campaña" : "Se creó la campaña"}{" "}
                 <Link href={`/campanas?campaignId=${createdCampaign._id}`} className="underline">
                   {createdCampaign.name}
                 </Link>{" "}
-                con {result.length} tarea{result.length === 1 ? "" : "s"}.
+                ({result.length} nueva{result.length === 1 ? "" : "s"}).
               </>
             ) : (
               <>Se crearon {result.length} tarea{result.length === 1 ? "" : "s"} de warmup.</>
@@ -175,15 +189,25 @@ export default function WarmupCampaignPage() {
       )}
 
       <form onSubmit={submit} className="flex flex-col gap-5 rounded-2xl border border-hairline bg-surface/70 p-5 shadow-sm backdrop-blur-xl">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-ink-muted">Nombre de campaña</label>
-          <input
-            value={campaignName}
-            onChange={(e) => setCampaignName(e.target.value)}
-            placeholder="Ej. Warmup perfiles nuevos"
-            className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
-          />
-        </div>
+        <ExistingCampaignPicker
+          type="warmup"
+          mode={campaignMode}
+          onModeChange={setCampaignMode}
+          campaignId={existingCampaignId}
+          onCampaignIdChange={setExistingCampaignId}
+        />
+
+        {campaignMode === "new" && (
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-ink-muted">Nombre de campaña</label>
+            <input
+              value={campaignName}
+              onChange={(e) => setCampaignName(e.target.value)}
+              placeholder="Ej. Warmup perfiles nuevos"
+              className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
+            />
+          </div>
+        )}
 
         <div className="flex flex-col gap-1">
           <label className="text-xs text-ink-muted">Plataforma</label>
@@ -258,10 +282,14 @@ export default function WarmupCampaignPage() {
         </div>
 
         <button
-          disabled={creating || count === 0 || !homeUrl}
+          disabled={creating || count === 0 || !homeUrl || (campaignMode === "existing" && !existingCampaignId)}
           className="glow-btn w-fit rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-fg shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md disabled:pointer-events-none disabled:opacity-50"
         >
-          {creating ? "Creando..." : `Crear campaña de warmup (${count || 0})`}
+          {creating
+            ? "Creando..."
+            : campaignMode === "existing"
+              ? `Agregar tareas de warmup (${count || 0})`
+              : `Crear campaña de warmup (${count || 0})`}
         </button>
       </form>
 

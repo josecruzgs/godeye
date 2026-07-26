@@ -8,6 +8,7 @@ import StatusBadge from "@/components/StatusBadge";
 import Card from "@/components/Card";
 import Modal from "@/components/Modal";
 import ProfilePicker, { type PickerGroup, type PickerProfile } from "@/components/ProfilePicker";
+import ExistingCampaignPicker from "@/components/ExistingCampaignPicker";
 
 type CreatedTask = {
   _id: string;
@@ -36,6 +37,8 @@ export default function ScrappingPage() {
   const [autoRun, setAutoRun] = useState(true);
   const [namePrefix, setNamePrefix] = useState("scrape");
   const [campaignName, setCampaignName] = useState("");
+  const [campaignMode, setCampaignMode] = useState<"new" | "existing">("new");
+  const [existingCampaignId, setExistingCampaignId] = useState("");
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -57,6 +60,16 @@ export default function ScrappingPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Deep-link desde el modal de /campanas ("Agregar tareas"): preselecciona
+  // el modo "agregar a campaña existente" con esa campaña ya elegida.
+  useEffect(() => {
+    const cid = new URLSearchParams(window.location.search).get("campaignId");
+    if (cid) {
+      setCampaignMode("existing");
+      setExistingCampaignId(cid);
+    }
+  }, []);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setCreating(true);
@@ -67,7 +80,8 @@ export default function ScrappingPage() {
       const { campaign, tasks } = await apiFetch<{ campaign: CreatedCampaign; tasks: CreatedTask[] }>("/api/tasks/scrape-campaign", {
         method: "POST",
         body: JSON.stringify({
-          campaignName,
+          campaignName: campaignMode === "new" ? campaignName : undefined,
+          campaignId: campaignMode === "existing" ? existingCampaignId : undefined,
           url,
           waitSelector,
           profileIds: Array.from(selected),
@@ -116,11 +130,11 @@ export default function ScrappingPage() {
             <CheckCircle2 className="h-4 w-4" />
             {createdCampaign ? (
               <>
-                Se creó la campaña{" "}
+                {campaignMode === "existing" ? "Se agregaron tareas a la campaña" : "Se creó la campaña"}{" "}
                 <Link href={`/campanas?campaignId=${createdCampaign._id}`} className="underline">
                   {createdCampaign.name}
                 </Link>{" "}
-                con {result.length} tarea{result.length === 1 ? "" : "s"}.
+                ({result.length} nueva{result.length === 1 ? "" : "s"}).
               </>
             ) : (
               <>Se crearon {result.length} tarea{result.length === 1 ? "" : "s"} de scraping.</>
@@ -148,15 +162,25 @@ export default function ScrappingPage() {
       )}
 
       <form onSubmit={submit} className="flex flex-col gap-5 rounded-2xl border border-hairline bg-surface/70 p-5 shadow-sm backdrop-blur-xl">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-ink-muted">Nombre de campaña</label>
-          <input
-            value={campaignName}
-            onChange={(e) => setCampaignName(e.target.value)}
-            placeholder="Ej. Capturas competencia"
-            className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
-          />
-        </div>
+        <ExistingCampaignPicker
+          type="scrape"
+          mode={campaignMode}
+          onModeChange={setCampaignMode}
+          campaignId={existingCampaignId}
+          onCampaignIdChange={setExistingCampaignId}
+        />
+
+        {campaignMode === "new" && (
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-ink-muted">Nombre de campaña</label>
+            <input
+              value={campaignName}
+              onChange={(e) => setCampaignName(e.target.value)}
+              placeholder="Ej. Capturas competencia"
+              className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
+            />
+          </div>
+        )}
 
         <div className="flex flex-col gap-1">
           <label className="text-xs text-ink-muted">Link a scrapear</label>
@@ -207,10 +231,14 @@ export default function ScrappingPage() {
         </div>
 
         <button
-          disabled={creating || count === 0 || !url}
+          disabled={creating || count === 0 || !url || (campaignMode === "existing" && !existingCampaignId)}
           className="glow-btn w-fit rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-fg shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md disabled:pointer-events-none disabled:opacity-50"
         >
-          {creating ? "Creando..." : `Crear campaña de scraping (${count || 0})`}
+          {creating
+            ? "Creando..."
+            : campaignMode === "existing"
+              ? `Agregar tareas de scraping (${count || 0})`
+              : `Crear campaña de scraping (${count || 0})`}
         </button>
       </form>
 

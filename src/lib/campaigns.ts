@@ -2,6 +2,11 @@ import type { Types } from "mongoose";
 import CampaignModel from "@/lib/models/Campaign";
 import TaskModel from "@/lib/models/Task";
 
+type CountRow = {
+  _id: { campaignId: Types.ObjectId; status: string };
+  count: number;
+};
+
 export const CAMPAIGN_STATUSES = [
   "pending",
   "queued",
@@ -18,7 +23,7 @@ export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
 
 export type TaskStatusCounts = Record<string, number>;
 
-const TYPE_LABELS: Record<string, string> = {
+export const TYPE_LABELS: Record<string, string> = {
   like: "Likes",
   comment: "Comentarios",
   post: "Publicaciones",
@@ -99,6 +104,67 @@ export async function createCampaignWithTasks({
     await CampaignModel.deleteOne({ _id: campaign._id }).catch(() => {});
     throw err;
   }
+}
+
+export type AddTasksResult =
+  | { ok: true; campaign: InstanceType<typeof CampaignModel>; tasks: Awaited<ReturnType<typeof TaskModel.insertMany>> }
+  | { ok: false; error: "not_found" }
+  | { ok: false; error: "type_mismatch"; campaignType: string };
+
+// A diferencia de createCampaignWithTasks (que siempre arma una campaña
+// nueva), esto suma tareas a una campaña que ya existe — pensado para
+// "Ejecutar pendientes" pueda seguir corriendo sobre una campaña previa: las
+// tareas nuevas entran con el mismo campaignId y quedan pending/queued como
+// cualquier otra, así que ese botón las recoge sin cambios.
+export async function addTasksToCampaign({
+  campaignId,
+  type,
+  docs,
+}: {
+  campaignId: string;
+  type: string;
+  docs: Record<string, unknown>[];
+}): Promise<AddTasksResult> {
+  const campaign = await CampaignModel.findById(campaignId);
+  if (!campaign) return { ok: false, error: "not_found" };
+  if (campaign.type !== type) return { ok: false, error: "type_mismatch", campaignType: campaign.type };
+
+  const tasks = await TaskModel.insertMany(docs.map((doc) => ({ ...doc, campaignId: campaign._id })));
+  campaign.taskCount = (campaign.taskCount ?? 0) + tasks.length;
+  await campaign.save();
+  return { ok: true, campaign, tasks };
+}
+
+export async function getCampaignSummariesByIds(campaignIds: (Types.ObjectId | string)[]) {
+  if (campaignIds.length === 0) return [];
+
+  const campaignDocs = await CampaignModel.find({ _id: { $in: campaignIds } })
+    .sort({ createdAt: -1 })
+    .lean();
+  const foundIds = campaignDocs.map((campaign) => campaign._id);
+
+  const countRows =
+    foundIds.length > 0
+      ? await TaskModel.aggregate<CountRow>([
+          { $match: { campaignId: { $in: foundIds } } },
+          { $group: { _id: { campaignId: "$campaignId", status: "$status" }, count: { $sum: 1 } } },
+        ])
+      : [];
+
+  const countsByCampaign = new Map<string, TaskStatusCounts>();
+  for (const row of countRows) {
+    const key = String(row._id.campaignId);
+    const counts = countsByCampaign.get(key) ?? {};
+    counts[row._id.status] = row.count;
+    countsByCampaign.set(key, counts);
+  }
+
+  return campaignDocs.map((campaign) =>
+    makeCampaignSummary({
+      campaign,
+      counts: countsByCampaign.get(String(campaign._id)) ?? {},
+    }),
+  );
 }
 
 export function makeCampaignSummary({

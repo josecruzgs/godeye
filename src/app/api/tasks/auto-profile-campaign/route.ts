@@ -5,7 +5,7 @@ import ProfileModel, { type Profile } from "@/lib/models/Profile";
 import { parseCsv } from "@/lib/csv";
 import { withApiErrors } from "@/lib/apiHandler";
 import { loginIfNeededSteps } from "@/lib/automation/loginSteps";
-import { createCampaignWithTasks, readCampaignName } from "@/lib/campaigns";
+import { addTasksToCampaign, createCampaignWithTasks, readCampaignName } from "@/lib/campaigns";
 
 type SheetRow = { profileName: string; name: string; city: string };
 type Step = { action: string; selector?: string; value?: string; url?: string; key?: string; ms?: number; optional?: boolean };
@@ -206,12 +206,27 @@ export const POST = withApiErrors(async (req: NextRequest) => {
       scheduledAt: new Date(now + i * staggerSeconds * 1000),
     }));
 
-    const { campaign, tasks: created } = await createCampaignWithTasks({
-      name: campaignName,
-      type: "custom",
-      autoRun,
-      docs,
-    });
+    const campaignId = typeof body.campaignId === "string" ? body.campaignId.trim() : "";
+
+    let campaign;
+    let created;
+    if (campaignId) {
+      const result = await addTasksToCampaign({ campaignId, type: "custom", docs });
+      if (!result.ok) {
+        return result.error === "not_found"
+          ? NextResponse.json({ error: "Campaña no encontrada" }, { status: 404 })
+          : NextResponse.json(
+              { error: `La campaña elegida es de tipo "${result.campaignType}", no "custom"` },
+              { status: 400 },
+            );
+      }
+      campaign = result.campaign;
+      created = result.tasks;
+    } else {
+      const r = await createCampaignWithTasks({ name: campaignName, type: "custom", autoRun, docs });
+      campaign = r.campaign;
+      created = r.tasks;
+    }
     const tasks = created.map((t, i) => ({
       _id: t._id,
       name: t.name,
@@ -225,7 +240,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
           name: campaign.name,
           type: campaign.type,
           status: autoRun ? "queued" : "pending",
-          taskCount: created.length,
+          taskCount: campaign.taskCount ?? created.length,
         },
         tasks,
       },
@@ -299,12 +314,27 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     return NextResponse.json({ error: "No se encontraron los perfiles asignados" }, { status: 404 });
   }
 
-  const { campaign, tasks: created } = await createCampaignWithTasks({
-    name: campaignName,
-    type: "custom",
-    autoRun,
-    docs,
-  });
+  const campaignId = typeof body.campaignId === "string" ? body.campaignId.trim() : "";
+
+  let campaign;
+  let created;
+  if (campaignId) {
+    const result = await addTasksToCampaign({ campaignId, type: "custom", docs });
+    if (!result.ok) {
+      return result.error === "not_found"
+        ? NextResponse.json({ error: "Campaña no encontrada" }, { status: 404 })
+        : NextResponse.json(
+            { error: `La campaña elegida es de tipo "${result.campaignType}", no "custom"` },
+            { status: 400 },
+          );
+    }
+    campaign = result.campaign;
+    created = result.tasks;
+  } else {
+    const r = await createCampaignWithTasks({ name: campaignName, type: "custom", autoRun, docs });
+    campaign = r.campaign;
+    created = r.tasks;
+  }
   const tasks = created.map((t, idx) => ({
     _id: t._id,
     name: t.name,
@@ -318,7 +348,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
         name: campaign.name,
         type: campaign.type,
         status: autoRun ? "queued" : "pending",
-        taskCount: created.length,
+        taskCount: campaign.taskCount ?? created.length,
       },
       tasks,
     },
