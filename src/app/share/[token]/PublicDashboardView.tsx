@@ -206,7 +206,12 @@ export default function PublicDashboardView({
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-ink">{name}</h1>
             <p className="text-sm text-ink-secondary">
-              {campaigns.length} campaña{campaigns.length === 1 ? "" : "s"} · actualizado {formatDate(lastUpdated)}
+              {campaigns.length} campaña{campaigns.length === 1 ? "" : "s"} · actualizado{" "}
+              {/* formatDate depende del locale/zona horaria del runtime — el
+                  servidor y el navegador casi nunca coinciden, así que se
+                  renderiza en blanco hasta después de montar en cliente para
+                  no desincronizar la hidratación (ver "mounted" más abajo). */}
+              {mounted ? formatDate(lastUpdated) : "…"}
             </p>
           </div>
         </div>
