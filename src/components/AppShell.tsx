@@ -20,7 +20,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     // flex-1 es necesario: <body> es un contenedor flex (fila), así que sin
     // esto <main> se encoge a su contenido en vez de ocupar el ancho
     // disponible, y el mx-auto de adentro no tiene espacio para centrar.
-    return <main className="relative min-h-screen flex-1">{children}</main>;
+    // h-screen + overflow-y-auto es necesario porque <body> tiene
+    // overflow-hidden (layout.tsx): sin un contenedor con altura acotada que
+    // scrollee internamente, cualquier contenido más alto que el viewport
+    // queda cortado sin forma de hacer scroll (el bug reportado en celulares).
+    return <main className="relative h-screen flex-1 overflow-y-auto">{children}</main>;
   }
 
   return (
