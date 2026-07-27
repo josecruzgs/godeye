@@ -198,7 +198,7 @@ export default function PublicDashboardView({
   const selectedCampaign = detail?.campaign;
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-6 px-6 py-10">
+    <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <Image src="/media/logoblack.png" alt="Ojo de Dios" width={36} height={36} className="object-contain dark:hidden" />
@@ -272,7 +272,7 @@ export default function PublicDashboardView({
                   key={campaign._id}
                   type="button"
                   onClick={() => openCampaign(campaign._id)}
-                  className="flex items-center gap-4 p-4 text-left transition-colors hover:bg-page/60"
+                  className="flex flex-col gap-3 p-4 text-left transition-colors hover:bg-page/60 sm:flex-row sm:items-center sm:gap-4"
                 >
                   <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconBg} text-white`}>
                     <Icon className="h-5 w-5" />
@@ -289,8 +289,10 @@ export default function PublicDashboardView({
                     </div>
                     <span className="w-9 text-right text-xs text-ink-muted">{progress}%</span>
                   </div>
-                  <StatusBadge status={campaign.status} />
-                  <ChevronRight className="h-4 w-4 shrink-0 text-ink-muted" />
+                  <div className="flex items-center justify-between gap-3 pl-14 sm:contents sm:pl-0">
+                    <StatusBadge status={campaign.status} />
+                    <ChevronRight className="h-4 w-4 shrink-0 text-ink-muted" />
+                  </div>
                 </button>
               );
             })}
@@ -355,7 +357,7 @@ export default function PublicDashboardView({
                   <p className="rounded-xl bg-critical/10 p-3 text-sm text-critical">{detailError}</p>
                 ) : detail ? (
                   <div className="flex flex-col gap-4">
-                    <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
                       {Object.entries(detail.campaign.counts).map(([key, value]) => (
                         <div key={key} className="rounded-xl border border-hairline bg-page p-3">
                           <p className="text-xs uppercase tracking-wide text-ink-muted">{key}</p>
@@ -364,29 +366,45 @@ export default function PublicDashboardView({
                       ))}
                     </div>
 
-                    <div className="overflow-x-auto rounded-xl border border-hairline">
-                      <table className="w-full text-sm">
-                        <thead className="border-b border-hairline text-left text-xs uppercase tracking-wide text-ink-muted">
-                          <tr>
-                            <th className="px-4 py-3 font-medium">Perfil</th>
-                            <th className="px-4 py-3 font-medium">Estado</th>
-                            <th className="px-4 py-3 font-medium">Programada</th>
-                            <th className="px-4 py-3 font-medium">Terminó</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {detail.tasks.map((task) => (
-                            <tr key={task._id} className="border-t border-hairline">
-                              <td className="px-4 py-3 font-medium text-ink">{task.profile?.name ?? "Sin perfil"}</td>
-                              <td className="px-4 py-3">
-                                <StatusBadge status={task.status} />
-                              </td>
-                              <td className="px-4 py-3 text-ink-secondary">{formatDate(task.scheduledAt)}</td>
-                              <td className="px-4 py-3 text-ink-secondary">{formatDate(task.finishedAt)}</td>
+                    <div className="rounded-xl border border-hairline">
+                      <div className="flex flex-col divide-y divide-hairline sm:hidden">
+                        {detail.tasks.map((task) => (
+                          <div key={task._id} className="flex flex-col gap-2 p-4">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="min-w-0 truncate font-medium text-ink">{task.profile?.name ?? "Sin perfil"}</p>
+                              <StatusBadge status={task.status} />
+                            </div>
+                            <div className="flex flex-col gap-0.5 text-xs text-ink-secondary">
+                              <span>Programada: {formatDate(task.scheduledAt)}</span>
+                              <span>Terminó: {formatDate(task.finishedAt)}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="hidden overflow-x-auto sm:block">
+                        <table className="w-full text-sm">
+                          <thead className="border-b border-hairline text-left text-xs uppercase tracking-wide text-ink-muted">
+                            <tr>
+                              <th className="px-4 py-3 font-medium">Perfil</th>
+                              <th className="px-4 py-3 font-medium">Estado</th>
+                              <th className="px-4 py-3 font-medium">Programada</th>
+                              <th className="px-4 py-3 font-medium">Terminó</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {detail.tasks.map((task) => (
+                              <tr key={task._id} className="border-t border-hairline">
+                                <td className="px-4 py-3 font-medium text-ink">{task.profile?.name ?? "Sin perfil"}</td>
+                                <td className="px-4 py-3">
+                                  <StatusBadge status={task.status} />
+                                </td>
+                                <td className="px-4 py-3 text-ink-secondary">{formatDate(task.scheduledAt)}</td>
+                                <td className="px-4 py-3 text-ink-secondary">{formatDate(task.finishedAt)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
                 ) : (
