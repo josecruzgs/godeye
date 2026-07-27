@@ -3,6 +3,11 @@ import { dbConnect } from "@/lib/mongodb";
 import DashboardModel from "@/lib/models/Dashboard";
 import CampaignModel from "@/lib/models/Campaign";
 import TaskModel from "@/lib/models/Task";
+// Import registra el schema de "Profile" en mongoose — TaskModel.populate
+// necesita eso, aunque este archivo nunca use ProfileModel directo. Sin
+// esto, en un lambda frío de Vercel que nunca cargó /api/profiles antes,
+// populate("profileId") revienta con "Schema hasn't been registered".
+import "@/lib/models/Profile";
 import { makeCampaignSummary, type TaskStatusCounts } from "@/lib/campaigns";
 import { withApiErrors } from "@/lib/apiHandler";
 

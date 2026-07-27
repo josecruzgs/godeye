@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
 import TaskModel from "@/lib/models/Task";
+// Registra el schema de "Profile" para que TaskModel.populate("profileId")
+// no truene con "Schema hasn't been registered" en un lambda frío que nunca
+// cargó /api/profiles antes.
+import "@/lib/models/Profile";
 import { withApiErrors } from "@/lib/apiHandler";
 import { escapeRegex } from "@/lib/regex";
 
