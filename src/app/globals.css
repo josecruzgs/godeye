@@ -2,85 +2,140 @@
 
 /* Toggle-driven dark mode: `.dark` on <html> wins over OS preference.
    ThemeScript (src/components/ThemeScript.tsx) stamps the class before
-   paint to avoid a flash of the wrong theme. */
+   paint to avoid a flash of the wrong theme. Oscuro es el default. */
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* ============================================================================
+   SISTEMA VISUAL "SALA DE INTELIGENCIA"
+   ----------------------------------------------------------------------------
+   Paleta y tipografía calcadas de la sala de inteligencia de Sonora
+   (ojo-de-dios-livid.vercel.app): azul marino casi negro, acento oro, tres
+   familias tipográficas con roles fijos —Fraunces para display, Inter para
+   texto/UI, IBM Plex Mono para etiquetas y números de instrumentación.
+
+   El modo oscuro son los valores EXACTOS de esa referencia; el claro es la
+   adaptación "de día" del mismo lenguaje (pergamino cálido + oro profundo),
+   para que el ThemeToggle que ya existía siga sirviendo.
+   ========================================================================= */
 
 :root {
   color-scheme: light;
 
-  /* Chart/app chrome — see dataviz skill palette.md */
-  --surface-1: #fcfcfb;
-  --page-plane: #f4f4f2;
-  --text-primary: #0b0b0b;
-  --text-secondary: #52514e;
-  --text-muted: #898781;
-  --gridline: #e1e0d9;
-  --baseline: #c3c2b7;
-  --border-hairline: rgba(11, 11, 11, 0.08);
+  /* --- Superficies ---
+     Gris claro neutro y plano: sin imagen de fondo y sin tinte cálido, para
+     que el oro del acento sea el único color de marca en la página. */
+  --surface-1: #fafbfb;
+  --surface-2: #f1f3f4;
+  --page-plane: #eef0f1;
+  --card-from: #ffffff;
+  --card-to: #f5f7f8;
 
-  /* Brand accent — independent of the chart categorical palette below, so
-     changing it never collapses two chart series into the same hue.
-     Azul por defecto en toda la app; Agua (Tareas/Likes/Comentar) lo pisa a
-     verde con .accent-agua más abajo. Contraste vs blanco 6.43:1, vs
-     surface clara 6.26:1. */
-  --primary: #1a5cb8;
-  /* Aqua/teal de Agua — independiente de --primary para que .accent-agua
-     pueda reasignarlo sin depender de cuál sea el azul del momento. */
-  --agua: #0d9488;
+  --text-primary: #14181f;
+  --text-secondary: #55606f;
+  --text-muted: #868e99;
+  --gridline: #e1e4e7;
+  --baseline: #c2c7cd;
+  --border-hairline: #dde1e5;
+  --border-hi: rgba(20, 24, 31, 0.22);
 
-  /* Marcas de redes sociales — solo para el selector de plataforma, no para
-     datos de gráfico. X usa el mismo valor que --text-primary (negro en
-     claro) a propósito: su identidad de marca actual literalmente es "negro
-     en claro, blanco en oscuro". */
+  /* --- Acento de marca ---
+     El oro es la identidad de la sala. En claro se baja de luminancia
+     (#8a6a28) para que pase contraste como texto sobre pergamino (5.4:1);
+     en oscuro vuelve al #cbb074 original de la referencia. */
+  --gold: #8a6a28;
+  --gold-vivid: #b3903f;
+  --primary: #8a6a28;
+  --primary-fg: #ffffff;
+
+  /* --- Los cuatro elementos (mismos hues que la referencia, oscurecidos
+     lo justo para leerse sobre fondo claro) --- */
+  --el-viento: #4b7aad;
+  --el-agua: #2f7c9f;
+  --el-tierra: #5c7f38;
+  --el-fuego: #b25a25;
+  /* Alias histórico: el sidebar y las páginas de Tareas lo usan. */
+  --agua: var(--el-agua);
+
+  /* --- Instrumentación (semáforo de la referencia) --- */
+  --ok: #218a63;
+  --teal: #1f8079;
+  --amber: #9a6f16;
+  --danger: #b8404e;
+  --blue: #2f7fb8;
+
+  --status-good: #218a63;
+  --status-warning: #9a6f16;
+  --status-serious: #b25a25;
+  --status-critical: #b8404e;
+  --success-text: #1a6d4e;
+
+  /* --- Marcas de redes sociales (solo el selector de plataforma) --- */
   --brand-facebook: #1877f2;
   --brand-instagram: #e4405f;
   --brand-tiktok: #fe2c55;
-  --brand-x: #0b0b0b;
+  --brand-x: #14181f;
   --brand-linkedin: #0a66c2;
 
-  /* Categorical series (fixed order — never cycled) */
-  --series-1: #2a78d6; /* blue */
-  --series-2: #008300; /* green */
-  --series-3: #e87ba4; /* magenta */
-  --series-4: #eda100; /* yellow */
-  --series-5: #1baf7a; /* aqua */
-  --series-6: #eb6834; /* orange */
-  --series-7: #4a3aa7; /* violet */
-  --series-8: #e34948; /* red */
+  /* --- Series categóricas (orden fijo, nunca ciclado) --- */
+  --series-1: #2f7fb8;
+  --series-2: #218a63;
+  --series-3: #7b5ba6;
+  --series-4: #9a6f16;
+  --series-5: #1f8079;
+  --series-6: #b25a25;
+  --series-7: #8a6a28;
+  --series-8: #b8404e;
 
-  /* Sequential blue ramp (magnitude) */
-  --seq-100: #cde2fb;
-  --seq-250: #86b6ef;
-  --seq-400: #3987e5;
-  --seq-450: #2a78d6;
-  --seq-550: #1c5cab;
-
-  /* Status (fixed — never themed) */
-  --status-good: #0ca30c;
-  --status-warning: #fab219;
-  --status-serious: #ec835a;
-  --status-critical: #d03b3b;
-  --success-text: #006300;
+  /* --- Rampa secuencial (magnitud) --- */
+  --seq-100: #e7ddc4;
+  --seq-250: #d3c091;
+  --seq-400: #b3903f;
+  --seq-450: #8a6a28;
+  --seq-550: #63491a;
 }
 
 :root.dark {
   color-scheme: dark;
 
-  /* Azul acero oscuro en vez de negro puro — misma función que el set
-     "warm neutral" de la skill de dataviz, pero con un tinte frío. */
-  --surface-1: #161928;
-  --page-plane: #0c0c12;
-  --text-primary: #ffffff;
-  --text-secondary: #b6c3d3;
-  --text-muted: #7d8ea3;
-  --gridline: #26364a;
-  --baseline: #3d5066;
-  --border-hairline: rgba(176, 199, 224, 0.12);
+  /* Valores literales de la sala de inteligencia. */
+  --surface-1: #10151e;
+  --surface-2: #151c27;
+  --page-plane: #090c12;
+  --card-from: #131b28;
+  --card-to: #0d131c;
 
-  /* Contrast-checked against the dark surface (as text) and white (as
-     button-on-fill text): 4.44:1 / 4.01:1. */
-  --primary: #2f78d1;
-  --agua: #2dd4bf;
+  --text-primary: #eef2f8;
+  --text-secondary: #8a98ab;
+  --text-muted: #5a6678;
+  --gridline: #19212c;
+  --baseline: #212b39;
+  --border-hairline: #212b39;
+  --border-hi: #33415488;
+
+  --gold: #cbb074;
+  --gold-vivid: #e0c68d;
+  --primary: #cbb074;
+  /* Tinta oscura sobre oro — el mismo par que la referencia usa en
+     ::selection. Con blanco encima, el oro no pasa contraste. */
+  --primary-fg: #0a0d14;
+
+  --el-viento: #8fb0d6;
+  --el-agua: #4596bb;
+  --el-tierra: #84a85c;
+  --el-fuego: #cc7440;
+  --agua: var(--el-agua);
+
+  --ok: #49c194;
+  --teal: #41b6ae;
+  --amber: #dcab53;
+  --danger: #e06b78;
+  --blue: #5fabdb;
+
+  --status-good: #49c194;
+  --status-warning: #dcab53;
+  --status-serious: #cc7440;
+  --status-critical: #e06b78;
+  --success-text: #49c194;
 
   --brand-facebook: #1877f2;
   --brand-instagram: #e4405f;
@@ -88,51 +143,71 @@
   --brand-x: #ffffff;
   --brand-linkedin: #0a66c2;
 
-  --series-1: #3987e5;
-  --series-2: #008300;
-  --series-3: #d55181;
-  --series-4: #c98500;
-  --series-5: #199e70;
-  --series-6: #d95926;
-  --series-7: #9085e9;
-  --series-8: #e66767;
+  --series-1: #5fabdb;
+  --series-2: #49c194;
+  --series-3: #a98fc4;
+  --series-4: #dcab53;
+  --series-5: #41b6ae;
+  --series-6: #cc7440;
+  --series-7: #cbb074;
+  --series-8: #e06b78;
 
-  --seq-100: #184f95;
-  --seq-250: #1c5cab;
-  --seq-400: #2a78d6;
-  --seq-450: #3987e5;
-  --seq-550: #6da7ec;
-
-  --success-text: #0ca30c;
+  --seq-100: #1b2b3d;
+  --seq-250: #2b4a68;
+  --seq-400: #3d7098;
+  --seq-450: #5fabdb;
+  --seq-550: #9acdee;
 }
 
-/* Las páginas de Agua (Tareas, Likes, Comentar) reasignan --primary a
-   verde acá adentro — todo lo que ya usa bg-primary/text-primary/
-   accent-primary/focus:border-primary dentro de este scope se pone verde
-   sin tocar esos archivos uno por uno. Fuera de este scope, --primary
-   sigue siendo el azul de arriba (Dashboard, Perfiles, Grupos, etc). */
+/* Las páginas de Agua (Tareas, Likes, Comentar) reasignan --primary al azul
+   de Agua acá adentro — todo lo que ya usa bg-primary/text-primary/
+   accent-primary/focus:border-primary dentro de este scope cambia de acento
+   sin tocar esos archivos uno por uno. */
 .accent-agua {
-  --primary: var(--agua);
+  --primary: var(--el-agua);
+  --primary-fg: #ffffff;
+}
+.accent-viento {
+  --primary: var(--el-viento);
+  --primary-fg: #0a0d14;
+}
+.accent-tierra {
+  --primary: var(--el-tierra);
+  --primary-fg: #0a0d14;
+}
+.accent-fuego {
+  --primary: var(--el-fuego);
+  --primary-fg: #0a0d14;
 }
 
 @theme inline {
   --color-page: var(--page-plane);
   --color-surface: var(--surface-1);
+  --color-surface-2: var(--surface-2);
   --color-ink: var(--text-primary);
   --color-ink-secondary: var(--text-secondary);
   --color-ink-muted: var(--text-muted);
   --color-hairline: var(--border-hairline);
+  --color-hairline-hi: var(--border-hi);
   --color-gridline: var(--gridline);
   --color-baseline: var(--baseline);
 
   --color-primary: var(--primary);
-  --color-primary-fg: #ffffff;
-  --color-agua: var(--agua);
+  --color-primary-fg: var(--primary-fg);
+  --color-gold: var(--gold);
+  --color-gold-vivid: var(--gold-vivid);
+
+  --color-agua: var(--el-agua);
+  --color-viento: var(--el-viento);
+  --color-tierra: var(--el-tierra);
+  --color-fuego: var(--el-fuego);
+
   --color-brand-facebook: var(--brand-facebook);
   --color-brand-instagram: var(--brand-instagram);
   --color-brand-tiktok: var(--brand-tiktok);
   --color-brand-x: var(--brand-x);
   --color-brand-linkedin: var(--brand-linkedin);
+
   --color-series-1: var(--series-1);
   --color-series-2: var(--series-2);
   --color-series-3: var(--series-3);
@@ -147,14 +222,47 @@
   --color-serious: var(--status-serious);
   --color-critical: var(--status-critical);
 
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Tres roles tipográficos fijos, como la referencia:
+     display (Fraunces) para titulares, sans (Inter) para UI y cuerpo,
+     mono (IBM Plex Mono) para etiquetas de instrumentación y cifras. */
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-plex-mono);
+  --font-display: var(--font-fraunces);
+}
+
+/* ============================================================================
+   BASE
+   ========================================================================= */
+
+html,
+body {
+  overflow-x: hidden;
 }
 
 body {
   background: var(--page-plane);
   color: var(--text-primary);
-  transition: background-color 0.2s ease, color 0.2s ease;
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* Solo en oscuro: los tres focos radiales de la referencia (oro arriba a la
+   derecha, azul arriba a la izquierda, fuego abajo al centro). Van en
+   position:fixed para que no se muevan al hacer scroll dentro de <main>.
+
+   En claro el plano queda gris liso a propósito —sin lavados de color y sin
+   imagen de fondo—: sobre una base clara esos degradados se leen como
+   manchas sucias, no como atmósfera. */
+:root.dark body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(1000px 600px at 84% -12%, color-mix(in srgb, var(--gold) 9%, transparent), transparent 60%),
+    radial-gradient(820px 520px at 2% 0%, color-mix(in srgb, var(--blue) 7%, transparent), transparent 60%),
+    radial-gradient(900px 700px at 50% 120%, color-mix(in srgb, var(--el-fuego) 6%, transparent), transparent 60%);
 }
 
 /* En @layer base para que las utilidades de Tailwind (@layer utilities,
@@ -167,13 +275,372 @@ body {
 }
 
 ::selection {
-  background: color-mix(in oklab, var(--primary) 30%, transparent);
+  background: var(--gold);
+  color: #0a0d14;
 }
 
-@keyframes fade-in-up {
+/* Barra de scroll delgada y del color del chasis, igual que la referencia. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--baseline);
+  border-radius: 6px;
+  border: 2px solid var(--page-plane);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+* {
+  scrollbar-color: var(--baseline) transparent;
+  scrollbar-width: thin;
+}
+
+/* ============================================================================
+   TIPOGRAFÍA DE INSTRUMENTACIÓN
+   Clases sueltas porque se repiten en decenas de lugares y siempre con los
+   mismos valores; escribirlas como cadenas de utilidades Tailwind cada vez
+   haría el markup ilegible.
+   ========================================================================= */
+
+.font-display {
+  font-family: var(--font-fraunces), Georgia, serif;
+}
+
+/* Solo h1 —el título de la vista— hereda el display. Los h2/h3 son títulos
+   de panel y siguen en Inter, igual que en la sala: la serif marca el nivel
+   editorial, no cualquier encabezado. */
+@layer base {
+  h1 {
+    font-family: var(--font-fraunces), Georgia, serif;
+    letter-spacing: -0.02em;
+  }
+}
+
+/* Etiqueta mono en versalitas: el "9px con tracking ancho" que la referencia
+   usa encima de cada cifra. */
+.label-mono {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.label-mono-sm {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 8.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Cifra grande tabular — nunca "baila" cuando el número cambia en vivo. */
+.stat-value {
+  font-family: var(--font-inter), ui-sans-serif, sans-serif;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.overline {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+/* ============================================================================
+   TARJETAS Y PANELES
+   ========================================================================= */
+
+/* El gradiente a 168° es lo que le da a las tarjetas de la referencia esa
+   sensación de chapa iluminada desde arriba; el inset blanco de 1px arriba
+   es el "filo" y la sombra larga y muy difusa es lo que las despega del
+   plano sin verse como una caja flotante.
+
+   El filo de color va como CAPA DE FONDO, no como un <span> absoluto: así
+   lo recorta el border-radius solo (sin necesidad de overflow:hidden, que
+   cortaría cualquier dropdown o tooltip montado dentro de la tarjeta). El
+   degradado a transparente al 70% es lo que evita que se lea como barra de
+   progreso. */
+.card-surface {
+  position: relative;
+  background:
+    linear-gradient(90deg, var(--edge-c, var(--gold)), transparent 70%) top left / 100% 1.5px no-repeat,
+    linear-gradient(168deg, var(--card-from), var(--card-to));
+  border: 1px solid var(--border-hairline);
+  border-radius: 14px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 20px 40px -30px rgba(0, 0, 0, 0.9);
+  transition: transform 0.18s, border-color 0.18s, box-shadow 0.18s;
+}
+
+.card-surface:hover {
+  border-color: var(--border-hi);
+}
+
+/* Solo las tarjetas navegables levantan al pasar el mouse; las de datos
+   puros no, para que el dashboard no "tiemble" al recorrerlo. */
+.card-lift:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-hi);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 26px 52px -28px rgba(0, 0, 0, 0.9);
+}
+
+/* Variante sin filo, para tarjetas anidadas o listas dentro de un panel. */
+.card-flat {
+  background: var(--surface-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: 10px;
+}
+
+/* Encabezado de panel: ícono + título + tag a la izquierda, acciones a la
+   derecha. */
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 13px;
+}
+
+.panel-title {
+  font-family: var(--font-inter), sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.panel-tag {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 8.5px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  white-space: nowrap;
+}
+
+/* ============================================================================
+   REJILLA BENTO (12 columnas)
+   ========================================================================= */
+
+/* minmax(0, 1fr) y no 1fr: el mínimo implícito de una pista `1fr` es
+   `auto`, así que una tarjeta con texto largo ensancha su propia columna y
+   se come el ancho de las demás — que es exactamente cómo se rompe la fila
+   de los cuatro elementos. Con mínimo 0 las doce pistas quedan siempre
+   iguales y el contenido se acomoda adentro. */
+.bento {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.c3 {
+  grid-column: span 3;
+}
+.c4 {
+  grid-column: span 4;
+}
+.c5 {
+  grid-column: span 5;
+}
+.c6 {
+  grid-column: span 6;
+}
+.c7 {
+  grid-column: span 7;
+}
+.c8 {
+  grid-column: span 8;
+}
+.c9 {
+  grid-column: span 9;
+}
+.c12 {
+  grid-column: span 12;
+}
+
+@media (max-width: 1100px) {
+  .c3 {
+    grid-column: span 6;
+  }
+  .c4,
+  .c5 {
+    grid-column: span 6;
+  }
+  .c7,
+  .c8,
+  .c9 {
+    grid-column: span 12;
+  }
+}
+
+@media (max-width: 620px) {
+  .c4,
+  .c5,
+  .c6,
+  .c7,
+  .c8,
+  .c9,
+  .c12 {
+    grid-column: span 12;
+  }
+  .c3 {
+    grid-column: span 6;
+  }
+}
+
+/* Separador de sección: etiqueta mono en oro + línea que se desvanece. */
+.subhead {
+  grid-column: span 12;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 14px 0 -2px;
+  scroll-margin-top: 80px;
+}
+
+.subhead .subhead-label {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.2em;
+  color: var(--gold);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.subhead .subhead-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--gold) 40%, transparent), transparent);
+}
+
+/* ============================================================================
+   PÍLDORAS, CHIPS Y BOTONES
+   ========================================================================= */
+
+.pill-mono {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+/* Sello de clasificación de la topbar ("USO INTERNO"). */
+.classchip {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+  color: var(--amber);
+  border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent);
+  background: color-mix(in srgb, var(--amber) 9%, transparent);
+  padding: 4px 9px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+/* Indicador "EN VIVO" con punto que parpadea. */
+.opchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--ok);
+  padding: 4px 9px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--ok) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ok) 38%, transparent);
+  white-space: nowrap;
+}
+
+.opchip.is-off {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 38%, transparent);
+}
+
+.opchip i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: blink 1.6s infinite;
+}
+
+/* Botón fantasma de la topbar: el borde se pone oro al pasar el mouse. */
+.tbtn {
+  font-family: var(--font-inter), sans-serif;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--border-hairline);
+  border-radius: 9px;
+  padding: 8px 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tbtn:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+/* Botón de navegación por elemento (chips de la barra superior). */
+.elnav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-inter), sans-serif;
+  font-weight: 600;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid var(--border-hairline);
+  border-radius: 9px;
+  padding: 7px 11px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.elnav-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-hi);
+}
+
+/* ============================================================================
+   ANIMACIONES
+   Los mismos nombres y curvas de la referencia.
+   ========================================================================= */
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes rise-up {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(9px);
   }
   to {
     opacity: 1;
@@ -181,31 +648,124 @@ body {
   }
 }
 
-.animate-fade-in-up {
-  animation: fade-in-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
-@keyframes pulse-soft {
+@keyframes bar-grow {
+  from {
+    width: 0;
+  }
+}
+
+@keyframes sec-pulse {
   0%,
   100% {
     opacity: 1;
   }
   50% {
-    opacity: 0.55;
+    opacity: 0.45;
   }
 }
 
 .animate-pulse-soft {
-  animation: pulse-soft 1.6s ease-in-out infinite;
+  animation: sec-pulse 1.6s ease-in-out infinite;
 }
 
-/* Borde con brillo giratorio (efecto "spinning highlight"), técnica de
-   https://cruip.com/animated-gradient-borders-with-tailwind-css/ adaptada a
-   nuestros tokens. Un conic-gradient rota alrededor del borde vía la
-   variable animada --border-angle; el registro con @property es lo que
+.dot-live {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  animation: blink 1.6s infinite;
+}
+
+/* Entrada escalonada del bento: cada hijo directo sube y aparece con ~30ms
+   de diferencia. Los separadores de sección se excluyen para que la línea
+   de la sección ya esté puesta cuando entran sus tarjetas. */
+.bento > *:not(.subhead) {
+  opacity: 0;
+  animation: rise-up 0.5s ease forwards;
+}
+
+.bento > *:nth-child(1) {
+  animation-delay: 0.02s;
+}
+.bento > *:nth-child(2) {
+  animation-delay: 0.05s;
+}
+.bento > *:nth-child(3) {
+  animation-delay: 0.08s;
+}
+.bento > *:nth-child(4) {
+  animation-delay: 0.11s;
+}
+.bento > *:nth-child(5) {
+  animation-delay: 0.15s;
+}
+.bento > *:nth-child(6) {
+  animation-delay: 0.19s;
+}
+.bento > *:nth-child(7) {
+  animation-delay: 0.23s;
+}
+.bento > *:nth-child(n + 8) {
+  animation-delay: 0.27s;
+}
+
+/* Entrada de la vista completa al cambiar de ruta. */
+.animate-rise {
+  animation: fade-in 0.35s ease both;
+}
+
+/* Reemplaza al viejo .animate-fade-in-up (mismo nombre para no tocar los
+   ~40 archivos que ya lo usan), ahora con la curva de la referencia. */
+.animate-fade-in-up {
+  animation: rise-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Aparición retardada por índice: se pasa `--d` inline desde el componente
+   (feeds, listas de alertas, filas de tabla). */
+.reveal {
+  animation: fade-in 0.4s ease both;
+  animation-delay: var(--d, 0s);
+}
+
+/* Barras de progreso/leaderboard que crecen desde 0 al montarse. */
+.bar-grow {
+  animation: bar-grow 0.8s cubic-bezier(0.3, 0.8, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bento > *,
+  .reveal,
+  .bar-grow,
+  .animate-rise,
+  .animate-fade-in-up {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .dot-live,
+  .opchip i {
+    animation: none !important;
+  }
+}
+
+/* ============================================================================
+   BORDE CON BRILLO GIRATORIO
+   Técnica de https://cruip.com/animated-gradient-borders-with-tailwind-css/
+   adaptada a nuestros tokens. Un conic-gradient rota alrededor del borde vía
+   la variable animada --border-angle; el registro con @property es lo que
    permite que el ángulo interpole suave en vez de saltar. Solo Chromium
    soporta @property hoy — en otros navegadores el borde queda fijo (sin
-   girar) en vez de romperse, así que es una degradación segura. */
+   girar) en vez de romperse, así que es una degradación segura.
+   ========================================================================= */
+
 @property --border-angle {
   syntax: "<angle>";
   inherits: false;
@@ -218,11 +778,6 @@ body {
   }
 }
 
-/* Solo botones primarios importantes, y solo en dark mode (en claro el
-   fondo ya es casi blanco y el brillo giratorio no se distingue del
-   borde normal, así que no vale la pena el costo visual). El relleno del
-   padding-box es el mismo --primary sólido del botón (no un tono
-   translúcido como en la versión de tarjetas) para no taparle el fondo. */
 :root.dark .glow-btn {
   position: relative;
   border: 1px solid transparent;
@@ -240,10 +795,6 @@ body {
   animation: border-spin 4s linear infinite;
 }
 
-/* Misma técnica que .glow-btn pero en --status-critical fijo en vez de
-   --primary — para botones destructivos (ej. "Parar campañas"), que deben
-   verse rojos sin importar el color de acento de la página en la que estén
-   (Tareas usa .accent-agua, que pisa --primary a verde). */
 :root.dark .glow-btn-critical {
   position: relative;
   border: 1px solid transparent;
@@ -259,4 +810,171 @@ body {
       )
       border-box;
   animation: border-spin 4s linear infinite;
+}
+
+/* ============================================================================
+   PANTALLA DE ENTRADA (SPLASH)
+   ========================================================================= */
+
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  overflow: hidden;
+  animation: splash-in 0.35s ease both, splash-out 0.55s ease 1.7s both;
+}
+
+@keyframes splash-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes splash-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+.splash-core {
+  text-align: center;
+  position: relative;
+  z-index: 2;
+  padding: 0 20px;
+  animation: splash-pop 0.55s cubic-bezier(0.2, 0.8, 0.3, 1.25) both;
+}
+
+@keyframes splash-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.82) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.splash-ic {
+  width: 94px;
+  height: 94px;
+  border-radius: 26px;
+  border: 1px solid;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 22px;
+  animation: splash-ic 1.4s ease both;
+}
+
+@keyframes splash-ic {
+  0% {
+    transform: scale(0.5) rotate(-14deg);
+    opacity: 0;
+  }
+  45% {
+    transform: scale(1.06) rotate(2deg);
+    opacity: 1;
+  }
+  70% {
+    transform: scale(1) rotate(0);
+  }
+}
+
+.splash-name {
+  font-family: var(--font-fraunces), Georgia, serif;
+  font-size: 56px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1;
+  color: #fff;
+}
+
+.splash-tag {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  margin-top: 12px;
+}
+
+.splash-lead {
+  font-family: var(--font-fraunces), Georgia, serif;
+  font-size: 18px;
+  font-style: italic;
+  color: var(--text-secondary);
+  margin-top: 14px;
+}
+
+.splash-rings {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.splash-ring {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 1px solid;
+  animation: ring-expand 2.4s ease-out infinite;
+}
+
+@keyframes ring-expand {
+  0% {
+    transform: scale(0.4);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(3.4);
+    opacity: 0;
+  }
+}
+
+@media (max-width: 620px) {
+  .splash-name {
+    font-size: 38px;
+  }
+  .splash-ic {
+    width: 74px;
+    height: 74px;
+  }
+}
+
+/* ============================================================================
+   HERO EDITORIAL
+   ========================================================================= */
+
+.hero-h1 {
+  font-family: var(--font-fraunces), Georgia, serif;
+  font-size: 42px;
+  font-weight: 600;
+  margin: 10px 0 6px;
+  letter-spacing: -0.025em;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.hero-p {
+  font-family: var(--font-inter), sans-serif;
+  font-size: 14.5px;
+  color: var(--text-secondary);
+  max-width: 620px;
+  line-height: 1.66;
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .hero-h1 {
+    font-size: 32px;
+  }
 }

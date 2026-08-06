@@ -178,10 +178,10 @@ export default function LikeCampaignPage() {
           <ArrowLeft className="h-3.5 w-3.5" /> Tareas
         </Link>
         <div className="mt-2 flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-series-3 text-white">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-series-3/55 bg-series-3/12 text-series-3">
             <Heart className="h-4.5 w-4.5" />
           </span>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink">Campaña de likes</h1>
+          <h1 className="text-2xl font-semibold text-ink">Campaña de likes</h1>
         </div>
         <p className="mt-2 text-sm text-ink-secondary">
           Pega un link, elige los perfiles candidatos y se crea una tarea de like por cada uno.
@@ -227,7 +227,7 @@ export default function LikeCampaignPage() {
         </Card>
       )}
 
-      <form onSubmit={submit} className="flex flex-col gap-5 rounded-2xl border border-hairline bg-surface/70 p-5 shadow-sm backdrop-blur-xl">
+      <form onSubmit={submit} className="card-surface flex flex-col gap-5 p-5">
         <ExistingCampaignPicker
           type="like"
           mode={campaignMode}

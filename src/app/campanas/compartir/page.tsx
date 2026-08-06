@@ -227,7 +227,7 @@ export default function ShareDashboardsPage() {
             >
               <ArrowLeft className="h-4 w-4" />
             </Link>
-            <h1 className="text-2xl font-semibold tracking-tight text-ink">Dashboards compartidos</h1>
+            <h1 className="text-2xl font-semibold text-ink">Dashboards compartidos</h1>
           </div>
           <p className="mt-1 text-sm text-ink-secondary">
             Crea enlaces públicos con las campañas que quieras mostrar a tus clientes.

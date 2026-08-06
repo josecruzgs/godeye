@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 export default function Modal({
@@ -14,6 +15,11 @@ export default function Modal({
   title: string;
   children: React.ReactNode;
 }) {
+  // El portal necesita document.body, que no existe en el render del
+  // servidor: se monta recién en el cliente.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -27,14 +33,27 @@ export default function Modal({
     };
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  /**
+   * Va en un portal a <body> y no en su lugar del árbol porque `position:
+   * fixed` deja de referirse al viewport si CUALQUIER ancestro tiene
+   * transform, filter, backdrop-filter o will-change — ese ancestro pasa a
+   * ser el bloque contenedor. Las páginas envuelven su contenido en
+   * `.animate-fade-in-up`, cuya animación termina con `transform:
+   * translateY(0)` y fill-mode `both`, así que el transform queda puesto para
+   * siempre: sin el portal, el diálogo se centra dentro del contenedor de la
+   * página en vez de la pantalla y se sale por arriba.
+   */
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="animate-fade-in-up absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="animate-fade-in-up relative flex max-h-[85vh] w-full max-w-lg flex-col rounded-2xl border border-hairline bg-surface shadow-lg">
-        <div className="flex items-center justify-between border-b border-hairline px-6 py-4">
-          <h2 className="text-base font-semibold text-ink">{title}</h2>
+      <div className="animate-fade-in-up absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={onClose} />
+      {/* Sombra larga y muy difusa (no la `shadow-lg` genérica): es lo que
+          despega el diálogo del plano sin necesidad de un borde fuerte,
+          igual que las tarjetas de la sala. */}
+      <div className="card-surface animate-fade-in-up relative flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden shadow-[0_26px_64px_-18px_rgba(0,0,0,0.9)]">
+        <div className="flex shrink-0 items-center justify-between border-b border-hairline px-6 py-4">
+          <h2 className="font-display text-lg font-semibold text-ink">{title}</h2>
           <button
             type="button"
             onClick={onClose}
@@ -44,8 +63,13 @@ export default function Modal({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="overflow-y-auto px-6 py-5">{children}</div>
+        {/* min-h-0 es lo que hace que esto scrollee de verdad: un hijo flex
+            tiene min-height:auto por defecto, así que sin esto no se encoge
+            por debajo de su contenido, la caja crece más allá del max-h y el
+            encabezado se sale por arriba del viewport. */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

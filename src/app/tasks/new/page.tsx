@@ -194,11 +194,11 @@ function NewTaskContent() {
 
   return (
     <div className="accent-agua flex animate-fade-in-up flex-col gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight text-ink">Nueva tarea</h1>
+      <h1 className="text-2xl font-semibold text-ink">Nueva tarea</h1>
 
       {error && <p className="rounded-xl bg-critical/10 p-3 text-sm text-critical">{error}</p>}
 
-      <form onSubmit={submit} className="flex flex-col gap-5 rounded-2xl border border-hairline bg-surface p-5 shadow-sm">
+      <form onSubmit={submit} className="card-surface flex flex-col gap-5 p-5">
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="flex flex-col gap-1">
             <label className="text-xs text-ink-muted">Nombre</label>

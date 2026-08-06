@@ -594,10 +594,10 @@ export default function AutoProfilePage() {
           <ArrowLeft className="h-3.5 w-3.5" /> Perfiles
         </Link>
         <div className="mt-2 flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-white">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-primary/55 bg-primary/12 text-primary">
             <UserCog className="h-4.5 w-4.5" />
           </span>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink">Auto Profile</h1>
+          <h1 className="text-2xl font-semibold text-ink">Auto Profile</h1>
         </div>
         <p className="mt-2 text-sm text-ink-secondary">
           Actualiza nombre y ciudad de tus perfiles — masivamente desde un Sheet, o eligiendo perfil por perfil.
@@ -817,7 +817,7 @@ export default function AutoProfilePage() {
           )}
 
           {matched.length > 0 && (
-            <form onSubmit={submitSheet} className="flex flex-col gap-5 rounded-2xl border border-hairline bg-surface/70 p-5 shadow-sm backdrop-blur-xl">
+            <form onSubmit={submitSheet} className="card-surface flex flex-col gap-5 p-5">
               <h2 className="text-sm font-semibold text-ink">3. Configura y crea las tareas</h2>
               {renderFooter(sheetCount, sheetMissing)}
             </form>
@@ -955,7 +955,7 @@ export default function AutoProfilePage() {
             )}
           </Card>
 
-          <div className="flex flex-col gap-5 rounded-2xl border border-hairline bg-surface/70 p-5 shadow-sm backdrop-blur-xl">
+          <div className="card-surface flex flex-col gap-5 p-5">
             <h2 className="text-sm font-semibold text-ink">
               3. Configura y crea tareas: <span className="text-primary">{manualCount}</span> perfil{manualCount === 1 ? "" : "es"} con cambios
             </h2>

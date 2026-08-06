@@ -46,21 +46,39 @@ function LoginForm() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-page px-6">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-6">
+      {/* Anillos que se expanden detrás de la tarjeta: la misma cortinilla
+          del splash, en reposo, para que el gate ya se sienta parte de la
+          sala antes de entrar. */}
+      <div className="splash-rings" aria-hidden>
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="splash-ring"
+            style={{ borderColor: "color-mix(in srgb, var(--gold) 30%, transparent)", animationDelay: `${i * 0.8}s` }}
+          />
+        ))}
+      </div>
+
       <form
         onSubmit={submit}
-        className="flex w-full max-w-sm flex-col gap-4 rounded-2xl border border-hairline bg-surface/70 p-6 shadow-sm backdrop-blur-xl"
+        className="card-surface animate-fade-in-up relative z-10 flex w-full max-w-sm flex-col gap-4 p-7"
       >
         <div className="flex flex-col items-center gap-2 text-center">
-          <Image src="/media/logoblack.png" alt="Ojo de Dios" width={40} height={40} className="object-contain dark:hidden" />
-          <Image src="/media/logo.png" alt="Ojo de Dios" width={40} height={40} className="hidden object-contain dark:block" />
-          <h1 className="text-lg font-semibold text-ink">Ojo de Dios</h1>
-          <p className="flex items-center gap-1.5 text-sm text-ink-secondary">
+          <Image src="/media/logoblack.png" alt="Ojo de Dios" width={44} height={44} className="object-contain dark:hidden" />
+          <Image src="/media/logo.png" alt="Ojo de Dios" width={44} height={44} className="hidden object-contain dark:block" />
+          <h1 className="font-display mt-1 text-2xl font-semibold tracking-[-0.02em] text-ink">Ojo de Dios</h1>
+          <p className="label-mono-sm">Sonora · Sala de inteligencia</p>
+          <p className="mt-2 flex items-center gap-1.5 text-[13px] text-ink-secondary">
             <Lock className="h-3.5 w-3.5" /> Ingresa la contraseña para continuar
           </p>
         </div>
 
-        {error && <p className="rounded-lg bg-critical/10 p-2 text-center text-sm text-critical">{error}</p>}
+        {error && (
+          <p className="rounded-[7px] border border-critical/40 bg-critical/10 p-2 text-center font-mono text-[11px] text-critical">
+            {error}
+          </p>
+        )}
 
         <input
           autoFocus
@@ -69,15 +87,17 @@ function LoginForm() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Contraseña"
-          className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
+          className="rounded-[9px] border border-hairline bg-page px-3 py-2.5 text-sm outline-none transition-colors focus:border-gold"
         />
 
         <button
           disabled={loading || !password}
-          className="glow-btn rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-fg shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md disabled:pointer-events-none disabled:opacity-50"
+          className="glow-btn rounded-[9px] bg-primary px-4 py-2.5 text-sm font-semibold text-primary-fg shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md disabled:pointer-events-none disabled:opacity-50"
         >
           {loading ? "Entrando..." : "Entrar"}
         </button>
+
+        <p className="classchip mx-auto mt-1">USO INTERNO</p>
       </form>
     </div>
   );

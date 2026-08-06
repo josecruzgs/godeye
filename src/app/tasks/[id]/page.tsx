@@ -84,7 +84,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
           <ArrowLeft className="h-3.5 w-3.5" /> Tareas
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight text-ink">{task.name}</h1>
+          <h1 className="text-2xl font-semibold text-ink">{task.name}</h1>
           <StatusBadge status={task.status} />
         </div>
         <p className="mt-1 text-sm text-ink-secondary">

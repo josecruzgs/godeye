@@ -18,7 +18,7 @@ import {
   ChevronDown,
   Droplets,
   Wind,
-  Tornado,
+  Radar,
   Mountain,
   Trees,
   Flame,
@@ -43,7 +43,9 @@ type NavSection = {
 
 // Clases completas y literales a propósito (no interpoladas): el scanner de
 // Tailwind necesita verlas escritas tal cual en el código para generarlas.
-const DEFAULT_ACCENT = { accentText: "text-primary", accentBg: "bg-primary/10", accentSolid: "bg-primary" };
+// El oro es el acento de la casa — los módulos de un elemento lo pisan con
+// el color de su elemento.
+const DEFAULT_ACCENT = { accentText: "text-gold", accentBg: "bg-gold/10", accentSolid: "bg-gold" };
 
 const NAV_SECTIONS: NavSection[] = [
   {
@@ -74,19 +76,19 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Viento",
     icon: Wind,
     collapsible: true,
-    accentText: "text-series-1",
-    accentBg: "bg-series-1/10",
-    accentSolid: "bg-series-1",
-    items: [{ href: "/scrapping", label: "Scrapping", icon: Tornado }],
+    accentText: "text-viento",
+    accentBg: "bg-viento/10",
+    accentSolid: "bg-viento",
+    items: [{ href: "/scrapping", label: "Escucha", icon: Radar }],
   },
   {
     key: "tierra",
     label: "Tierra",
     icon: Mountain,
     collapsible: true,
-    accentText: "text-series-6",
-    accentBg: "bg-series-6/10",
-    accentSolid: "bg-series-6",
+    accentText: "text-tierra",
+    accentBg: "bg-tierra/10",
+    accentSolid: "bg-tierra",
     items: [{ href: "/actividades", label: "Actividades", icon: Trees }],
   },
   {
@@ -94,9 +96,9 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Fuego",
     icon: Flame,
     collapsible: true,
-    accentText: "text-critical",
-    accentBg: "bg-critical/10",
-    accentSolid: "bg-critical",
+    accentText: "text-fuego",
+    accentBg: "bg-fuego/10",
+    accentSolid: "bg-fuego",
     items: [{ href: "/dia-d", label: "Día D", icon: Rocket }],
   },
   {
@@ -221,8 +223,8 @@ export default function Sidebar() {
         </div>
         {showLabels && (
           <div className="animate-fade-in-up min-w-0 flex-1 overflow-hidden">
-            <p className="truncate text-sm font-semibold tracking-tight text-ink">Ojo de Dios</p>
-            <p className="truncate text-xs text-ink-muted">By AgentIQ</p>
+            <p className="font-display truncate text-[17px] font-semibold leading-none text-ink">Ojo de Dios</p>
+            <p className="label-mono-sm mt-1 truncate">Sonora · Sala de inteligencia</p>
           </div>
         )}
         <button
@@ -250,7 +252,10 @@ export default function Sidebar() {
                   className="animate-fade-in-up flex items-center gap-2 px-3 pb-1 text-left"
                 >
                   <SectionIcon className={`h-3.5 w-3.5 shrink-0 ${section.accentText}`} />
-                  <span className="flex-1 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+                  {/* La etiqueta de sección va en mono con tracking ancho —
+                      el mismo registro tipográfico que los separadores de
+                      sección del dashboard. */}
+                  <span className={`flex-1 font-mono text-[9.5px] uppercase tracking-[0.2em] ${section.accentText}`}>
                     {section.label}
                   </span>
                   {section.collapsible && (
@@ -261,7 +266,7 @@ export default function Sidebar() {
                 </button>
               ) : (
                 showLabels && (
-                  <p className="animate-fade-in-up px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+                  <p className="animate-fade-in-up px-3 pb-1 font-mono text-[9.5px] uppercase tracking-[0.2em] text-ink-muted">
                     {section.label}
                   </p>
                 )
@@ -281,9 +286,13 @@ export default function Sidebar() {
                         key={item.href}
                         href={item.href}
                         title={collapsed ? item.label : undefined}
-                        className={`group relative flex items-center gap-3 rounded-lg py-2 text-sm font-medium transition-colors ${
+                        className={`group relative flex items-center gap-3 rounded-[9px] border py-2 text-[13px] font-medium transition-all duration-150 ${
                           showLabels ? "pl-7 pr-3" : "px-3"
-                        } ${active ? `${section.accentBg} ${section.accentText}` : "text-ink-secondary hover:bg-page hover:text-ink"}`}
+                        } ${
+                          active
+                            ? `${section.accentBg} ${section.accentText} border-current/35`
+                            : "border-transparent text-ink-secondary hover:border-hairline hover:bg-surface-2 hover:text-ink"
+                        }`}
                       >
                         {active && <span className={`absolute left-3 h-5 w-0.5 rounded-full ${section.accentSolid}`} />}
                         <Icon className={`h-4 w-4 shrink-0 ${active ? section.accentText : "text-ink-muted group-hover:text-ink"}`} />

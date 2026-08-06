@@ -94,8 +94,8 @@ export default function GroupsPage() {
     <div className="flex animate-fade-in-up flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink">Grupos</h1>
-          <p className="mt-1 text-sm text-ink-secondary">{total} en total</p>
+          <h1 className="text-2xl font-semibold text-ink">Grupos</h1>
+          <p className="label-mono-sm mt-1">{total} en total</p>
         </div>
         <button
           onClick={sync}

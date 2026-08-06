@@ -1,22 +1,35 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Fraunces, Inter, IBM_Plex_Mono } from "next/font/google";
 import ThemeScript from "@/components/ThemeScript";
-import SectionBackdrop from "@/components/SectionBackdrop";
 import AppShell from "@/components/AppShell";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Tres familias con roles fijos, como la sala de inteligencia: Fraunces
+// (display) para titulares, Inter para UI y cuerpo, IBM Plex Mono para
+// etiquetas de instrumentación y cifras.
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  // Fraunces es variable en dos ejes; `opsz` es el que hace que a 42px las
+  // astas se afinen en vez de verse como el mismo dibujo escalado. Sin
+  // pedirlo explícitamente, next/font solo trae `wght`.
+  axes: ["opsz"],
+});
+
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const plexMono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
   subsets: ["latin"],
+  // IBM Plex Mono no es variable: hay que enumerar los pesos que se usan.
+  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
-  title: "Ojo de Dios — Automatización Social Media",
+  title: "Ojo de Dios · Sala de Inteligencia",
   description: "Panel para automatizar cuentas de redes sociales con Ojo de Dios",
   // Apunta directo a public/media/*.png en vez de mantener una copia en
   // src/app/icon.png: así el favicon nunca se puede desincronizar del logo
@@ -39,7 +52,7 @@ export default function RootLayout({
   return (
     <html
       lang="es"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${inter.variable} ${fraunces.variable} ${plexMono.variable} h-full antialiased`}
       // ThemeScript toggles the "dark" class on this element before React
       // hydrates (to avoid a flash of the wrong theme); that intentional,
       // out-of-band mutation is exactly what this flag exists to allow.
@@ -47,7 +60,6 @@ export default function RootLayout({
     >
       <body className="relative flex min-h-full overflow-hidden bg-page text-ink">
         <ThemeScript />
-        <SectionBackdrop />
         <AppShell>{children}</AppShell>
       </body>
     </html>

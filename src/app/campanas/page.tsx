@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import Card from "@/components/Card";
+import ElementIcon from "@/components/ui/ElementIcon";
 import Pagination from "@/components/Pagination";
 import StatusBadge from "@/components/StatusBadge";
 
@@ -83,7 +84,6 @@ const TYPE_ROUTES: Record<string, string> = {
   comment: "/tasks/comment",
   post: "/tasks/post",
   warmup: "/tasks/warmup",
-  scrape: "/scrapping",
 };
 
 export default function CampaignsPage() {
@@ -324,9 +324,14 @@ function CampaignsContent() {
   return (
     <div className="accent-agua flex animate-fade-in-up flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink">Campañas</h1>
-          <p className="mt-1 text-sm text-ink-secondary">{total} campañas con tareas agrupadas por perfil</p>
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-agua/55 bg-agua/12 text-agua">
+            <ElementIcon name="agua" size={18} />
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold text-ink">Campañas</h1>
+            <p className="label-mono-sm mt-1">{total} campañas · tareas agrupadas por perfil</p>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
@@ -366,24 +371,24 @@ function CampaignsContent() {
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Card className="p-4">
-          <p className="text-xs uppercase tracking-wide text-ink-muted">Tareas</p>
-          <p className="mt-2 text-2xl font-semibold text-ink">{totals.tasks}</p>
+          <p className="label-mono">Tareas</p>
+          <p className="stat-value mt-2.5">{totals.tasks}</p>
         </Card>
         <Card className="p-4">
-          <p className="text-xs uppercase tracking-wide text-ink-muted">Corriendo</p>
-          <p className="mt-2 text-2xl font-semibold text-warning">{totals.running}</p>
+          <p className="label-mono">Corriendo</p>
+          <p className="stat-value mt-2.5 text-warning">{totals.running}</p>
         </Card>
         <Card className="p-4">
-          <p className="text-xs uppercase tracking-wide text-ink-muted">En cola</p>
-          <p className="mt-2 text-2xl font-semibold text-primary">{totals.queued}</p>
+          <p className="label-mono">En cola</p>
+          <p className="stat-value mt-2.5 text-primary">{totals.queued}</p>
         </Card>
         <Card className="p-4">
-          <p className="text-xs uppercase tracking-wide text-ink-muted">Exitosas</p>
-          <p className="mt-2 text-2xl font-semibold text-success">{totals.success}</p>
+          <p className="label-mono">Exitosas</p>
+          <p className="stat-value mt-2.5 text-success">{totals.success}</p>
         </Card>
         <Card className="p-4">
-          <p className="text-xs uppercase tracking-wide text-ink-muted">Fallidas</p>
-          <p className="mt-2 text-2xl font-semibold text-critical">{totals.failed}</p>
+          <p className="label-mono">Fallidas</p>
+          <p className="stat-value mt-2.5 text-critical">{totals.failed}</p>
         </Card>
       </div>
 
@@ -627,7 +632,7 @@ function CampaignsContent() {
                   <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
                     {Object.entries(detail.campaign.counts).map(([key, value]) => (
                       <div key={key} className="rounded-xl border border-hairline bg-page p-3">
-                        <p className="text-xs uppercase tracking-wide text-ink-muted">{key}</p>
+                        <p className="label-mono">{key}</p>
                         <p className="mt-1 text-lg font-semibold text-ink">{value}</p>
                       </div>
                     ))}

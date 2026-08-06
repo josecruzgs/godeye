@@ -138,10 +138,10 @@ export default function WarmupCampaignPage() {
           <ArrowLeft className="h-3.5 w-3.5" /> Tareas
         </Link>
         <div className="mt-2 flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-series-4 text-white">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-series-4/55 bg-series-4/12 text-series-4">
             <Activity className="h-4.5 w-4.5" />
           </span>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink">Campaña de warmup</h1>
+          <h1 className="text-2xl font-semibold text-ink">Campaña de warmup</h1>
         </div>
         <p className="mt-2 text-sm text-ink-secondary">
           Abre el feed de cada perfil y alterna scroll + espera varias veces, sin interactuar con nada — útil para
@@ -188,7 +188,7 @@ export default function WarmupCampaignPage() {
         </Card>
       )}
 
-      <form onSubmit={submit} className="flex flex-col gap-5 rounded-2xl border border-hairline bg-surface/70 p-5 shadow-sm backdrop-blur-xl">
+      <form onSubmit={submit} className="card-surface flex flex-col gap-5 p-5">
         <ExistingCampaignPicker
           type="warmup"
           mode={campaignMode}

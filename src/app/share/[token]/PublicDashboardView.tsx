@@ -204,8 +204,8 @@ export default function PublicDashboardView({
           <Image src="/media/logoblack.png" alt="Ojo de Dios" width={36} height={36} className="object-contain dark:hidden" />
           <Image src="/media/logo.png" alt="Ojo de Dios" width={36} height={36} className="hidden object-contain dark:block" />
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-ink">{name}</h1>
-            <p className="text-sm text-ink-secondary">
+            <h1 className="text-2xl font-semibold text-ink">{name}</h1>
+            <p className="label-mono-sm mt-1 normal-case tracking-normal">
               {campaigns.length} campaña{campaigns.length === 1 ? "" : "s"} · actualizado{" "}
               {/* formatDate depende del locale/zona horaria del runtime — el
                   servidor y el navegador casi nunca coinciden, así que se
@@ -227,34 +227,34 @@ export default function PublicDashboardView({
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <Card className="p-4">
-          <p className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-ink-muted">
+          <p className="label-mono flex items-center gap-1.5">
             <ListChecks className="h-3.5 w-3.5" /> Tareas
           </p>
-          <p className="mt-2 text-2xl font-semibold text-ink">{totals.tasks}</p>
+          <p className="stat-value mt-2.5">{totals.tasks}</p>
         </Card>
         <Card className="p-4">
-          <p className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-ink-muted">
+          <p className="label-mono flex items-center gap-1.5">
             <RefreshCcw className="h-3.5 w-3.5" /> Corriendo
           </p>
-          <p className="mt-2 text-2xl font-semibold text-warning">{totals.running}</p>
+          <p className="stat-value mt-2.5 text-warning">{totals.running}</p>
         </Card>
         <Card className="p-4">
-          <p className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-ink-muted">
+          <p className="label-mono flex items-center gap-1.5">
             <Clock className="h-3.5 w-3.5" /> En cola
           </p>
-          <p className="mt-2 text-2xl font-semibold text-primary">{totals.queued}</p>
+          <p className="stat-value mt-2.5 text-primary">{totals.queued}</p>
         </Card>
         <Card className="p-4">
-          <p className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-ink-muted">
+          <p className="label-mono flex items-center gap-1.5">
             <CheckCircle2 className="h-3.5 w-3.5" /> Exitosas
           </p>
-          <p className="mt-2 text-2xl font-semibold text-success">{totals.success}</p>
+          <p className="stat-value mt-2.5 text-success">{totals.success}</p>
         </Card>
         <Card className="p-4">
-          <p className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-ink-muted">
+          <p className="label-mono flex items-center gap-1.5">
             <XCircle className="h-3.5 w-3.5" /> Fallidas
           </p>
-          <p className="mt-2 text-2xl font-semibold text-critical">{totals.failed}</p>
+          <p className="stat-value mt-2.5 text-critical">{totals.failed}</p>
         </Card>
       </div>
 

@@ -37,6 +37,24 @@ export async function dbConnect() {
       });
   }
 
-  cache.conn = await cache.promise;
+  const pending = cache.promise;
+
+  try {
+    cache.conn = await pending;
+  } catch (err) {
+    // Sin esto la promesa rechazada queda cacheada para siempre, y como el
+    // caché vive en `global` (sobrevive al hot reload y a los invocations
+    // del serverless), CUALQUIER fallo de conexión —un hipo de red, unas
+    // credenciales que ya corregiste en el .env— deja la app tirando el
+    // mismo error hasta reiniciar el proceso. Limpiándola, la próxima
+    // petición vuelve a intentar conectar de cero.
+    //
+    // La comparación con `pending` es por si dos requests concurrentes
+    // fallan a la vez: la segunda no debe borrar el reintento que la
+    // primera ya dejó en marcha.
+    if (cache.promise === pending) cache.promise = null;
+    throw err;
+  }
+
   return cache.conn;
 }

@@ -1,41 +1,56 @@
-// Colores por "elemento" de sección del sidebar. Los valores son clases de
-// Tailwind completas (no interpoladas) para que el scanner de Tailwind las
-// detecte — ver src/app/globals.css por los tokens --color-* detrás.
+// Colores por "elemento" de sección. Los cuatro elementos son la columna
+// vertebral del producto: cada módulo pertenece a uno y hereda su color, su
+// ícono y su lema. Ver src/app/globals.css por los tokens --el-* detrás.
 export type ElementKey = "agua" | "viento" | "tierra" | "fuego";
 
-// "bg" es un color sólido (no translúcido) — se combina con texto blanco en
-// el ícono; "text" se usa aparte para textos tintados (ver DisabledModule).
+// Clases de Tailwind completas (no interpoladas) para que el scanner las
+// detecte. "bg" es un color sólido — se combina con texto oscuro en el ícono;
+// "text" se usa aparte para textos tintados (ver DisabledModule).
 export const ELEMENT_ACCENTS: Record<ElementKey, { text: string; bg: string }> = {
-  agua: { text: "text-primary", bg: "bg-primary" },
-  viento: { text: "text-series-1", bg: "bg-series-1" },
-  tierra: { text: "text-series-6", bg: "bg-series-6" },
-  fuego: { text: "text-critical", bg: "bg-critical" },
+  agua: { text: "text-agua", bg: "bg-agua" },
+  viento: { text: "text-viento", bg: "bg-viento" },
+  tierra: { text: "text-tierra", bg: "bg-tierra" },
+  fuego: { text: "text-fuego", bg: "bg-fuego" },
 };
 
-// Color crudo (no clase Tailwind) para el glow radial de la sidebar — se usa
-// directo en un radial-gradient() por style inline, así que necesita el
-// valor real de la variable CSS, no una clase.
-export const ELEMENT_GLOW: Record<ElementKey, string> = {
-  agua: "var(--agua)",
-  viento: "var(--series-1)",
-  tierra: "var(--series-6)",
-  fuego: "var(--status-critical)",
+// Color crudo (no clase Tailwind) para degradados, filos de tarjeta y glows
+// radiales — se usan directo por style inline, así que necesitan el valor
+// real de la variable CSS, no una clase.
+export const ELEMENT_COLOR: Record<ElementKey, string> = {
+  agua: "var(--el-agua)",
+  viento: "var(--el-viento)",
+  tierra: "var(--el-tierra)",
+  fuego: "var(--el-fuego)",
 };
+
+// Alias histórico: el glow de la sidebar y el TopGlow ya lo importaban con
+// este nombre.
+export const ELEMENT_GLOW = ELEMENT_COLOR;
 
 // Glow por defecto para páginas fuera de los 4 elementos (Dashboard,
-// Perfiles, Grupos...).
-export const DEFAULT_GLOW = "var(--primary)";
+// Perfiles, Grupos...). El oro es el color de la casa.
+export const DEFAULT_GLOW = "var(--gold)";
 
-export const ELEMENT_BACKGROUNDS: Record<ElementKey, string> = {
-  agua: "/media/backgrounds/agua.jpg",
-  viento: "/media/backgrounds/viento.jpg",
-  tierra: "/media/backgrounds/tierra.jpg",
-  fuego: "/media/backgrounds/fuego.jpg",
+// Clase de acento que reasigna --primary dentro de la página (ver
+// .accent-* en globals.css): los botones, focos y enlaces de un módulo
+// toman el color de su elemento sin tocar archivo por archivo.
+export const ELEMENT_ACCENT_CLASS: Record<ElementKey, string> = {
+  agua: "accent-agua",
+  viento: "accent-viento",
+  tierra: "accent-tierra",
+  fuego: "accent-fuego",
 };
 
-// Patrón de fondo para páginas que no pertenecen a ninguno de los 4
-// elementos (Dashboard, Perfiles, Grupos...).
-export const GENERAL_BACKGROUND = "/media/backgrounds/general.jpg";
+// Nombre, rol y lema de cada elemento — el copy de la sala de inteligencia.
+export const ELEMENT_META: Record<ElementKey, { name: string; title: string; lead: string }> = {
+  viento: { name: "Viento", title: "Inteligencia y monitoreo", lead: "El viento todo lo observa." },
+  agua: { name: "Agua", title: "Narrativa y comunicación", lead: "La marea define el cauce." },
+  tierra: { name: "Tierra", title: "Operación territorial", lead: "La fuerza está en el terreno." },
+  fuego: { name: "Fuego", title: "Jornada decisiva", lead: "El día decisivo." },
+};
+
+// Orden canónico de presentación (viento → agua → tierra → fuego).
+export const ELEMENT_ORDER: ElementKey[] = ["viento", "agua", "tierra", "fuego"];
 
 const ELEMENT_PATH_PREFIXES: { prefix: string; key: ElementKey }[] = [
   { prefix: "/campanas", key: "agua" },

@@ -295,10 +295,10 @@ export default function CommentCampaignPage() {
           <ArrowLeft className="h-3.5 w-3.5" /> Tareas
         </Link>
         <div className="mt-2 flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-series-5 text-white">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-series-5/55 bg-series-5/12 text-series-5">
             <MessageSquare className="h-4.5 w-4.5" />
           </span>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink">Campaña de comentarios</h1>
+          <h1 className="text-2xl font-semibold text-ink">Campaña de comentarios</h1>
         </div>
         <p className="mt-2 text-sm text-ink-secondary">
           Pega un link, elige los candidatos y cada uno comenta un texto distinto del banco (sin repetir).
@@ -456,7 +456,7 @@ export default function CommentCampaignPage() {
         )}
       </Card>
 
-      <form onSubmit={submit} className="flex flex-col gap-5 rounded-2xl border border-hairline bg-surface/70 p-5 shadow-sm backdrop-blur-xl">
+      <form onSubmit={submit} className="card-surface flex flex-col gap-5 p-5">
         <ExistingCampaignPicker
           type="comment"
           mode={campaignMode}

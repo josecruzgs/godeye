@@ -21,10 +21,10 @@ export default function Pagination({
   const end = Math.min(page * pageSize, totalItems);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 px-1 py-3 text-sm text-ink-secondary">
+    <div className="flex flex-wrap items-center justify-between gap-3 px-1 py-3 font-mono text-[11px] text-ink-secondary">
       <p>
-        Mostrando <span className="font-medium text-ink">{start}-{end}</span> de{" "}
-        <span className="font-medium text-ink">{totalItems}</span>
+        Mostrando <span className="font-medium tabular-nums text-ink">{start}-{end}</span> de{" "}
+        <span className="font-medium tabular-nums text-ink">{totalItems}</span>
       </p>
       <div className="flex items-center gap-1">
         <button
@@ -35,7 +35,7 @@ export default function Pagination({
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
-        <span className="min-w-20 text-center text-xs">
+        <span className="min-w-20 text-center tabular-nums">
           Página {page} de {totalPages || 1}
         </span>
         <button

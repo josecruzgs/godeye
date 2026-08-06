@@ -1,25 +1,40 @@
 import Link from "next/link";
-import { ArrowUpRight, ArrowDownRight, type LucideIcon } from "lucide-react";
+import { type LucideIcon } from "lucide-react";
+import Num from "@/components/ui/Num";
+import type { PanelCol } from "@/components/ui/Panel";
 
-export type StatAccent = "primary" | "warning" | "series-3" | "series-5" | "success";
+export type StatAccent = "primary" | "gold" | "warning" | "series-3" | "series-5" | "success" | "agua" | "viento" | "tierra" | "fuego";
 
-// Clases completas y literales a propósito (no interpoladas): el scanner de
-// Tailwind necesita verlas escritas tal cual en el código para generarlas.
-const ACCENT_CLASSES: Record<StatAccent, { badge: string; border: string }> = {
-  primary: { badge: "bg-primary text-white", border: "border-l-primary" },
-  warning: { badge: "bg-warning text-white", border: "border-l-warning" },
-  "series-3": { badge: "bg-series-3 text-white", border: "border-l-series-3" },
-  "series-5": { badge: "bg-series-5 text-white", border: "border-l-series-5" },
-  success: { badge: "bg-success text-white", border: "border-l-success" },
+// Valores CSS crudos (no clases): alimentan el degradado de la barra de
+// acento y el tinte del ícono, y ambos necesitan el color real para poder
+// mezclarlo con color-mix().
+const ACCENT_VALUES: Record<StatAccent, string> = {
+  primary: "var(--primary)",
+  gold: "var(--gold)",
+  warning: "var(--status-warning)",
+  "series-3": "var(--series-3)",
+  "series-5": "var(--series-5)",
+  success: "var(--status-good)",
+  agua: "var(--el-agua)",
+  viento: "var(--el-viento)",
+  tierra: "var(--el-tierra)",
+  fuego: "var(--el-fuego)",
 };
 
+/**
+ * Cifra de cabecera del panel: barra de acento a la izquierda, etiqueta mono
+ * en versalitas, número tabular que cuenta al montarse y —opcional— una
+ * línea de delta debajo.
+ */
 export default function StatCard({
   label,
   value,
   href,
   icon: Icon,
-  accent = "primary",
+  accent = "gold",
   delta,
+  live,
+  col = 3,
 }: {
   label: string;
   value: string | number;
@@ -27,43 +42,57 @@ export default function StatCard({
   icon?: LucideIcon;
   accent?: StatAccent;
   delta?: { text: string; positive: boolean };
+  live?: boolean;
+  /** Columnas que ocupa dentro de un `.bento`. Se ignora fuera de uno. */
+  col?: PanelCol;
 }) {
-  const { badge, border } = ACCENT_CLASSES[accent];
-  const className = `group flex flex-col rounded-2xl border border-hairline ${border} border-l-4 bg-surface p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md`;
+  const c = ACCENT_VALUES[accent];
+  const className = `card-surface c${col} relative flex min-h-26 flex-col px-4.5 py-4 ${href ? "card-lift" : ""}`;
 
   const content = (
     <>
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-ink-secondary">{label}</p>
-        {Icon && (
-          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${badge}`}>
-            <Icon className="h-4 w-4" />
-          </span>
-        )}
+      <span
+        aria-hidden
+        className="absolute left-0 top-0 bottom-0 w-0.75"
+        style={{ background: `linear-gradient(${c}, color-mix(in srgb, ${c} 40%, transparent))` }}
+      />
+      <div className="label-mono flex items-center gap-1.5">
+        <span className="truncate">{label}</span>
+        {live && <span className="dot-live shrink-0" style={{ background: c }} />}
+        {Icon && <Icon className="ml-auto h-3.5 w-3.5 shrink-0 opacity-70" style={{ color: c }} />}
       </div>
-      <div className="mt-3 flex items-end justify-between gap-2">
-        <p className="text-3xl font-semibold tracking-tight text-ink">{value}</p>
-        {delta && (
+      <div className="mt-2.5 flex flex-wrap items-baseline gap-2">
+        <span className="stat-value">
+          <Num t={value} />
+        </span>
+      </div>
+      {delta && (
+        <div className="mt-2">
           <span
-            className={`mb-1 flex items-center gap-0.5 text-xs font-medium ${
-              delta.positive ? "text-success" : "text-critical"
-            }`}
+            className="pill-mono inline-block whitespace-nowrap"
+            style={{
+              color: delta.positive ? "var(--ok)" : "var(--danger)",
+              background: `color-mix(in srgb, ${delta.positive ? "var(--ok)" : "var(--danger)"} 16%, transparent)`,
+            }}
           >
-            {delta.positive ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
-            {delta.text}
+            {delta.positive ? "▲" : "▼"} {delta.text}
           </span>
-        )}
-      </div>
+        </div>
+      )}
     </>
   );
 
   if (href) {
     return (
-      <Link href={href} className={className}>
+      <Link href={href} className={className} style={{ ["--edge-c" as string]: c }}>
         {content}
       </Link>
     );
   }
 
-  return <div className={className}>{content}</div>;
+  return (
+    <div className={className} style={{ ["--edge-c" as string]: c }}>
+      {content}
+    </div>
+  );
 }

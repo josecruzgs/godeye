@@ -1,27 +1,41 @@
 import type { LucideIcon } from "lucide-react";
 
-// Se usa desde RouteTransitionOverlay — accentBg viene ya como clase sólida
-// completa y literal (no interpolada) para que el scanner de Tailwind la
-// detecte. El ícono y el anillo giratorio van en blanco: como el fondo del
-// badge es un color sólido (no translúcido), un anillo del mismo tono se
-// perdería contra el fondo.
+/**
+ * Indicador de carga de ruta. `accent` es un color CSS crudo (no una clase):
+ * el mismo valor tiñe el ícono, el borde y el anillo que gira, así que
+ * necesita el valor real para poder mezclarlo con color-mix.
+ *
+ * El cuadro va tintado y con borde —no relleno sólido con ícono blanco—
+ * porque los colores de los elementos son claros: blanco encima no pasaría
+ * contraste, y el anillo giratorio se perdería contra el relleno.
+ */
 export default function RouteLoading({
   icon: Icon,
-  accentBg,
+  accent,
   label = "Cargando",
 }: {
   icon: LucideIcon;
-  accentBg: string;
+  accent: string;
   label?: string;
 }) {
   return (
     <div className="flex min-h-[60vh] items-center justify-center">
       <div className="animate-fade-in-up flex flex-col items-center gap-4">
-        <span className={`relative flex h-16 w-16 items-center justify-center rounded-2xl ${accentBg} text-white`}>
-          <Icon className="h-8 w-8" />
-          <span className="absolute inset-0 animate-spin rounded-2xl border-2 border-white/25 border-t-white" />
+        <span
+          className="relative grid h-16 w-16 place-items-center rounded-2xl border"
+          style={{
+            color: accent,
+            borderColor: `color-mix(in srgb, ${accent} 45%, transparent)`,
+            background: `color-mix(in srgb, ${accent} 14%, transparent)`,
+          }}
+        >
+          <Icon className="h-7 w-7" />
+          <span
+            className="absolute inset-0 animate-spin rounded-2xl border-2 border-transparent"
+            style={{ borderTopColor: accent }}
+          />
         </span>
-        <p className="text-sm font-medium text-ink-muted">{label}...</p>
+        <p className="label-mono">{label}...</p>
       </div>
     </div>
   );
