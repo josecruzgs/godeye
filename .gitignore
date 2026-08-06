@@ -33,6 +33,9 @@ dev-server*.log
 
 # env files (can opt-in for committing if needed)
 .env*
+# La plantilla sí se versiona: es la lista de qué hay que configurar en cada
+# máquina donde corre el sistema. No lleva valores, solo los nombres.
+!.env.example
 
 # vercel
 .vercel

@@ -1,20 +1,46 @@
 import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
-import WorkerHeartbeatModel from "@/lib/models/WorkerHeartbeat";
+import WorkerHeartbeatModel, { type WorkerRole } from "@/lib/models/WorkerHeartbeat";
 import { withApiErrors } from "@/lib/apiHandler";
 
-// El worker (src/worker/index.ts) escribe un latido en cada tick. Si no hay
-// uno reciente (más de 3 intervalos de poll), lo consideramos caído.
+const ROLES: WorkerRole[] = ["tasks", "listening"];
+
+/**
+ * Estado de cada worker. Se informan por separado porque en un deploy real la
+ * automatización corre donde está AdsPower y la escucha en el VPS: uno puede
+ * estar caído mientras el otro trabaja, y un sí/no único lo ocultaría.
+ *
+ * `online` queda como estaba —vivo el de tareas— para no romper a quien ya lee
+ * ese campo.
+ */
 export const GET = withApiErrors(async () => {
   await dbConnect();
-  const heartbeat = await WorkerHeartbeatModel.findById("singleton");
 
-  if (!heartbeat) {
-    return NextResponse.json({ online: false, lastSeenAt: null });
-  }
+  const beats = await WorkerHeartbeatModel.find({ _id: { $in: ROLES } }).lean();
+  const byRole = new Map(beats.map((b) => [String(b._id), b] as const));
 
-  const ageMs = Date.now() - new Date(heartbeat.updatedAt).getTime();
-  const online = ageMs <= heartbeat.pollIntervalMs * 3;
+  const status = Object.fromEntries(
+    ROLES.map((role) => {
+      const beat = byRole.get(role);
+      if (!beat) return [role, { online: false, lastSeenAt: null, host: null }];
 
-  return NextResponse.json({ online, lastSeenAt: heartbeat.updatedAt, ageMs });
+      // Sin latido en tres intervalos de poll, el proceso está caído.
+      const ageMs = Date.now() - new Date(beat.updatedAt).getTime();
+      return [
+        role,
+        {
+          online: ageMs <= beat.pollIntervalMs * 3,
+          lastSeenAt: beat.updatedAt,
+          host: beat.host ?? null,
+          ageMs,
+        },
+      ];
+    }),
+  ) as Record<WorkerRole, { online: boolean; lastSeenAt: Date | null; host: string | null; ageMs?: number }>;
+
+  return NextResponse.json({
+    online: status.tasks.online,
+    lastSeenAt: status.tasks.lastSeenAt,
+    roles: status,
+  });
 });
