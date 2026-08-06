@@ -75,10 +75,18 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ```bash
 ssh root@177.7.53.246
 
-adduser godeye && usermod -aG sudo godeye
-rsync -a ~/.ssh /home/godeye/ && chown -R godeye:godeye /home/godeye/.ssh
+# adduser es interactivo: pide contraseña y datos. Corrélo solo, o se comerá
+# las líneas siguientes como respuestas a sus preguntas.
+adduser godeye
+usermod -aG sudo godeye
 
-ufw allow OpenSSH && ufw allow 'Nginx Full' && ufw --force enable
+mkdir -p /home/godeye/.ssh
+cp ~/.ssh/authorized_keys /home/godeye/.ssh/ 2>/dev/null || true
+chown -R godeye:godeye /home/godeye/.ssh && chmod 700 /home/godeye/.ssh
+
+# Por número de puerto y no por perfil: 'Nginx Full' lo crea Nginx al
+# instalarse, y todavía no está instalado.
+ufw allow OpenSSH && ufw allow 80/tcp && ufw allow 443/tcp && ufw --force enable
 
 # Node 22 LTS
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
@@ -90,16 +98,30 @@ su - godeye
 
 ## 3. La app
 
+`su -` abre una shell nueva: lo que venga pegado detrás se pierde en la shell
+vieja. Esperá al prompt de `godeye@` antes de seguir.
+
 ```bash
 git clone https://github.com/josecruzgs/godeye.git godeye && cd godeye
 npm ci
-nano .env.local        # ver la sección siguiente
 npm run build
 ```
 
+`npm ci` avisa de vulnerabilidades en `postcss` y `sharp`, dependencias internas
+de Next. **No corras `npm audit fix --force`**: el arreglo es subir Next a una
+versión fuera del rango declarado, y no es algo para hacer a ciegas en un
+despliegue. `postcss` solo actúa en el build y `sharp` procesa imágenes propias.
+
 ### `.env.local` del VPS
 
-Copiá el de tu máquina y cambiá estas tres:
+Copialo desde tu máquina en vez de pegarlo en un editor — una línea cortada al
+pegar deja el arranque fallando por una razón difícil de ver:
+
+```powershell
+scp .env.local godeye@177.7.53.246:~/godeye/.env.local
+```
+
+Y ahí cambiá estas tres:
 
 ```bash
 SITE_PASSWORD=una-larga-y-nueva      # es la única puerta del panel en internet
