@@ -17,7 +17,7 @@ toma el trabajo directo de Mongo. Son dos procesos leyendo la misma base.
 Resultado: **la escucha ingiere sola día y noche**, y AdsPower solo hace falta
 encendido cuando quieras que se ejecuten publicaciones o warmups.
 
----
+--- 
 
 ## 1. El VPS
 
