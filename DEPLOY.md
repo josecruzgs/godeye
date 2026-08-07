@@ -2,20 +2,25 @@
 
 Guía para dejar Ojo de Dios corriendo 24/7 sin depender de tu máquina.
 
-## Qué va dónde, y por qué
+## Cómo está montado hoy
 
-El sistema son dos mitades con requisitos de hardware distintos:
+Todo corre en un único VPS y ninguna PC forma parte del sistema:
 
-| | Dónde corre | Por qué |
-|---|---|---|
-| Web + escucha (Viento, Agua, dashboard, briefs) | **VPS Linux** | Solo necesita salida a internet |
-| Automatización (Perfiles, Tareas, Warmup, Likes, Publicar) | **Tu Windows** | Habla por CDP con AdsPower de escritorio, que no corre en un VPS pelado |
+| Proceso | Qué hace |
+|---|---|
+| `godeye-web` | Next en el puerto interno 3001, detrás de Nginx con HTTPS |
+| `godeye-listening` | Ingesta de menciones y análisis con Claude, sola, según el intervalo de cada proyecto |
+| `godeye-tasks` | Ejecuta las tareas de automatización contra AdsPower |
+| `xvfb` + `adspower` | Servicios de systemd: AdsPower de escritorio contra una pantalla virtual |
 
-No hace falta rediseñar nada para separarlos: el worker no habla con la web,
-toma el trabajo directo de Mongo. Son dos procesos leyendo la misma base.
+La pieza que obliga a instalar AdsPower en el servidor es que su API solo
+escucha en el localhost de la máquina donde está, y el navegador se ejecuta ahí
+mismo. Mientras viviera en una PC, la automatización dependía de esa PC.
 
-Resultado: **la escucha ingiere sola día y noche**, y AdsPower solo hace falta
-encendido cuando quieras que se ejecuten publicaciones o warmups.
+Los workers no hablan con la web: toman su trabajo de Mongo. Por eso pueden
+correr donde convenga, y de hecho `godeye-tasks` puede quedarse en una PC con
+AdsPower si preferís no mover los perfiles de máquina — ver el final de la
+sección 6.
 
 --- 
 
@@ -126,7 +131,8 @@ Y ahí cambiá estas tres:
 ```bash
 SITE_PASSWORD=una-larga-y-nueva      # es la única puerta del panel en internet
 NEXT_PUBLIC_SHARE_BASE_URL=https://godeye.iagent.mx
-ADSPOWER_API_BASE_URL=               # vacío: AdsPower no vive acá
+ADSPOWER_API_BASE_URL=http://127.0.0.1:50325   # AdsPower corre acá — sección 6
+ADSPOWER_API_KEY=                    # vacío si dejás la verificación apagada
 ```
 
 `NEXT_PUBLIC_SHARE_BASE_URL` se inyecta **en el build**, no en el arranque: si la
@@ -296,7 +302,7 @@ El chip de la barra superior tiene tres estados:
 | Chip | Significa |
 |---|---|
 | `EN VIVO` | Los dos workers latiendo |
-| `SOLO ESCUCHA` | El VPS ingiere, pero AdsPower/Windows está apagado: las tareas en cola no avanzan |
+| `SOLO ESCUCHA` | Se ingiere, pero `godeye-tasks` está caído: las tareas en cola no avanzan |
 | `SOLO TAREAS` | La automatización corre, pero nadie ingiere: la escucha solo avanza con "Buscar ahora" |
 | `SIN WORKER` | Ninguno |
 
@@ -325,7 +331,7 @@ pm2 monit
 | Síntoma | Causa habitual |
 |---|---|
 | La web carga pero todo sale vacío | La IP del VPS no está en Network Access de Atlas |
-| `SSL alert number 80` / "Could not connect to any servers" | Lo mismo, visto desde el otro lado: Atlas corta el TLS a las IPs que no están en la lista. Le pasa seguido al worker de tu Windows, porque la IP doméstica rota cada tanto — hay que actualizarla en Atlas cuando cambia. El VPS no sufre esto: su IP es fija |
+| `SSL alert number 80` / "Could not connect to any servers" | Lo mismo, visto desde el otro lado: Atlas corta el TLS a las IPs que no están en la lista. Verificá además que la lista que estás mirando sea la del proyecto de Atlas donde vive el cluster: es por proyecto, no por cuenta, y editar la del proyecto equivocado no cambia nada. Una IP doméstica rota cada tanto; la del VPS es fija |
 | `next build` muere sin mensaje | El VPS se quedó sin RAM. Agregá swap: `fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile` |
 | Links de compartir apuntan a localhost | `NEXT_PUBLIC_SHARE_BASE_URL` se cambió sin rebuild |
 | El chip dice `SIN WORKER` con PM2 arriba | El worker no conecta a Mongo — `pm2 logs godeye-listening` |
