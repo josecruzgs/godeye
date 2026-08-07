@@ -58,33 +58,61 @@ const FACEBOOK_COMMENT_OPEN_SELECTOR = [
   'svg[aria-label="Comentar"]',
 ].join(", ");
 
-const FACEBOOK_LIKE_SELECTOR = [
-  'div[role="dialog"] [aria-label="Like"]',
-  '[role="button"][aria-label="Like"]',
-  '[aria-label="Like"]',
-  'div[role="dialog"] [aria-label="Me gusta"]',
-  '[role="button"][aria-label="Me gusta"]',
-  '[aria-label="Me gusta"]',
-  'div[role="dialog"] [aria-label="React"]',
-  '[role="button"][aria-label="React"]',
-  '[aria-label="React"]',
-  'div[role="dialog"] [aria-label="Reaccionar"]',
-  '[role="button"][aria-label="Reaccionar"]',
-  '[aria-label="Reaccionar"]',
-  'div[role="dialog"] [aria-label="Reacciona"]',
-  '[role="button"][aria-label="Reacciona"]',
-  '[aria-label="Reacciona"]',
-  'div[role="button"]:has(svg[aria-label="Like"])',
-  'div[role="button"]:has(svg[aria-label="Me gusta"])',
-  'div[role="button"]:has(svg[aria-label="React"])',
-  'div[role="button"]:has(svg[aria-label="Reaccionar"])',
-  'div[role="button"]:has(svg[aria-label="Reacciona"])',
-  'svg[aria-label="Like"]',
-  'svg[aria-label="Me gusta"]',
-  'svg[aria-label="React"]',
-  'svg[aria-label="Reaccionar"]',
-  'svg[aria-label="Reacciona"]',
-].join(", ");
+/**
+ * Cómo se llama el botón de reaccionar, por idioma de la interfaz.
+ *
+ * Facebook rotula sus botones en el idioma del perfil, no en el del país, y los
+ * perfiles de AdsPower heredan el idioma que traiga su huella. Un perfil con la
+ * huella en francés muestra "J'aime" aunque la cuenta sea mexicana, y el paso
+ * fallaba con "0 match(es)" sin ninguna pista de por qué: el botón estaba ahí,
+ * con otro nombre.
+ */
+const FACEBOOK_LIKE_LABELS = [
+  "Like",
+  "React",
+  "Me gusta",
+  "Reaccionar",
+  "Reacciona",
+  "J'aime",
+  "Réagir",
+  "Curtir",
+  "Reagir",
+  "Mi piace",
+  "Gefällt mir",
+];
+
+/** Las que aparecen cuando la reacción YA está puesta — señal de trabajo hecho. */
+const FACEBOOK_UNLIKE_LABELS = [
+  "Remove Like",
+  "Unlike",
+  "Quitar Me gusta",
+  "Ya no me gusta",
+  "Retirer J'aime",
+  "Je n'aime plus",
+  "Descurtir",
+  "Remover Curtir",
+  "Non mi piace più",
+];
+
+/** Las cinco formas en que Facebook expone el mismo botón según el layout. */
+function labelSelectors(labels: string[]): string {
+  return labels
+    .flatMap((label) => [
+      `div[role="dialog"] [aria-label="${label}"]`,
+      `[role="button"][aria-label="${label}"]`,
+      `[aria-label="${label}"]`,
+      `div[role="button"]:has(svg[aria-label="${label}"])`,
+      `svg[aria-label="${label}"]`,
+    ])
+    .join(", ");
+}
+
+const FACEBOOK_LIKE_SELECTOR = labelSelectors(FACEBOOK_LIKE_LABELS);
+// Solo por etiqueta, sin respaldo por `aria-pressed="true"`: ese atributo lo
+// llevan también otros botones de la página, y confundir uno con la reacción
+// haría reportar como hecho un like que nunca se dio. Ante un idioma que no
+// esté en la lista, es preferible fallar de forma visible.
+const FACEBOOK_ALREADY_LIKED_SELECTOR = labelSelectors(FACEBOOK_UNLIKE_LABELS);
 
 const FACEBOOK_BLOCKERS = [
   {
@@ -155,7 +183,7 @@ function isFacebookCommentBoxSelector(selector: string) {
 }
 
 function isFacebookLikeSelector(selector: string) {
-  return /aria-label="(Like|Me gusta|React|Reaccionar|Reacciona)"/i.test(selector);
+  return FACEBOOK_LIKE_LABELS.some((label) => selector.includes(`aria-label="${label}"`));
 }
 
 function selectorForStep(selector: string, ctx: StepContext) {
@@ -352,6 +380,19 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
           await target.locator.click({ position: target.position, timeout: timeoutMs });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
+
+          // Una publicación que ya tiene la reacción no muestra el botón de
+          // dar like, sino el de quitarla. Eso es la tarea cumplida, no un
+          // fallo: reportarlo como error obliga a revisar a mano algo que ya
+          // estaba hecho.
+          if (
+            ctx.taskType === "like" &&
+            (await hasVisibleLocator(page, FACEBOOK_ALREADY_LIKED_SELECTOR))
+          ) {
+            await log(ctx.taskId, "info", "La publicación ya tenía la reacción puesta; nada que hacer.");
+            return;
+          }
+
           const pointerBlocked = /ninguno recibe el puntero|intercepts pointer events/i.test(message);
           if (ctx.taskType !== "like" || !pointerBlocked) throw err;
 
