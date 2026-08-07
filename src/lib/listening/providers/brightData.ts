@@ -118,16 +118,6 @@ export function platformOfProfile(url: string): string | null {
   }
 }
 
-/** El usuario dentro de una URL de perfil: instagram.com/marina → "marina". */
-function usernameFromUrl(url: string): string | null {
-  try {
-    const segment = new URL(url).pathname.split("/").filter(Boolean)[0];
-    return segment ? segment.replace(/^@/, "") : null;
-  } catch {
-    return null;
-  }
-}
-
 type TriggerPlan = { query: string; body: unknown[]; mode: string };
 
 /**
@@ -136,11 +126,15 @@ type TriggerPlan = { query: string; body: unknown[]; mode: string };
  * un 400 listando los válidos). Lo verificado sobre esta cuenta:
  *
  *   X          → profile_url  (URL del perfil)
- *   Instagram  → user_name    (solo el usuario, sin URL)
- *   TikTok     → search_url   (URL de búsqueda: sí permite palabra clave)
+ *   Instagram  → url          (URL del perfil; es su único modo)
+ *   TikTok     → profile_url  (también acepta keyword y url)
  *   Facebook   → ninguno      (no descubre; se recolecta pasando las URLs)
  *
- * Si cambiás un dataset por otro, volvé a sondearlo antes de asumir el modo.
+ * Si cambiás un dataset por otro, volvé a sondearlo antes de asumir el modo:
+ * un `discover_by` inventado devuelve un 400 listando los válidos, y un cuerpo
+ * al que le falten campos devuelve otro 400 con los que espera. CUIDADO con
+ * sondear usando un cuerpo completo y válido: eso no da error, dispara la
+ * recolección y se factura.
  */
 function planFor(
   platform: string,
@@ -160,25 +154,22 @@ function planFor(
       if (profiles.length === 0) return null;
       return discover("profile_url", profiles.map((url) => ({ url })));
 
-    case "instagram": {
-      const users = profiles.map(usernameFromUrl).filter((u): u is string => Boolean(u));
-      if (users.length === 0) return null;
-      return discover("user_name", users.map((user_name) => ({ user_name })));
-    }
+    case "instagram":
+      // La URL del perfil entera, no el usuario suelto: este dataset descubre
+      // las publicaciones de la cuenta a partir de su página.
+      if (profiles.length === 0) return null;
+      return discover("url", profiles.map((url) => ({ url })));
 
     case "tiktok":
-      if (!keyword) return null;
-      // Su "search_url" es la propia página de búsqueda de TikTok: es la
-      // única de las cuatro que permite monitorear por palabra clave.
-      // `country` es obligatorio en este dataset (lo rechaza con
-      // validation_error si falta) y además decide desde dónde se ve la
-      // búsqueda, que en TikTok cambia bastante los resultados.
-      return discover("search_url", [
-        {
-          search_url: `https://www.tiktok.com/search?q=${encodeURIComponent(keyword)}`,
-          country: process.env.BRIGHTDATA_COUNTRY || "MX",
-        },
-      ]);
+      // `country` decide desde dónde se ve el perfil, y en TikTok eso cambia
+      // bastante lo que se sirve. Se omiten `what_to_collect` y `post_type`:
+      // solo aceptan ciertos valores y, sin ellos, el scraper trae todo — que
+      // es lo que queremos.
+      if (profiles.length === 0) return null;
+      return discover(
+        "profile_url",
+        profiles.map((url) => ({ url, country: process.env.BRIGHTDATA_COUNTRY || "MX" })),
+      );
 
     case "facebook":
       if (profiles.length === 0) return null;
