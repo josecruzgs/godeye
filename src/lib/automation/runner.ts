@@ -413,7 +413,27 @@ async function firstClickableLocator(page: Page, selector: string, timeoutMs: nu
  * sea "Me gusta" en alguno de los idiomas conocidos, descartando los que
  * pertenecen a respuestas anidadas.
  */
+/**
+ * Define en la página el helper `__name` que espera el código compilado.
+ *
+ * El worker corre bajo `tsx`, que transpila con esbuild, y esbuild envuelve
+ * cada función con nombre en `__name(fn, "fn")` para que `fn.name` sobreviva a
+ * la minificación. Ese helper se declara arriba del módulo, en Node — pero
+ * Playwright serializa la función que se le pasa a `evaluate` y la manda sola
+ * al navegador, sin el helper, así que la página revienta con "__name is not
+ * defined" apenas el cuerpo declara una función con nombre. La web no lo sufre
+ * porque el runner solo se ejecuta en el worker.
+ *
+ * Se manda como string a propósito: un string no pasa por esbuild, así que no
+ * puede arrastrar la misma dependencia que viene a resolver. Y se reinyecta en
+ * cada llamada porque cada navegación estrena el contexto de la página.
+ */
+async function defineEsbuildNameHelper(page: Page) {
+  await page.evaluate("void (globalThis.__name = globalThis.__name || ((fn) => fn))");
+}
+
 async function markFacebookCommentLike(page: Page, commentId: string): Promise<CommentLikeProbe> {
+  await defineEsbuildNameHelper(page);
   return page.evaluate(
     ({ commentId, mark, likeLabels, unlikeLabels }): CommentLikeProbe => {
       // Comparación insensible a mayúsculas y a acentos ("Gefällt mir" vs

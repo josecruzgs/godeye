@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import StatusBadge from "@/components/StatusBadge";
 import Pagination from "@/components/Pagination";
@@ -91,6 +91,28 @@ export default function ProfilePicker({
     onChange(next);
   }
 
+  // El check de la cabecera trabaja solo sobre la página que se está viendo y
+  // suma a lo que ya había elegido: así se puede ir página por página, marcando
+  // unas y saltándose otras, sin perder lo seleccionado antes.
+  const pageSelectedCount = paged.filter((p) => selected.has(p._id)).length;
+  const allPageSelected = paged.length > 0 && pageSelectedCount === paged.length;
+
+  // `indeterminate` (la rayita del "algunos, no todos") no existe como atributo
+  // de HTML, solo como propiedad del nodo — hay que ponerla por ref.
+  const pageCheckboxRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (pageCheckboxRef.current) {
+      pageCheckboxRef.current.indeterminate = pageSelectedCount > 0 && !allPageSelected;
+    }
+  }, [pageSelectedCount, allPageSelected]);
+
+  function togglePage() {
+    const next = new Set(selected);
+    if (allPageSelected) paged.forEach((p) => next.delete(p._id));
+    else paged.forEach((p) => next.add(p._id));
+    onChange(next);
+  }
+
   function clearSelection() {
     onChange(new Set());
   }
@@ -102,8 +124,16 @@ export default function ProfilePicker({
           Candidatos elegidos: <span className="font-medium text-ink">{selected.size}</span>
         </label>
         <div className="flex flex-wrap gap-3">
-          <button type="button" onClick={selectAllFiltered} className="text-xs text-primary underline">
-            seleccionar visibles
+          {/* Ahora que la cabecera tiene un check por página, el nombre viejo
+              ("seleccionar visibles") quedaba ambiguo justo al lado: éste toma
+              todas las páginas que pasan los filtros, no solo la que se ve. */}
+          <button
+            type="button"
+            onClick={selectAllFiltered}
+            title={`Selecciona los ${filtered.length} de todas las páginas`}
+            className="text-xs text-primary underline"
+          >
+            seleccionar todos los filtrados ({filtered.length})
           </button>
           <button type="button" onClick={clearSelection} className="text-xs text-critical underline">
             limpiar selección
@@ -196,7 +226,21 @@ export default function ProfilePicker({
               <table className="w-full text-sm">
                 <thead className="sticky top-0 border-b border-hairline bg-surface text-left text-xs uppercase tracking-wide text-ink-muted">
                   <tr>
-                    <th className="w-10 px-3 py-2" />
+                    <th className="w-10 px-3 py-2">
+                      <input
+                        ref={pageCheckboxRef}
+                        type="checkbox"
+                        checked={allPageSelected}
+                        onChange={togglePage}
+                        title={
+                          allPageSelected
+                            ? `Quitar los ${paged.length} de esta página`
+                            : `Seleccionar los ${paged.length} de esta página`
+                        }
+                        aria-label="Seleccionar los perfiles de esta página"
+                        className="h-4 w-4 cursor-pointer align-middle accent-primary"
+                      />
+                    </th>
                     <th className="px-3 py-2 font-medium">Nombre</th>
                     <th className="px-3 py-2 font-medium">Grupo</th>
                     <th className="px-3 py-2 font-medium">Plataforma</th>
