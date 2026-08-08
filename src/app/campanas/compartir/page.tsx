@@ -37,6 +37,7 @@ type CampaignOption = {
 
 const TYPE_LABELS: Record<string, string> = {
   like: "Likes",
+  likecomment: "Likes a comentarios",
   comment: "Comentarios",
   post: "Publicaciones",
   warmup: "Warmup",

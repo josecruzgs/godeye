@@ -236,6 +236,7 @@ function NewTaskContent() {
               <option value="warmup">warmup</option>
               <option value="scrape">scrape</option>
               <option value="like">like</option>
+              <option value="likecomment">likecomment</option>
               <option value="custom">custom</option>
             </select>
           </div>

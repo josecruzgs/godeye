@@ -1,14 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Heart, CheckCircle2, SlidersHorizontal, TriangleAlert } from "lucide-react";
+import { ArrowLeft, MessageCircleHeart, CheckCircle2, SlidersHorizontal, TriangleAlert } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { parseFacebookCommentTarget } from "@/lib/commentLinks";
 import StatusBadge from "@/components/StatusBadge";
 import Card from "@/components/Card";
 import Modal from "@/components/Modal";
-import PlatformPicker from "@/components/PlatformPicker";
 import ProfilePicker, { type PickerGroup, type PickerProfile } from "@/components/ProfilePicker";
 import ExistingCampaignPicker from "@/components/ExistingCampaignPicker";
 
@@ -38,35 +37,9 @@ function selectorForAriaLabels(labels: string[]): string {
     .join(", ");
 }
 
-const FACEBOOK_REACTION_TRIGGER_SELECTOR = selectorForAriaLabels([
-  "Like",
-  "Me gusta",
-  "React",
-  "Reaccionar",
-  "Reacciona",
-]);
-
-// Facebook no monta siempre el boton de reaccion en el mismo arbol: algunos
-// permalinks lo dejan dentro del dialog y otros links de foto/post lo exponen
-// en la pagina. El runner escoge el match visible antes de clickear/hover.
-const PLATFORM_PRESETS: Record<string, { label: string; selector: string }> = {
-  facebook: {
-    label: "Facebook",
-    selector: FACEBOOK_REACTION_TRIGGER_SELECTOR,
-  },
-  instagram: { label: "Instagram", selector: 'svg[aria-label="Like"], svg[aria-label="Me gusta"]' },
-  tiktok: { label: "TikTok", selector: '[data-e2e="like-icon"]' },
-  x: { label: "X / Twitter", selector: '[data-testid="like"]' },
-  custom: { label: "Personalizado", selector: "" },
-};
-
-// El picker de reacciones (mantener el cursor sobre "Me gusta" para que
-// aparezcan las demás) es un patrón exclusivo de Facebook — las otras
-// plataformas solo tienen like/no-like, así que el selector de reacción
-// queda oculto fuera de Facebook. Cada aria-label trae español e inglés
-// juntos (comma-list SÍ funciona como OR en selectores de atributo CSS
-// planos, a diferencia del engine text= — confirmado en Publicar/Auto
-// Profile este mismo proyecto).
+// El picker de reacciones de un comentario es el mismo que el de una
+// publicación (se abre en una capa flotante al mantener el cursor sobre "Me
+// gusta"), así que los selectores son idénticos a los de /tasks/like.
 const REACTIONS: { key: string; label: string; ariaLabels?: string[] }[] = [
   { key: "like", label: "👍 Me gusta (default)" },
   { key: "love", label: "❤️ Me encanta", ariaLabels: ["Me encanta", "Love"] },
@@ -83,20 +56,18 @@ function reactionSelectorFor(key: string): string {
   return selectorForAriaLabels(r.ariaLabels);
 }
 
-export default function LikeCampaignPage() {
+export default function LikeCommentCampaignPage() {
   const [profiles, setProfiles] = useState<PickerProfile[]>([]);
   const [groups, setGroups] = useState<PickerGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [url, setUrl] = useState("");
-  const [platformPreset, setPlatformPreset] = useState("facebook");
-  const [selector, setSelector] = useState(PLATFORM_PRESETS.facebook.selector);
   const [reaction, setReaction] = useState("like");
-  const [waitMs, setWaitMs] = useState(3000);
+  const [waitMs, setWaitMs] = useState(4000);
   const [staggerSeconds, setStaggerSeconds] = useState(300);
   const [autoRun, setAutoRun] = useState(true);
-  const [namePrefix, setNamePrefix] = useState("like");
+  const [namePrefix, setNamePrefix] = useState("like-comentario");
   const [campaignName, setCampaignName] = useState("");
   const [campaignMode, setCampaignMode] = useState<"new" | "existing">("new");
   const [existingCampaignId, setExistingCampaignId] = useState("");
@@ -107,6 +78,10 @@ export default function LikeCampaignPage() {
   const [creating, setCreating] = useState(false);
   const [result, setResult] = useState<CreatedTask[] | null>(null);
   const [createdCampaign, setCreatedCampaign] = useState<CreatedCampaign | null>(null);
+
+  // El mismo parser que usa la API: así el aviso de "este link no trae
+  // comment_id" sale antes de mandar nada, no como error del servidor.
+  const target = useMemo(() => (url.trim() ? parseFacebookCommentTarget(url) : null), [url]);
 
   useEffect(() => {
     Promise.all([
@@ -121,8 +96,6 @@ export default function LikeCampaignPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Deep-link desde el modal de /campanas ("Agregar tareas"): preselecciona
-  // el modo "agregar a campaña existente" con esa campaña ya elegida.
   useEffect(() => {
     const cid = new URLSearchParams(window.location.search).get("campaignId");
     if (cid) {
@@ -131,12 +104,6 @@ export default function LikeCampaignPage() {
     }
   }, []);
 
-  function applyPlatformPreset(key: string) {
-    setPlatformPreset(key);
-    setSelector(PLATFORM_PRESETS[key]?.selector ?? "");
-    if (key !== "facebook") setReaction("like");
-  }
-
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setCreating(true);
@@ -144,22 +111,24 @@ export default function LikeCampaignPage() {
     setResult(null);
     setCreatedCampaign(null);
     try {
-      const { campaign, tasks } = await apiFetch<{ campaign: CreatedCampaign; tasks: CreatedTask[] }>("/api/tasks/like-campaign", {
-        method: "POST",
-        body: JSON.stringify({
-          campaignName: campaignMode === "new" ? campaignName : undefined,
-          campaignId: campaignMode === "existing" ? existingCampaignId : undefined,
-          url,
-          selector,
-          reaction,
-          reactionSelector: reactionSelectorFor(reaction),
-          profileIds: Array.from(selected),
-          waitMs,
-          staggerSeconds,
-          autoRun,
-          namePrefix,
-        }),
-      });
+      const { campaign, tasks } = await apiFetch<{ campaign: CreatedCampaign; tasks: CreatedTask[] }>(
+        "/api/tasks/like-comment-campaign",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            campaignName: campaignMode === "new" ? campaignName : undefined,
+            campaignId: campaignMode === "existing" ? existingCampaignId : undefined,
+            url,
+            reaction,
+            reactionSelector: reactionSelectorFor(reaction),
+            profileIds: Array.from(selected),
+            waitMs,
+            staggerSeconds,
+            autoRun,
+            namePrefix,
+          }),
+        },
+      );
       setResult(tasks);
       setCreatedCampaign(campaign);
       setSelected(new Set());
@@ -180,12 +149,13 @@ export default function LikeCampaignPage() {
         </Link>
         <div className="mt-2 flex items-center gap-2.5">
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-series-3/55 bg-series-3/12 text-series-3">
-            <Heart className="h-4.5 w-4.5" />
+            <MessageCircleHeart className="h-4.5 w-4.5" />
           </span>
-          <h1 className="text-2xl font-semibold text-ink">Campaña de likes</h1>
+          <h1 className="text-2xl font-semibold text-ink">Campaña de likes a comentarios</h1>
         </div>
         <p className="mt-2 text-sm text-ink-secondary">
-          Pega un link, elige los perfiles candidatos y se crea una tarea de like por cada uno.
+          Igual que la campaña de likes, pero la reacción cae en un comentario concreto de la publicación —
+          se identifica por el <code className="rounded bg-page px-1 py-0.5 text-xs">comment_id</code> del link.
         </p>
       </div>
 
@@ -204,7 +174,7 @@ export default function LikeCampaignPage() {
                 ({result.length} nueva{result.length === 1 ? "" : "s"}).
               </>
             ) : (
-              <>Se crearon {result.length} tarea{result.length === 1 ? "" : "s"} de like.</>
+              <>Se crearon {result.length} tarea{result.length === 1 ? "" : "s"}.</>
             )}
           </p>
           <div className="flex flex-col gap-1.5">
@@ -230,7 +200,7 @@ export default function LikeCampaignPage() {
 
       <form onSubmit={submit} className="card-surface flex flex-col gap-5 p-5">
         <ExistingCampaignPicker
-          type="like"
+          type="likecomment"
           mode={campaignMode}
           onModeChange={setCampaignMode}
           campaignId={existingCampaignId}
@@ -243,71 +213,61 @@ export default function LikeCampaignPage() {
             <input
               value={campaignName}
               onChange={(e) => setCampaignName(e.target.value)}
-              placeholder="Ej. Likes Reel Froy"
+              placeholder="Ej. Apoyo al comentario de Froy"
               className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
             />
           </div>
         )}
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-ink-muted">Link a likear</label>
+          <label className="text-xs text-ink-muted">Link del comentario</label>
           <input
             required
             type="url"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://www.instagram.com/p/..."
+            placeholder="https://www.facebook.com/permalink.php?story_fbid=...&id=...&comment_id=..."
             className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
           />
-          {/* Un link con comment_id likeado desde aquí cae en la publicación, no
-              en el comentario, y el error es invisible: la tarea termina en
-              "success". Mejor mandar al formulario correcto antes de crearla. */}
-          {parseFacebookCommentTarget(url) && (
-            <p className="flex items-start gap-1.5 text-xs text-warning">
+          {url.trim() && !target && (
+            <p className="flex items-start gap-1.5 text-xs text-critical">
               <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>
-                Este link apunta a un comentario. Desde aquí la reacción cae en la publicación; para reaccionar al
-                comentario usa{" "}
-                <Link href="/tasks/likecomment" className="underline hover:text-ink">
-                  Likes a comentarios
-                </Link>
-                .
-              </span>
+              Este link no trae <code>comment_id</code>: apunta a la publicación, no a un comentario. Copia el
+              link desde la hora del comentario (o su menú ··· → Copiar enlace).
             </p>
           )}
+          {target && (
+            <p className="text-xs text-success">
+              {target.isReply ? "Respuesta" : "Comentario"} detectado: <code>{target.commentId}</code>
+            </p>
+          )}
+          <p className="text-xs text-ink-muted">
+            Solo Facebook por ahora. En X/Twitter una respuesta es una publicación con su propio link, así que
+            para ésas sirve la{" "}
+            <Link href="/tasks/like" className="underline hover:text-ink">campaña de likes normal</Link>.
+          </p>
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-ink-muted">Plataforma</label>
-          <PlatformPicker
-            options={Object.entries(PLATFORM_PRESETS).map(([key, p]) => ({ key, label: p.label }))}
-            value={platformPreset}
-            onChange={applyPlatformPreset}
-          />
+          <label className="text-xs text-ink-muted">Reacción</label>
+          <select
+            value={reaction}
+            onChange={(e) => setReaction(e.target.value)}
+            className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
+          >
+            {REACTIONS.map((r) => (
+              <option key={r.key} value={r.key}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+          {reaction !== "like" && (
+            <p className="text-xs text-ink-muted">
+              La tarea mantiene el cursor sobre el &quot;Me gusta&quot; del comentario para que Facebook revele el
+              picker de reacciones, y ahí elige ésta.
+            </p>
+          )}
         </div>
-
-        {platformPreset === "facebook" && (
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-ink-muted">Reacción</label>
-            <select
-              value={reaction}
-              onChange={(e) => setReaction(e.target.value)}
-              className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
-            >
-              {REACTIONS.map((r) => (
-                <option key={r.key} value={r.key}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
-            {reaction !== "like" && (
-              <p className="text-xs text-ink-muted">
-                Antes de clickear, la tarea mantiene el cursor sobre el botón de like para que Facebook revele el
-                picker de reacciones, y ahí elige esta.
-              </p>
-            )}
-          </div>
-        )}
 
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
@@ -346,38 +306,28 @@ export default function LikeCampaignPage() {
         </div>
 
         <button
-          disabled={
-            creating || count === 0 || !url || !selector || (campaignMode === "existing" && !existingCampaignId)
-          }
+          disabled={creating || count === 0 || !target || (campaignMode === "existing" && !existingCampaignId)}
           className="glow-btn w-fit rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-fg shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md disabled:pointer-events-none disabled:opacity-50"
         >
           {creating
             ? "Creando..."
             : campaignMode === "existing"
-              ? `Agregar tareas de like (${count || 0})`
-              : `Crear campaña de like (${count || 0})`}
+              ? `Agregar tareas de like a comentario (${count || 0})`
+              : `Crear campaña de like a comentario (${count || 0})`}
         </button>
       </form>
 
       <Modal open={showAdvanced} onClose={() => setShowAdvanced(false)} title="Ajustes adicionales">
         <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-ink-muted">Selector del botón de like</label>
-            <input
-              required
-              value={selector}
-              onChange={(e) => setSelector(e.target.value)}
-              placeholder="selector CSS"
-              className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
-            />
-          </div>
-
           <p className="text-xs text-ink-muted">
-            El selector es un punto de partida: las plataformas cambian su HTML seguido, ajústalo si el like falla.
+            Esta campaña no lleva selector CSS: el botón de un comentario es idéntico al de la publicación y al de
+            los demás comentarios, así que el runner lo ubica dentro de la página siguiendo el
+            <code className="mx-1 rounded bg-page px-1 py-0.5">comment_id</code> del link. Si el comentario está
+            detrás de un &quot;Ver más comentarios&quot;, la tarea lo abre sola hasta cuatro veces.
           </p>
 
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-ink-muted">Espera antes de buscar el botón (ms)</label>
+            <label className="text-xs text-ink-muted">Espera antes de buscar el comentario (ms)</label>
             <input
               type="number"
               min={0}
@@ -395,6 +345,12 @@ export default function LikeCampaignPage() {
               className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none focus:border-primary"
             />
           </div>
+
+          <p className="text-xs text-ink-muted">
+            Ojo al repetir: si un perfil ya reaccionó, la tarea lo detecta y no toca nada — pero Facebook no
+            siempre marca en el HTML que el comentario ya tiene tu reacción. En esos casos un segundo intento con
+            el mismo perfil la quitaría en vez de ponerla.
+          </p>
         </div>
       </Modal>
     </div>

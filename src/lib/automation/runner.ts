@@ -18,12 +18,16 @@ type Step = {
     | "waitForTimeout"
     | "screenshot"
     | "scroll"
-    | "uploadFile";
+    | "uploadFile"
+    | "likeComment";
   selector?: string;
   value?: string;
   url?: string;
   key?: string;
   ms?: number;
+  // Solo para "likeComment".
+  commentId?: string;
+  reactionSelector?: string;
   // Si el step falla (ej. un selector que no siempre aparece, como un
   // interstitial de "una sola vez"), se loguea como advertencia y la tarea
   // sigue en vez de terminar en "failed".
@@ -113,6 +117,42 @@ const FACEBOOK_LIKE_SELECTOR = labelSelectors(FACEBOOK_LIKE_LABELS);
 // haría reportar como hecho un like que nunca se dio. Ante un idioma que no
 // esté en la lista, es preferible fallar de forma visible.
 const FACEBOOK_ALREADY_LIKED_SELECTOR = labelSelectors(FACEBOOK_UNLIKE_LABELS);
+
+/**
+ * Atributo temporal con el que el runner marca, dentro de la página, el botón
+ * de "Me gusta" del comentario buscado.
+ *
+ * Reaccionar a un comentario no se puede expresar con un selector CSS suelto:
+ * el botón de un comentario es idéntico al del post y al de los demás
+ * comentarios, y lo único que los distingue es el ancestro en el que viven.
+ * Playwright no sabe subir por el árbol, así que la búsqueda se hace en el
+ * navegador (localizar el permalink del comentario → subir a su contenedor →
+ * bajar a su botón), se marca el resultado con este atributo y desde ahí se
+ * vuelve a la maquinaria normal de clicks, que ya resuelve scroll, visibilidad
+ * y capas encima.
+ */
+const FACEBOOK_COMMENT_LIKE_MARK = "data-godeye-comment-like";
+
+/** Botones de "ver más comentarios/respuestas" que pueden estar escondiendo el comentario. */
+const FACEBOOK_MORE_COMMENTS_SELECTOR = [
+  "más comentarios",
+  "more comments",
+  "comentarios anteriores",
+  "previous comments",
+  "más respuestas",
+  "respuesta más",
+  "respuestas más",
+  "more replies",
+]
+  .map((text) => `div[role="button"]:has-text("${text}")`)
+  .join(", ");
+
+const FACEBOOK_MAX_COMMENT_EXPANSIONS = 4;
+
+type CommentLikeProbe = {
+  status: "ready" | "already_liked" | "not_found" | "no_article" | "no_button";
+  detail: string;
+};
 
 const FACEBOOK_BLOCKERS = [
   {
@@ -363,6 +403,159 @@ async function firstClickableLocator(page: Page, selector: string, timeoutMs: nu
   );
 }
 
+/**
+ * Busca el comentario en el DOM y deja marcado su botón de reaccionar.
+ *
+ * Corre entero dentro del navegador porque necesita `closest()`: se parte del
+ * ancla del permalink (el "hace 2 h" de cada comentario, cuyo href lleva el
+ * `comment_id`), se sube al `role="article"` que lo contiene — que es el
+ * comentario, no el post — y ahí adentro se busca el botón cuyo rótulo o texto
+ * sea "Me gusta" en alguno de los idiomas conocidos, descartando los que
+ * pertenecen a respuestas anidadas.
+ */
+async function markFacebookCommentLike(page: Page, commentId: string): Promise<CommentLikeProbe> {
+  return page.evaluate(
+    ({ commentId, mark, likeLabels, unlikeLabels }): CommentLikeProbe => {
+      // Comparación insensible a mayúsculas y a acentos ("Gefällt mir" vs
+      // "gefallt mir"): la interfaz de Facebook no siempre respeta el
+      // capitalizado del rótulo entre layouts.
+      const sameLabel = (value: string, label: string) =>
+        value.trim().localeCompare(label, undefined, { sensitivity: "base" }) === 0;
+      const matchesAny = (value: string, labels: string[]) =>
+        Boolean(value.trim()) && labels.some((label) => sameLabel(value, label));
+
+      for (const marked of Array.from(document.querySelectorAll(`[${mark}]`))) {
+        marked.removeAttribute(mark);
+      }
+
+      // El href del DOM puede traer el id escapado (`%3D` del padding base64)
+      // y el link del que salió, decodificado — o al revés. Se prueban las dos
+      // formas contra las dos versiones del href.
+      const wantedIds = [commentId];
+      const encoded = encodeURIComponent(commentId);
+      if (encoded !== commentId) wantedIds.push(encoded);
+
+      const patterns = wantedIds.map(
+        (id) => new RegExp(`(^|[?&])(reply_)?comment_id=${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(&|#|$)`),
+      );
+
+      const hrefMatches = (href: string) => {
+        const variants = [href];
+        try {
+          const decoded = decodeURIComponent(href);
+          if (decoded !== href) variants.push(decoded);
+        } catch {
+          // href con escapes inválidos: basta con la forma cruda
+        }
+        return variants.some((variant) => patterns.some((pattern) => pattern.test(variant)));
+      };
+
+      const anchors = Array.from(document.querySelectorAll("a[href]")).filter((a) =>
+        hrefMatches(a.getAttribute("href") ?? ""),
+      );
+      if (!anchors.length) {
+        const articles = document.querySelectorAll('[role="article"]').length;
+        return { status: "not_found", detail: `${articles} comentario(s) renderizado(s) en la página` };
+      }
+
+      // El mismo id puede aparecer en más de un link (el permalink del
+      // comentario, un "responder", el menú de compartir): sirve el primero que
+      // esté realmente dentro de un comentario.
+      const article = anchors.map((a) => a.closest('[role="article"]')).find(Boolean);
+      if (!article) {
+        return {
+          status: "no_article",
+          detail: `${anchors.length} link(s) con ese id, ninguno dentro de un contenedor de comentario`,
+        };
+      }
+
+      // Los botones de las respuestas viven en artículos anidados: solo cuentan
+      // los que tienen a este artículo como contenedor más cercano.
+      const buttons = Array.from(article.querySelectorAll('[role="button"]')).filter(
+        (button) => button.closest('[role="article"]') === article,
+      );
+
+      const labelOf = (el: Element) => el.getAttribute("aria-label") ?? "";
+      const textOf = (el: Element) => (el as HTMLElement).innerText || el.textContent || "";
+      const isLikeButton = (el: Element) =>
+        matchesAny(labelOf(el), likeLabels) || matchesAny(textOf(el), likeLabels);
+
+      const liked = buttons.find(
+        (button) =>
+          matchesAny(labelOf(button), unlikeLabels) ||
+          (button.getAttribute("aria-pressed") === "true" && isLikeButton(button)),
+      );
+      if (liked) return { status: "already_liked", detail: "" };
+
+      const likeButton = buttons.find(isLikeButton);
+      if (!likeButton) {
+        return {
+          status: "no_button",
+          detail: `${buttons.length} botón(es) en el comentario, ninguno rotulado como "Me gusta"`,
+        };
+      }
+
+      likeButton.setAttribute(mark, "1");
+      // El picker de reacciones se abre hacia arriba: el comentario tiene que
+      // quedar a media pantalla para que quepa.
+      article.scrollIntoView({ block: "center" });
+      return { status: "ready", detail: "" };
+    },
+    {
+      commentId,
+      mark: FACEBOOK_COMMENT_LIKE_MARK,
+      likeLabels: FACEBOOK_LIKE_LABELS,
+      unlikeLabels: FACEBOOK_UNLIKE_LABELS,
+    },
+  );
+}
+
+/**
+ * Reintenta la búsqueda mientras el comentario no aparezca: Facebook carga los
+ * comentarios de a poco y el que se busca puede estar detrás de un "Ver más
+ * comentarios", sobre todo en publicaciones con mucha conversación.
+ */
+async function resolveFacebookCommentLike(
+  page: Page,
+  commentId: string,
+  timeoutMs: number,
+  ctx: StepContext,
+): Promise<CommentLikeProbe> {
+  const deadline = Date.now() + timeoutMs;
+  let probe = await markFacebookCommentLike(page, commentId);
+  let expansions = 0;
+
+  while (probe.status === "not_found" && Date.now() < deadline) {
+    await assertNoKnownBlocker(page);
+
+    if (expansions < FACEBOOK_MAX_COMMENT_EXPANSIONS && (await hasVisibleLocator(page, FACEBOOK_MORE_COMMENTS_SELECTOR))) {
+      expansions += 1;
+      await log(ctx.taskId, "info", `El comentario aún no está cargado; abriendo más comentarios (intento ${expansions}).`);
+      const target = await firstClickableLocator(page, FACEBOOK_MORE_COMMENTS_SELECTOR, 3000).catch(() => null);
+      if (target) await target.locator.click({ position: target.position, timeout: 3000 }).catch(() => {});
+    }
+
+    await page.waitForTimeout(1000);
+    probe = await markFacebookCommentLike(page, commentId);
+  }
+
+  return probe;
+}
+
+function commentProbeError(probe: CommentLikeProbe, commentId: string) {
+  const suffix = probe.detail ? ` (${probe.detail})` : "";
+  switch (probe.status) {
+    case "not_found":
+      return `No se encontró el comentario ${commentId} en la página${suffix}. Revisa que el link siga vivo y que el perfil pueda ver la publicación.`;
+    case "no_article":
+      return `Se encontró el link del comentario ${commentId} pero no su contenedor${suffix}.`;
+    case "no_button":
+      return `El comentario ${commentId} está en la página pero no expone un botón de "Me gusta" reconocible${suffix}. Suele ser la interfaz del perfil en un idioma que el runner no tiene mapeado.`;
+    default:
+      return `No se pudo preparar el like del comentario ${commentId}${suffix}.`;
+  }
+}
+
 async function runStep(page: Page, step: Step, ctx: StepContext) {
   switch (step.action) {
     case "goto":
@@ -408,6 +601,49 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
         }
       }
       return;
+    case "likeComment": {
+      const commentId = step.commentId?.trim();
+      if (!commentId) throw new Error("Step 'likeComment' requiere 'commentId'");
+
+      const timeoutMs = step.ms ?? DEFAULT_ACTION_TIMEOUT_MS;
+      const probe = await resolveFacebookCommentLike(page, commentId, timeoutMs, ctx);
+
+      // Volver a clickear un "Me gusta" ya puesto lo quita: si el comentario
+      // ya trae la reacción, la tarea está cumplida y no se toca nada.
+      if (probe.status === "already_liked") {
+        await log(ctx.taskId, "info", "El comentario ya tenía la reacción puesta; nada que hacer.");
+        return;
+      }
+      if (probe.status !== "ready") throw new Error(commentProbeError(probe, commentId));
+
+      const markedSelector = `[${FACEBOOK_COMMENT_LIKE_MARK}]`;
+      const target = await firstClickableLocator(page, markedSelector, DEFAULT_CLICK_TIMEOUT_MS);
+
+      if (step.reactionSelector) {
+        await target.locator.hover({ position: target.position, timeout: DEFAULT_CLICK_TIMEOUT_MS });
+        await page.waitForTimeout(800);
+        const reaction = await firstClickableLocator(page, step.reactionSelector, 5000);
+        await reaction.locator.click({ position: reaction.position, timeout: DEFAULT_CLICK_TIMEOUT_MS });
+        return;
+      }
+
+      try {
+        await target.locator.click({ position: target.position, timeout: DEFAULT_CLICK_TIMEOUT_MS });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!/intercepts pointer events/i.test(message)) throw err;
+
+        await log(
+          ctx.taskId,
+          "warn",
+          "El botón de like del comentario está cubierto por otra capa; se intenta activarlo con teclado.",
+        );
+        await target.locator.focus({ timeout: 3000 });
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(700);
+      }
+      return;
+    }
     case "hover":
       // Dispara el picker de reacciones de Facebook (aparece al mantener el
       // cursor sobre el botón de "Me gusta" en vez de clickearlo directo).

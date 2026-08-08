@@ -34,6 +34,10 @@ import { getListeningDigest } from "@/lib/listening/dashboard";
 
 const TREND_DAYS = 14;
 
+// Un like a un comentario cuenta como like en las métricas: para el reporte de
+// campaña es la misma acción, solo cambia dónde cae.
+const LIKE_TYPES = ["like", "likecomment"];
+
 async function getStats() {
   await dbConnect();
 
@@ -66,14 +70,14 @@ async function getStats() {
     TaskModel.countDocuments({ status: "running" }),
     TaskModel.countDocuments({ status: "failed" }),
     TaskModel.countDocuments({ status: "success" }),
-    TaskModel.countDocuments({ type: "like", status: "success" }),
-    TaskModel.countDocuments({ type: "like", status: "failed" }),
+    TaskModel.countDocuments({ type: { $in: LIKE_TYPES }, status: "success" }),
+    TaskModel.countDocuments({ type: { $in: LIKE_TYPES }, status: "failed" }),
     TaskModel.countDocuments({ type: "comment", status: "success" }),
     TaskModel.countDocuments({ type: "comment", status: "failed" }),
     TaskModel.countDocuments({ status: "success", finishedAt: { $gte: d7 } }),
     TaskModel.countDocuments({ status: "success", finishedAt: { $gte: d14, $lt: d7 } }),
     TaskModel.aggregate([
-      { $match: { type: { $in: ["like", "comment"] }, status: "success", finishedAt: { $gte: since14 } } },
+      { $match: { type: { $in: [...LIKE_TYPES, "comment"] }, status: "success", finishedAt: { $gte: since14 } } },
       {
         $group: {
           _id: { day: { $dateToString: { format: "%Y-%m-%d", date: "$finishedAt" } }, type: "$type" },
@@ -82,7 +86,7 @@ async function getStats() {
       },
     ]),
     TaskModel.aggregate([
-      { $match: { type: { $in: ["like", "comment"] }, status: "success" } },
+      { $match: { type: { $in: [...LIKE_TYPES, "comment"] }, status: "success" } },
       { $group: { _id: "$profileId", count: { $sum: 1 } } },
       { $sort: { count: -1 } },
       { $limit: 6 },
@@ -106,8 +110,10 @@ async function getStats() {
   for (const row of dailyRows as { _id: { day: string; type: string }; count: number }[]) {
     const entry = dailyMap.get(row._id.day);
     if (!entry) continue;
-    if (row._id.type === "like") entry.likes = row.count;
-    else entry.comments = row.count;
+    // Suma en vez de asignar: "like" y "likecomment" son filas distintas del
+    // agregado que caen en la misma barra de likes del día.
+    if (LIKE_TYPES.includes(row._id.type)) entry.likes += row.count;
+    else entry.comments += row.count;
   }
   const trend: TrendPoint[] = Array.from(dailyMap.entries()).map(([day, v]) => ({
     day,

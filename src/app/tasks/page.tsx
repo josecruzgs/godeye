@@ -3,7 +3,17 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Heart, MessageSquare, Megaphone, Activity, Plus, Search, OctagonX, FolderKanban } from "lucide-react";
+import {
+  Heart,
+  MessageCircleHeart,
+  MessageSquare,
+  Megaphone,
+  Activity,
+  Plus,
+  Search,
+  OctagonX,
+  FolderKanban,
+} from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
 import Pagination from "@/components/Pagination";
@@ -23,7 +33,7 @@ type Profile = { _id: string; name: string };
 
 const PAGE_SIZE = 20;
 const STATUSES = ["pending", "queued", "running", "paused", "success", "failed", "cancelled"];
-const TYPES = ["login", "post", "warmup", "scrape", "like", "comment", "custom"];
+const TYPES = ["login", "post", "warmup", "scrape", "like", "likecomment", "comment", "custom"];
 
 export default function TasksPage() {
   return (
@@ -178,6 +188,12 @@ function TasksContent() {
             className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-surface px-3 py-2 text-sm font-medium text-ink-secondary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:text-ink hover:shadow-md"
           >
             <Heart className="h-4 w-4" /> Campaña de likes
+          </Link>
+          <Link
+            href="/tasks/likecomment"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-surface px-3 py-2 text-sm font-medium text-ink-secondary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:text-ink hover:shadow-md"
+          >
+            <MessageCircleHeart className="h-4 w-4" /> Likes a comentarios
           </Link>
           <Link
             href="/tasks/comment"

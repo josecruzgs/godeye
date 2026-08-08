@@ -65,10 +65,11 @@ type CampaignDetail = {
 
 const PAGE_SIZE = 20;
 const STATUSES = ["pending", "queued", "running", "paused", "success", "failed", "partial", "cancelled", "empty"];
-const TYPES = ["like", "comment", "post", "warmup", "scrape", "custom"];
+const TYPES = ["like", "likecomment", "comment", "post", "warmup", "scrape", "custom"];
 
 const TYPE_LABELS: Record<string, string> = {
   like: "Likes",
+  likecomment: "Likes a comentarios",
   comment: "Comentarios",
   post: "Publicaciones",
   warmup: "Warmup",
@@ -81,6 +82,7 @@ const TYPE_LABELS: Record<string, string> = {
 // existente" (ver ExistingCampaignPicker) tienen a dónde mandar el botón.
 const TYPE_ROUTES: Record<string, string> = {
   like: "/tasks/like",
+  likecomment: "/tasks/likecomment",
   comment: "/tasks/comment",
   post: "/tasks/post",
   warmup: "/tasks/warmup",

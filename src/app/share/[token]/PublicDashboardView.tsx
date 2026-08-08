@@ -13,6 +13,7 @@ import {
   ChevronRight,
   X,
   Heart,
+  MessageCircleHeart,
   MessageSquare,
   Megaphone,
   Activity,
@@ -56,6 +57,7 @@ type CampaignDetail = { campaign: PublicCampaign; tasks: CampaignTask[] };
 
 const TYPE_LABELS: Record<string, string> = {
   like: "Likes",
+  likecomment: "Likes a comentarios",
   comment: "Comentarios",
   post: "Publicaciones",
   warmup: "Warmup",
@@ -66,6 +68,7 @@ const TYPE_LABELS: Record<string, string> = {
 
 const TYPE_ICONS: Record<string, LucideIcon> = {
   like: Heart,
+  likecomment: MessageCircleHeart,
   comment: MessageSquare,
   post: Megaphone,
   warmup: Activity,
@@ -76,6 +79,7 @@ const TYPE_ICONS: Record<string, LucideIcon> = {
 
 const TYPE_ICON_BG: Record<string, string> = {
   like: "bg-series-3",
+  likecomment: "bg-series-3",
   comment: "bg-series-5",
   post: "bg-series-7",
   warmup: "bg-series-4",

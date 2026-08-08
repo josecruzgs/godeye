@@ -18,6 +18,7 @@ const StepSchema = new Schema(
         "screenshot",
         "scroll",
         "uploadFile",
+        "likeComment",
       ],
       required: true,
     },
@@ -27,9 +28,25 @@ const StepSchema = new Schema(
     key: { type: String },
     ms: { type: Number },
     optional: { type: Boolean },
+    // Solo para "likeComment": el id del comentario a reaccionar (sale del
+    // `comment_id`/`reply_comment_id` del link) y, cuando la reacción no es
+    // "me gusta", el selector de la reacción dentro del picker de Facebook.
+    commentId: { type: String },
+    reactionSelector: { type: String },
   },
   { _id: false },
 );
+
+export const TASK_TYPES = [
+  "login",
+  "post",
+  "warmup",
+  "scrape",
+  "like",
+  "likecomment",
+  "comment",
+  "custom",
+] as const;
 
 const TaskSchema = new Schema(
   {
@@ -38,7 +55,7 @@ const TaskSchema = new Schema(
     profileId: { type: Schema.Types.ObjectId, ref: "Profile", required: true },
     type: {
       type: String,
-      enum: ["login", "post", "warmup", "scrape", "like", "comment", "custom"],
+      enum: TASK_TYPES,
       default: "custom",
     },
     steps: { type: [StepSchema], default: [] },
@@ -63,7 +80,18 @@ TaskSchema.index({ campaignId: 1, status: 1 });
 
 export type Task = InferSchemaType<typeof TaskSchema>;
 
-if (models.Task && !models.Task.schema.path("campaignId")) {
+// El modelo compilado se cachea entre recargas del dev server, así que un
+// schema viejo sobrevive a los cambios de este archivo y rechaza los valores
+// nuevos. Se descarta cuando le falta algo que esta versión sí tiene.
+function isStaleTaskModel() {
+  const schema = models.Task?.schema;
+  if (!schema) return false;
+  if (!schema.path("campaignId")) return true;
+  const types = (schema.path("type") as { enumValues?: string[] }).enumValues ?? [];
+  return !types.includes("likecomment");
+}
+
+if (isStaleTaskModel()) {
   mongoose.deleteModel("Task");
 }
 
