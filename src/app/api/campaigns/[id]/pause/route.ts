@@ -16,9 +16,18 @@ export const POST = withAuth(
     const campaign = await CampaignModel.findOne({ _id: id, ownerId: user.objectId }).select("_id").lean();
     if (!campaign) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
-    const result = await TaskModel.updateMany({ campaignId: id, status: { $in: ["pending", "queued"] } }, [
-      { $set: { resumeStatus: "$status", status: "paused" } },
-    ]);
+    // Va como pipeline de agregación —no como update normal— porque
+    // `resumeStatus` se copia del valor actual de `status`, y un update plano
+    // no puede leer otro campo del documento.
+    //
+    // `updatePipeline: true` es obligatorio desde mongoose 9: antes se aceptaba
+    // el array a secas, y ahora sin la opción tira "Cannot pass an array to
+    // query updates" y pausar la campaña falla en silencio para el usuario.
+    const result = await TaskModel.updateMany(
+      { campaignId: id, status: { $in: ["pending", "queued"] } },
+      [{ $set: { resumeStatus: "$status", status: "paused" } }],
+      { updatePipeline: true },
+    );
 
     return NextResponse.json({ pausedCount: result.modifiedCount });
   },

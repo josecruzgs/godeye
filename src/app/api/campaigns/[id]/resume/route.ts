@@ -15,10 +15,14 @@ export const POST = withAuth(
     const campaign = await CampaignModel.findOne({ _id: id, ownerId: user.objectId }).select("_id").lean();
     if (!campaign) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
-    const result = await TaskModel.updateMany({ campaignId: id, status: "paused" }, [
-      { $set: { status: { $ifNull: ["$resumeStatus", "queued"] } } },
-      { $unset: "resumeStatus" },
-    ]);
+    // Pipeline por el mismo motivo que en /pause: el estado nuevo sale de
+    // `resumeStatus`, que es otro campo del propio documento. Y la opción
+    // `updatePipeline` la exige mongoose 9 (ver el comentario de /pause).
+    const result = await TaskModel.updateMany(
+      { campaignId: id, status: "paused" },
+      [{ $set: { status: { $ifNull: ["$resumeStatus", "queued"] } } }, { $unset: "resumeStatus" }],
+      { updatePipeline: true },
+    );
 
     return NextResponse.json({ resumedCount: result.modifiedCount });
   },
