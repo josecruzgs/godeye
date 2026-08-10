@@ -1,20 +1,24 @@
-import { timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { dbConnect } from "@/lib/mongodb";
+import UserModel from "@/lib/models/User";
 import { withApiErrors } from "@/lib/apiHandler";
-import { SITE_AUTH_COOKIE, expectedSiteAuthToken } from "@/lib/siteAuth";
+import { verifyPassword } from "@/lib/auth/password";
+import {
+  SESSION_COOKIE,
+  SESSION_COOKIE_OPTIONS,
+  SESSION_MAX_AGE_SECONDS,
+  createSessionToken,
+} from "@/lib/auth/session";
 import { rateLimit, rateLimitReset, clientIp } from "@/lib/rateLimit";
 
 // Ocho intentos cada quince minutos y después media hora de espera. Alcanza de
 // sobra para quien tipeó mal la contraseña y hace inviable probarla a ciegas.
 const LIMIT = { limit: 8, windowMs: 15 * 60_000, blockMs: 30 * 60_000 };
 
-/** Comparación de tiempo constante: dos textos distintos no deben tardar distinto. */
-function sameSecret(a: string, b: string): boolean {
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
-  if (left.length !== right.length) return false;
-  return timingSafeEqual(left, right);
-}
+// Un hash con forma válida y contraseña imposible. Si el usuario no existe,
+// igual se corre el scrypt: sin esto, un usuario inexistente responde al
+// instante y uno real tarda, lo que permite enumerar cuentas cronometrando.
+const DUMMY_HASH = `scrypt$${"0".repeat(32)}$${"0".repeat(128)}`;
 
 export const POST = withApiErrors(async (req: NextRequest) => {
   const ip = clientIp(req);
@@ -27,25 +31,27 @@ export const POST = withApiErrors(async (req: NextRequest) => {
   }
 
   const body = await req.json();
+  const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : "";
   const password = typeof body.password === "string" ? body.password : "";
 
-  const expected = await expectedSiteAuthToken();
-  if (!expected) {
-    return NextResponse.json({ error: "SITE_PASSWORD no está configurada en el servidor" }, { status: 500 });
-  }
-  if (!sameSecret(password, process.env.SITE_PASSWORD ?? "")) {
-    return NextResponse.json({ error: "Contraseña incorrecta" }, { status: 401 });
-  }
+  // Un solo mensaje para usuario inexistente, contraseña incorrecta y cuenta
+  // dada de baja: distinguirlos le diría a quien prueba cuáles usuarios existen.
+  const invalid = NextResponse.json({ error: "Usuario o contraseña incorrectos" }, { status: 401 });
+
+  if (!username || !password) return invalid;
+
+  await dbConnect();
+  const user = await UserModel.findOne({ username }).select("passwordHash active");
+
+  const ok = await verifyPassword(password, user?.passwordHash ?? DUMMY_HASH);
+  if (!user || !ok || user.active === false) return invalid;
 
   rateLimitReset(`login:${ip}`);
 
   const res = NextResponse.json({ ok: true });
-  res.cookies.set(SITE_AUTH_COOKIE, expected, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30,
+  res.cookies.set(SESSION_COOKIE, await createSessionToken(String(user._id)), {
+    ...SESSION_COOKIE_OPTIONS,
+    maxAge: SESSION_MAX_AGE_SECONDS,
   });
   return res;
 });

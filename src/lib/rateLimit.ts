@@ -1,10 +1,9 @@
 /**
  * Límite de intentos por IP, en memoria del proceso.
  *
- * Existe para el login: `SITE_PASSWORD` es una sola contraseña compartida y sin
- * freno se puede probar el diccionario entero contra ella en minutos. En local
- * daba igual —nadie más llega a localhost—, pero en un VPS público es la única
- * puerta del panel.
+ * Existe para el login: sin freno se puede probar el diccionario entero contra
+ * una cuenta en minutos. En local daba igual —nadie más llega a localhost—,
+ * pero en un VPS público el login es la única puerta del panel.
  *
  * En memoria y no en Mongo a propósito: el objetivo es frenar la fuerza bruta,
  * no llevar una auditoría, y una consulta a la base por cada intento sería un

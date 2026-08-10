@@ -10,7 +10,8 @@
     "lint": "eslint",
     "worker": "tsx watch src/worker/index.ts",
     "brightdata:datasets": "tsx src/scripts/brightdataDatasets.ts",
-    "listening:repair": "tsx src/scripts/repairEntities.ts"
+    "listening:repair": "tsx src/scripts/repairEntities.ts",
+    "users:admin": "tsx src/scripts/createAdmin.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

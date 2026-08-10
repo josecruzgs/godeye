@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   Users,
   FolderKanban,
@@ -14,6 +15,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { dbConnect } from "@/lib/mongodb";
+import { currentUser, allowedGroupFilter, allowedGroupIdFilter, type SessionUser } from "@/lib/auth/dal";
 import Panel from "@/components/ui/Panel";
 import SubHead from "@/components/ui/SubHead";
 import ElementIcon from "@/components/ui/ElementIcon";
@@ -38,9 +40,14 @@ const TREND_DAYS = 14;
 // campaña es la misma acción, solo cambia dónde cae.
 const LIKE_TYPES = ["like", "likecomment"];
 
-async function getStats() {
+// Este dashboard es personal: cuenta el trabajo del usuario que lo mira y los
+// perfiles y grupos que tiene permitidos. Es un Server Component, así que no
+// pasa por `withAuth` —eso envuelve rutas de API— y el alcance se resuelve acá
+// con el mismo usuario y los mismos filtros que usa el resto del sistema.
+async function getStats(user: SessionUser) {
   await dbConnect();
 
+  const mine = { ownerId: user.objectId };
   const now = new Date();
   const since14 = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (TREND_DAYS - 1)));
   const d7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -64,20 +71,29 @@ async function getStats() {
     commentTotal,
     commentAvailable,
   ] = await Promise.all([
-    ProfileModel.countDocuments(),
-    GroupModel.countDocuments(),
-    TaskModel.countDocuments({ status: { $in: ["pending", "queued"] } }),
-    TaskModel.countDocuments({ status: "running" }),
-    TaskModel.countDocuments({ status: "failed" }),
-    TaskModel.countDocuments({ status: "success" }),
-    TaskModel.countDocuments({ type: { $in: LIKE_TYPES }, status: "success" }),
-    TaskModel.countDocuments({ type: { $in: LIKE_TYPES }, status: "failed" }),
-    TaskModel.countDocuments({ type: "comment", status: "success" }),
-    TaskModel.countDocuments({ type: "comment", status: "failed" }),
-    TaskModel.countDocuments({ status: "success", finishedAt: { $gte: d7 } }),
-    TaskModel.countDocuments({ status: "success", finishedAt: { $gte: d14, $lt: d7 } }),
+    // Perfiles y grupos son el sustrato compartido: se cuentan los que este
+    // usuario puede ver, no los suyos (no le pertenecen a nadie).
+    ProfileModel.countDocuments(allowedGroupFilter(user)),
+    GroupModel.countDocuments(allowedGroupIdFilter(user)),
+    TaskModel.countDocuments({ ...mine, status: { $in: ["pending", "queued"] } }),
+    TaskModel.countDocuments({ ...mine, status: "running" }),
+    TaskModel.countDocuments({ ...mine, status: "failed" }),
+    TaskModel.countDocuments({ ...mine, status: "success" }),
+    TaskModel.countDocuments({ ...mine, type: { $in: LIKE_TYPES }, status: "success" }),
+    TaskModel.countDocuments({ ...mine, type: { $in: LIKE_TYPES }, status: "failed" }),
+    TaskModel.countDocuments({ ...mine, type: "comment", status: "success" }),
+    TaskModel.countDocuments({ ...mine, type: "comment", status: "failed" }),
+    TaskModel.countDocuments({ ...mine, status: "success", finishedAt: { $gte: d7 } }),
+    TaskModel.countDocuments({ ...mine, status: "success", finishedAt: { $gte: d14, $lt: d7 } }),
     TaskModel.aggregate([
-      { $match: { type: { $in: [...LIKE_TYPES, "comment"] }, status: "success", finishedAt: { $gte: since14 } } },
+      {
+        $match: {
+          ...mine,
+          type: { $in: [...LIKE_TYPES, "comment"] },
+          status: "success",
+          finishedAt: { $gte: since14 },
+        },
+      },
       {
         $group: {
           _id: { day: { $dateToString: { format: "%Y-%m-%d", date: "$finishedAt" } }, type: "$type" },
@@ -86,7 +102,7 @@ async function getStats() {
       },
     ]),
     TaskModel.aggregate([
-      { $match: { type: { $in: [...LIKE_TYPES, "comment"] }, status: "success" } },
+      { $match: { ...mine, type: { $in: [...LIKE_TYPES, "comment"] }, status: "success" } },
       { $group: { _id: "$profileId", count: { $sum: 1 } } },
       { $sort: { count: -1 } },
       { $limit: 6 },
@@ -94,8 +110,8 @@ async function getStats() {
       { $unwind: "$profile" },
       { $project: { _id: 0, name: "$profile.name", count: 1 } },
     ]),
-    CommentModel.countDocuments({}),
-    CommentModel.countDocuments({ used: false }),
+    CommentModel.countDocuments(mine),
+    CommentModel.countDocuments({ ...mine, used: false }),
   ]);
 
   // El día se agrupa en UTC (default de $dateToString) — se recorre y se
@@ -162,9 +178,15 @@ const PASOS = [
 ];
 
 export default async function Home() {
+  // proxy.ts ya redirige al login sin sesión; esto es el cinturón de seguridad
+  // para que la página nunca pueda renderizar sin un usuario del que colgar el
+  // alcance de las cifras.
+  const user = await currentUser();
+  if (!user) redirect("/login");
+
   // En paralelo: Agua (campañas y tareas) y Viento (escucha) son consultas
   // independientes, no tiene sentido encadenarlas.
-  const [stats, escucha] = await Promise.all([getStats(), getListeningDigest()]);
+  const [stats, escucha] = await Promise.all([getStats(user), getListeningDigest(user)]);
 
   return (
     <>

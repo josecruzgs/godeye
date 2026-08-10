@@ -50,6 +50,7 @@ export const TASK_TYPES = [
 
 const TaskSchema = new Schema(
   {
+    ownerId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     name: { type: String, required: true },
     campaignId: { type: Schema.Types.ObjectId, ref: "Campaign" },
     profileId: { type: Schema.Types.ObjectId, ref: "Profile", required: true },
@@ -75,8 +76,12 @@ const TaskSchema = new Schema(
   { timestamps: true },
 );
 
+// Este índice NO lleva ownerId adelante a propósito: lo usa el worker, que
+// toma de la cola sin importar de quién sea la tarea (src/worker/index.ts).
 TaskSchema.index({ status: 1, scheduledAt: 1 });
 TaskSchema.index({ campaignId: 1, status: 1 });
+// Y este es el del panel, que sí arranca siempre por dueño.
+TaskSchema.index({ ownerId: 1, status: 1, scheduledAt: 1 });
 
 export type Task = InferSchemaType<typeof TaskSchema>;
 
@@ -87,6 +92,7 @@ function isStaleTaskModel() {
   const schema = models.Task?.schema;
   if (!schema) return false;
   if (!schema.path("campaignId")) return true;
+  if (!schema.path("ownerId")) return true;
   const types = (schema.path("type") as { enumValues?: string[] }).enumValues ?? [];
   return !types.includes("likecomment");
 }

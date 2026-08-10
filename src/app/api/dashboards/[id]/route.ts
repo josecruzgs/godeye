@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
 import DashboardModel from "@/lib/models/Dashboard";
-import { withApiErrors } from "@/lib/apiHandler";
+import { assertOwnedCampaigns } from "@/lib/dashboards";
+import { withAuth } from "@/lib/apiHandler";
 
-export const GET = withApiErrors(
-  async (_req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+export const GET = withAuth(
+  async (user, _req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
     const { id } = await params;
     await dbConnect();
 
-    const dashboard = await DashboardModel.findById(id).lean();
+    const dashboard = await DashboardModel.findOne({ _id: id, ownerId: user.objectId }).lean();
     if (!dashboard) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
     return NextResponse.json({
@@ -22,8 +23,8 @@ export const GET = withApiErrors(
   },
 );
 
-export const PATCH = withApiErrors(
-  async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+export const PATCH = withAuth(
+  async (user, req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
     const { id } = await params;
     const body = await req.json();
 
@@ -33,13 +34,23 @@ export const PATCH = withApiErrors(
       if (!name) return NextResponse.json({ error: "El nombre del dashboard es obligatorio" }, { status: 400 });
       update.name = name;
     }
-    if (Array.isArray(body.campaignIds)) {
-      update.campaignIds = body.campaignIds.filter((cid: unknown) => typeof cid === "string");
-    }
 
     await dbConnect();
 
-    const dashboard = await DashboardModel.findByIdAndUpdate(id, update, { new: true }).lean();
+    if (Array.isArray(body.campaignIds)) {
+      // El dashboard es público: una campaña ajena metida acá quedaría
+      // expuesta en internet sin contraseña.
+      update.campaignIds = await assertOwnedCampaigns(
+        user,
+        body.campaignIds.filter((cid: unknown) => typeof cid === "string"),
+      );
+    }
+
+    const dashboard = await DashboardModel.findOneAndUpdate(
+      { _id: id, ownerId: user.objectId },
+      update,
+      { new: true },
+    ).lean();
     if (!dashboard) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
     return NextResponse.json({
@@ -53,12 +64,14 @@ export const PATCH = withApiErrors(
   },
 );
 
-export const DELETE = withApiErrors(
-  async (_req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+export const DELETE = withAuth(
+  async (user, _req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
     const { id } = await params;
     await dbConnect();
 
-    const dashboard = await DashboardModel.findByIdAndDelete(id).select("_id").lean();
+    const dashboard = await DashboardModel.findOneAndDelete({ _id: id, ownerId: user.objectId })
+      .select("_id")
+      .lean();
     if (!dashboard) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
     return NextResponse.json({ deletedDashboardId: id });

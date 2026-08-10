@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
-import ProfileModel from "@/lib/models/Profile";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
+import { findUsableProfiles } from "@/lib/auth/profiles";
 import { loginIfNeededSteps } from "@/lib/automation/loginSteps";
 import { addTasksToCampaign, createCampaignWithTasks, readCampaignName } from "@/lib/campaigns";
 
@@ -17,7 +17,7 @@ type Step = {
 // scroll + espera varias veces para simular actividad pasiva, sin interactuar
 // con nada — pensado para "calentar" cuentas nuevas antes de usarlas en
 // campañas reales.
-export const POST = withApiErrors(async (req: NextRequest) => {
+export const POST = withAuth(async (user, req: NextRequest) => {
   const body = await req.json();
   const homeUrl = typeof body.homeUrl === "string" ? body.homeUrl.trim() : "";
   const profileIds: string[] = Array.isArray(body.profileIds) ? body.profileIds : [];
@@ -31,7 +31,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
 
   await dbConnect();
 
-  const profiles = await ProfileModel.find({ _id: { $in: profileIds } }).sort({ name: 1 });
+  const profiles = await findUsableProfiles(user, profileIds);
   if (!profiles.length) {
     return NextResponse.json({ error: "No se encontraron los perfiles seleccionados" }, { status: 404 });
   }
@@ -72,7 +72,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
   let campaign;
   let created;
   if (campaignId) {
-    const result = await addTasksToCampaign({ campaignId, type: "warmup", docs });
+    const result = await addTasksToCampaign({ ownerId: user.objectId, campaignId, type: "warmup", docs });
     if (!result.ok) {
       return result.error === "not_found"
         ? NextResponse.json({ error: "Campaña no encontrada" }, { status: 404 })
@@ -84,7 +84,13 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     campaign = result.campaign;
     created = result.tasks;
   } else {
-    const r = await createCampaignWithTasks({ name: campaignName, type: "warmup", autoRun, docs });
+    const r = await createCampaignWithTasks({
+      ownerId: user.objectId,
+      name: campaignName,
+      type: "warmup",
+      autoRun,
+      docs,
+    });
     campaign = r.campaign;
     created = r.tasks;
   }

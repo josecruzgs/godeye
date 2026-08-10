@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
-import ProfileModel from "@/lib/models/Profile";
 import CommentModel from "@/lib/models/Comment";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
+import { findUsableProfiles } from "@/lib/auth/profiles";
 import { loginIfNeededSteps } from "@/lib/automation/loginSteps";
 import { addTasksToCampaign, createCampaignWithTasks, readCampaignName } from "@/lib/campaigns";
 
 // Crea una tarea de "comment" por cada perfil elegido: cada una toma un
 // comentario distinto y sin usar del banco (/api/comments) y lo marca como
 // usado, así ninguna otra campaña vuelve a repetirlo.
-export const POST = withApiErrors(async (req: NextRequest) => {
+export const POST = withAuth(async (user, req: NextRequest) => {
   const body = await req.json();
   const url = typeof body.url === "string" ? body.url.trim() : "";
   const selector = typeof body.selector === "string" ? body.selector.trim() : "";
@@ -29,14 +29,16 @@ export const POST = withApiErrors(async (req: NextRequest) => {
 
   await dbConnect();
 
-  const profiles = await ProfileModel.find({ _id: { $in: profileIds } }).sort({ name: 1 });
+  const profiles = await findUsableProfiles(user, profileIds);
   if (!profiles.length) {
     return NextResponse.json({ error: "No se encontraron los perfiles seleccionados" }, { status: 404 });
   }
 
   // Reserva N comentarios sin usar (uno por perfil) antes de crear nada: si
   // no alcanza, no se crea ninguna tarea a medias.
-  const pool = await CommentModel.find({ used: false }).sort({ createdAt: 1 }).limit(profiles.length);
+  const pool = await CommentModel.find({ ownerId: user.objectId, used: false })
+    .sort({ createdAt: 1 })
+    .limit(profiles.length);
   if (pool.length < profiles.length) {
     return NextResponse.json(
       {
@@ -87,7 +89,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
   let campaign;
   let created;
   if (campaignId) {
-    const result = await addTasksToCampaign({ campaignId, type: "comment", docs });
+    const result = await addTasksToCampaign({ ownerId: user.objectId, campaignId, type: "comment", docs });
     if (!result.ok) {
       return result.error === "not_found"
         ? NextResponse.json({ error: "Campaña no encontrada" }, { status: 404 })
@@ -99,7 +101,13 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     campaign = result.campaign;
     created = result.tasks;
   } else {
-    const r = await createCampaignWithTasks({ name: campaignName, type: "comment", autoRun, docs });
+    const r = await createCampaignWithTasks({
+      ownerId: user.objectId,
+      name: campaignName,
+      type: "comment",
+      autoRun,
+      docs,
+    });
     campaign = r.campaign;
     created = r.tasks;
   }

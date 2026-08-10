@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
 import GroupModel from "@/lib/models/Group";
 import { adsPower } from "@/lib/adspower/client";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAdmin } from "@/lib/apiHandler";
 
 // Trae los grupos desde AdsPower y sincroniza (upsert) en Mongo.
-export const POST = withApiErrors(async () => {
+//
+// Solo admin: escribe la tabla que comparten todos los usuarios y es la que
+// decide qué grupos existen para asignar permisos.
+export const POST = withAdmin(async () => {
   await dbConnect();
   const list = await adsPower.listAllGroups();
 

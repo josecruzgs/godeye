@@ -3,7 +3,9 @@ import { Types } from "mongoose";
 import { dbConnect } from "@/lib/mongodb";
 import ProfileModel, { type Profile } from "@/lib/models/Profile";
 import { parseCsv } from "@/lib/csv";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
+import { allowedGroupFilter } from "@/lib/auth/dal";
+import { findUsableProfiles } from "@/lib/auth/profiles";
 import { loginIfNeededSteps } from "@/lib/automation/loginSteps";
 import { addTasksToCampaign, createCampaignWithTasks, readCampaignName } from "@/lib/campaigns";
 
@@ -111,7 +113,7 @@ function readSelectors(body: Record<string, unknown>): Selectors {
   };
 }
 
-export const POST = withApiErrors(async (req: NextRequest) => {
+export const POST = withAuth(async (user, req: NextRequest) => {
   const body = (await req.json()) as Record<string, unknown>;
   const mode = body.mode === "manual" ? "manual" : "sheet";
   const dryRun = Boolean(body.dryRun);
@@ -130,7 +132,10 @@ export const POST = withApiErrors(async (req: NextRequest) => {
       return NextResponse.json({ error: "El Sheet no tiene filas con la columna 'Perfil' llena" }, { status: 400 });
     }
 
-    const profiles = await ProfileModel.find({});
+    // Solo los perfiles al alcance del usuario. Una fila del Sheet que apunte
+    // a un perfil de otro grupo cae en `unmatchedNames`, igual que una que
+    // nombre un perfil inexistente.
+    const profiles = await ProfileModel.find(allowedGroupFilter(user));
     const byName = new Map(profiles.map((p) => [p.name.trim().toLowerCase(), p]));
 
     const matched = rows
@@ -211,7 +216,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     let campaign;
     let created;
     if (campaignId) {
-      const result = await addTasksToCampaign({ campaignId, type: "custom", docs });
+      const result = await addTasksToCampaign({ ownerId: user.objectId, campaignId, type: "custom", docs });
       if (!result.ok) {
         return result.error === "not_found"
           ? NextResponse.json({ error: "Campaña no encontrada" }, { status: 404 })
@@ -223,7 +228,13 @@ export const POST = withApiErrors(async (req: NextRequest) => {
       campaign = result.campaign;
       created = result.tasks;
     } else {
-      const r = await createCampaignWithTasks({ name: campaignName, type: "custom", autoRun, docs });
+      const r = await createCampaignWithTasks({
+        ownerId: user.objectId,
+        name: campaignName,
+        type: "custom",
+        autoRun,
+        docs,
+      });
       campaign = r.campaign;
       created = r.tasks;
     }
@@ -281,7 +292,10 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     );
   }
 
-  const profileDocs = await ProfileModel.find({ _id: { $in: assignments.map((a) => a.profileId) } });
+  const profileDocs = await findUsableProfiles(
+    user,
+    assignments.map((a) => a.profileId),
+  );
   const byId = new Map(profileDocs.map((p) => [String(p._id), p]));
 
   const waitMs = Number(body.waitMs) > 0 ? Number(body.waitMs) : 3000;
@@ -319,7 +333,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
   let campaign;
   let created;
   if (campaignId) {
-    const result = await addTasksToCampaign({ campaignId, type: "custom", docs });
+    const result = await addTasksToCampaign({ ownerId: user.objectId, campaignId, type: "custom", docs });
     if (!result.ok) {
       return result.error === "not_found"
         ? NextResponse.json({ error: "Campaña no encontrada" }, { status: 404 })
@@ -331,7 +345,13 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     campaign = result.campaign;
     created = result.tasks;
   } else {
-    const r = await createCampaignWithTasks({ name: campaignName, type: "custom", autoRun, docs });
+    const r = await createCampaignWithTasks({
+      ownerId: user.objectId,
+      name: campaignName,
+      type: "custom",
+      autoRun,
+      docs,
+    });
     campaign = r.campaign;
     created = r.tasks;
   }

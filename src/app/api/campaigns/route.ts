@@ -4,7 +4,7 @@ import { dbConnect } from "@/lib/mongodb";
 import CampaignModel from "@/lib/models/Campaign";
 import TaskModel from "@/lib/models/Task";
 import { makeCampaignSummary, type TaskStatusCounts } from "@/lib/campaigns";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
 import { escapeRegex } from "@/lib/regex";
 
 type CountRow = {
@@ -12,7 +12,7 @@ type CountRow = {
   count: number;
 };
 
-export const GET = withApiErrors(async (req: NextRequest) => {
+export const GET = withAuth(async (user, req: NextRequest) => {
   const sp = req.nextUrl.searchParams;
   const status = sp.get("status") ?? "";
   const type = sp.get("type") ?? "";
@@ -22,7 +22,7 @@ export const GET = withApiErrors(async (req: NextRequest) => {
 
   await dbConnect();
 
-  const filter: Record<string, unknown> = {};
+  const filter: Record<string, unknown> = { ownerId: user.objectId };
   if (type) filter.type = type;
   if (search) filter.name = { $regex: escapeRegex(search), $options: "i" };
 

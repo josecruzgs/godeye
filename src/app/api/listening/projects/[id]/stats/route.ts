@@ -2,18 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { dbConnect } from "@/lib/mongodb";
 import MentionModel from "@/lib/models/Mention";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
+import { assertOwnedProject } from "@/lib/listening/ownership";
 import { parseDayRange, utcDayKeys } from "@/lib/listening/range";
 
 type Params = { params: Promise<{ id: string }> };
 
-export const GET = withApiErrors(async (req: NextRequest, { params }: Params) => {
+export const GET = withAuth(async (user, req: NextRequest, { params }: Params) => {
   const { id } = await params;
   const sp = req.nextUrl.searchParams;
 
   const { from, to } = parseDayRange(sp.get("from"), sp.get("to"));
 
   await dbConnect();
+  await assertOwnedProject(user, id);
 
   // Las menciones que la IA marcó como ajenas a la figura se excluyen de
   // TODAS las métricas: si contaran, el sentimiento promedio y el volumen

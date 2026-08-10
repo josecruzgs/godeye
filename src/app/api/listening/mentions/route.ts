@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
 import MentionModel from "@/lib/models/Mention";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
+import { assertOwnedProject } from "@/lib/listening/ownership";
 import { escapeRegex } from "@/lib/regex";
 import { parseDayRange } from "@/lib/listening/range";
 
-export const GET = withApiErrors(async (req: NextRequest) => {
+export const GET = withAuth(async (user, req: NextRequest) => {
   const sp = req.nextUrl.searchParams;
 
   const projectId = sp.get("projectId");
@@ -13,6 +14,10 @@ export const GET = withApiErrors(async (req: NextRequest) => {
 
   const page = Math.max(1, Number(sp.get("page")) || 1);
   const pageSize = Math.min(100, Math.max(1, Number(sp.get("pageSize")) || 25));
+
+  await dbConnect();
+  // Las menciones no llevan dueño: el alcance sale del proyecto al que cuelgan.
+  await assertOwnedProject(user, projectId);
 
   const filter: Record<string, unknown> = { projectId };
 
@@ -45,8 +50,6 @@ export const GET = withApiErrors(async (req: NextRequest) => {
     filter.$or = [{ title: rx }, { text: rx }, { author: rx }, { domain: rx }];
   }
 
-  await dbConnect();
-
   const [mentions, total] = await Promise.all([
     MentionModel.find(filter)
       .sort({ publishedAt: -1 })
@@ -65,7 +68,7 @@ export const GET = withApiErrors(async (req: NextRequest) => {
  * proyecto entero por un parámetro mal armado, y las menciones de redes
  * cuestan dinero real de volver a traer.
  */
-export const DELETE = withApiErrors(async (req: NextRequest) => {
+export const DELETE = withAuth(async (user, req: NextRequest) => {
   const sp = req.nextUrl.searchParams;
   const projectId = sp.get("projectId");
   if (!projectId) return NextResponse.json({ error: "Falta projectId" }, { status: 400 });
@@ -78,6 +81,8 @@ export const DELETE = withApiErrors(async (req: NextRequest) => {
   }
 
   await dbConnect();
+  await assertOwnedProject(user, projectId);
+
   const { deletedCount } = await MentionModel.deleteMany({ projectId, relevant: false });
 
   return NextResponse.json({ deleted: deletedCount ?? 0 });

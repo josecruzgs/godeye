@@ -5,10 +5,11 @@ import TaskModel from "@/lib/models/Task";
 // no truene con "Schema hasn't been registered" en un lambda frío que nunca
 // cargó /api/profiles antes.
 import "@/lib/models/Profile";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
+import { findUsableProfile } from "@/lib/auth/profiles";
 import { escapeRegex } from "@/lib/regex";
 
-export const GET = withApiErrors(async (req: NextRequest) => {
+export const GET = withAuth(async (user, req: NextRequest) => {
   const sp = req.nextUrl.searchParams;
   const status = sp.get("status") ?? undefined;
   const type = sp.get("type") ?? undefined;
@@ -19,7 +20,7 @@ export const GET = withApiErrors(async (req: NextRequest) => {
 
   await dbConnect();
 
-  const filter: Record<string, unknown> = {};
+  const filter: Record<string, unknown> = { ownerId: user.objectId };
   if (status) filter.status = status;
   if (type) filter.type = type;
   if (profileId) filter.profileId = profileId;
@@ -37,16 +38,20 @@ export const GET = withApiErrors(async (req: NextRequest) => {
   return NextResponse.json({ tasks, total, page, pageSize });
 });
 
-export const POST = withApiErrors(async (req: NextRequest) => {
+export const POST = withAuth(async (user, req: NextRequest) => {
   const body = await req.json();
   if (!body.name || !body.profileId) {
     return NextResponse.json({ error: "'name' y 'profileId' son requeridos" }, { status: 400 });
   }
 
   await dbConnect();
+  // Corta con 404 si el perfil no existe o cae fuera de los grupos permitidos.
+  const profile = await findUsableProfile(user, String(body.profileId));
+
   const task = await TaskModel.create({
+    ownerId: user.objectId,
     name: body.name,
-    profileId: body.profileId,
+    profileId: profile._id,
     type: body.type ?? "custom",
     steps: body.steps ?? [],
     status: "pending",

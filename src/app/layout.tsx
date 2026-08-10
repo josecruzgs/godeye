@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { Fraunces, Inter, IBM_Plex_Mono } from "next/font/google";
 import ThemeScript from "@/components/ThemeScript";
 import AppShell from "@/components/AppShell";
+import { currentUser } from "@/lib/auth/dal";
+import { SessionProvider, type ClientSession } from "@/lib/session";
+import { accentStyle } from "@/lib/theme";
 import "./globals.css";
 
 // Tres familias con roles fijos, como la sala de inteligencia: Fraunces
@@ -44,14 +47,30 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // La sesión se resuelve acá arriba y baja por contexto: es lo que permite que
+  // el acento, la foto y los textos del menú ya vengan bien en la primera
+  // pintura, en vez de aparecer por defecto y corregirse un instante después.
+  // En /login y /share no hay usuario y todo cae en los valores de la casa.
+  const user = await currentUser();
+  const session: ClientSession | null = user
+    ? {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        groupIds: user.groupIds,
+        preferences: user.preferences,
+      }
+    : null;
+
   return (
     <html
       lang="es"
+      style={accentStyle(session?.preferences.accentColor)}
       className={`${inter.variable} ${fraunces.variable} ${plexMono.variable} h-full antialiased`}
       // ThemeScript toggles the "dark" class on this element before React
       // hydrates (to avoid a flash of the wrong theme); that intentional,
@@ -60,7 +79,9 @@ export default function RootLayout({
     >
       <body className="relative flex min-h-full overflow-hidden bg-page text-ink">
         <ThemeScript />
-        <AppShell>{children}</AppShell>
+        <SessionProvider value={session}>
+          <AppShell>{children}</AppShell>
+        </SessionProvider>
       </body>
     </html>
   );

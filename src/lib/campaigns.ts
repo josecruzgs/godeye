@@ -81,17 +81,20 @@ export function totalFromCounts(counts: TaskStatusCounts) {
 }
 
 export async function createCampaignWithTasks({
+  ownerId,
   name,
   type,
   autoRun,
   docs,
 }: {
+  ownerId: Types.ObjectId;
   name: string;
   type: string;
   autoRun: boolean;
   docs: Record<string, unknown>[];
 }) {
   const campaign = await CampaignModel.create({
+    ownerId,
     name,
     type,
     autoRun,
@@ -99,7 +102,9 @@ export async function createCampaignWithTasks({
   });
 
   try {
-    const tasks = await TaskModel.insertMany(docs.map((doc) => ({ ...doc, campaignId: campaign._id })));
+    const tasks = await TaskModel.insertMany(
+      docs.map((doc) => ({ ...doc, ownerId, campaignId: campaign._id })),
+    );
     return { campaign, tasks };
   } catch (err) {
     await CampaignModel.deleteOne({ _id: campaign._id }).catch(() => {});
@@ -118,28 +123,37 @@ export type AddTasksResult =
 // tareas nuevas entran con el mismo campaignId y quedan pending/queued como
 // cualquier otra, así que ese botón las recoge sin cambios.
 export async function addTasksToCampaign({
+  ownerId,
   campaignId,
   type,
   docs,
 }: {
+  ownerId: Types.ObjectId;
   campaignId: string;
   type: string;
   docs: Record<string, unknown>[];
 }): Promise<AddTasksResult> {
-  const campaign = await CampaignModel.findById(campaignId);
+  // Se busca por _id Y ownerId en la misma consulta: una campaña ajena no se
+  // "encuentra y después se rechaza", directamente no existe para este usuario.
+  const campaign = await CampaignModel.findOne({ _id: campaignId, ownerId });
   if (!campaign) return { ok: false, error: "not_found" };
   if (campaign.type !== type) return { ok: false, error: "type_mismatch", campaignType: campaign.type };
 
-  const tasks = await TaskModel.insertMany(docs.map((doc) => ({ ...doc, campaignId: campaign._id })));
+  const tasks = await TaskModel.insertMany(
+    docs.map((doc) => ({ ...doc, ownerId, campaignId: campaign._id })),
+  );
   campaign.taskCount = (campaign.taskCount ?? 0) + tasks.length;
   await campaign.save();
   return { ok: true, campaign, tasks };
 }
 
-export async function getCampaignSummariesByIds(campaignIds: (Types.ObjectId | string)[]) {
+export async function getCampaignSummariesByIds(
+  campaignIds: (Types.ObjectId | string)[],
+  ownerId: Types.ObjectId,
+) {
   if (campaignIds.length === 0) return [];
 
-  const campaignDocs = await CampaignModel.find({ _id: { $in: campaignIds } })
+  const campaignDocs = await CampaignModel.find({ _id: { $in: campaignIds }, ownerId })
     .sort({ createdAt: -1 })
     .lean();
   const foundIds = campaignDocs.map((campaign) => campaign._id);

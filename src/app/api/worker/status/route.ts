@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
 import WorkerHeartbeatModel, { type WorkerRole } from "@/lib/models/WorkerHeartbeat";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
 
 const ROLES: WorkerRole[] = ["tasks", "listening"];
 
@@ -13,7 +13,9 @@ const ROLES: WorkerRole[] = ["tasks", "listening"];
  * `online` queda como estaba —vivo el de tareas— para no romper a quien ya lee
  * ese campo.
  */
-export const GET = withApiErrors(async () => {
+// No se acota por usuario: es el estado de la infraestructura, igual para
+// todos, y la barra superior lo muestra en cada pantalla.
+export const GET = withAuth(async () => {
   await dbConnect();
 
   const beats = await WorkerHeartbeatModel.find({ _id: { $in: ROLES } }).lean();

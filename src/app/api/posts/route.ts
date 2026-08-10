@@ -2,22 +2,30 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
 import PostModel from "@/lib/models/Post";
 import { parseCsv } from "@/lib/csv";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
 
-export const GET = withApiErrors(async (req: NextRequest) => {
+// Cada usuario tiene su propio banco: la marca "used" es por dueño, así que un
+// texto que gastó uno le sigue estando disponible a los demás.
+export const GET = withAuth(async (user, req: NextRequest) => {
   const usedParam = req.nextUrl.searchParams.get("used");
   const limit = Number(req.nextUrl.searchParams.get("limit")) || 0;
 
   await dbConnect();
-  const filter = usedParam === "true" ? { used: true } : usedParam === "false" ? { used: false } : {};
+  const mine = { ownerId: user.objectId };
+  const filter =
+    usedParam === "true"
+      ? { ...mine, used: true }
+      : usedParam === "false"
+        ? { ...mine, used: false }
+        : mine;
 
   let query = PostModel.find(filter).sort({ createdAt: 1 });
   if (limit > 0) query = query.limit(limit);
   const posts = await query;
 
   const [total, available] = await Promise.all([
-    PostModel.countDocuments({}),
-    PostModel.countDocuments({ used: false }),
+    PostModel.countDocuments(mine),
+    PostModel.countDocuments({ ...mine, used: false }),
   ]);
 
   return NextResponse.json({ posts, total, available, used: total - available });
@@ -26,9 +34,10 @@ export const GET = withApiErrors(async (req: NextRequest) => {
 // Importa publicaciones desde un Sheet publicado como CSV ("Archivo > Compartir
 // > Publicar en la web" en Google Sheets, formato CSV) o desde una lista
 // pegada a mano. Se toma la primera columna de cada fila como el texto.
-export const POST = withApiErrors(async (req: NextRequest) => {
+export const POST = withAuth(async (user, req: NextRequest) => {
   const body = await req.json();
   await dbConnect();
+  const mine = { ownerId: user.objectId };
 
   let texts: string[] = [];
   let source = "manual";
@@ -67,17 +76,20 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     return NextResponse.json({ error: "No se encontraron publicaciones para importar" }, { status: 400 });
   }
 
-  // Evita duplicados exactos que ya estén en el banco (de cualquier origen).
-  const existing = new Set((await PostModel.find({ text: { $in: texts } }).select("text")).map((c) => c.text));
+  // Evita duplicados exactos que ya estén en el banco propio (de cualquier
+  // origen). Que otro usuario tenga el mismo texto no cuenta como duplicado.
+  const existing = new Set(
+    (await PostModel.find({ ...mine, text: { $in: texts } }).select("text")).map((c) => c.text),
+  );
   const fresh = texts.filter((t) => !existing.has(t));
 
   if (fresh.length > 0) {
-    await PostModel.insertMany(fresh.map((text) => ({ text, source })));
+    await PostModel.insertMany(fresh.map((text) => ({ ...mine, text, source })));
   }
 
   const [total, available] = await Promise.all([
-    PostModel.countDocuments({}),
-    PostModel.countDocuments({ used: false }),
+    PostModel.countDocuments(mine),
+    PostModel.countDocuments({ ...mine, used: false }),
   ]);
 
   return NextResponse.json({ imported: fresh.length, skipped: texts.length - fresh.length, total, available });
@@ -85,8 +97,8 @@ export const POST = withApiErrors(async (req: NextRequest) => {
 
 // Vacía el banco por completo (a diferencia de /reset-used, esto borra los
 // documentos en vez de solo volver a marcarlos como disponibles).
-export const DELETE = withApiErrors(async () => {
+export const DELETE = withAuth(async (user) => {
   await dbConnect();
-  await PostModel.deleteMany({});
+  await PostModel.deleteMany({ ownerId: user.objectId });
   return NextResponse.json({ ok: true, total: 0, available: 0 });
 });

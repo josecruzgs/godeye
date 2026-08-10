@@ -1,4 +1,5 @@
 import { Schema, models, model, type InferSchemaType } from "mongoose";
+import { dropStaleModel } from "./staleModel";
 
 // Un "personaje" a monitorear. Los alias son cómo lo nombra la gente en la
 // práctica (apodos, apellido solo, cuenta de X) — sin ellos se pierde la
@@ -31,6 +32,7 @@ const EntitySchema = new Schema(
 
 const ListeningProjectSchema = new Schema(
   {
+    ownerId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     name: { type: String, required: true },
     description: { type: String },
 
@@ -101,7 +103,12 @@ const ListeningProjectSchema = new Schema(
   { timestamps: true },
 );
 
+// Sin ownerId adelante: lo usa findDueProjects, que barre los proyectos
+// vencidos de todos los usuarios (src/lib/listening/ingest.ts).
 ListeningProjectSchema.index({ status: 1, lastRunAt: 1 });
+ListeningProjectSchema.index({ ownerId: 1, createdAt: -1 });
+
+dropStaleModel("ListeningProject", ["ownerId"]);
 
 export type ListeningProject = InferSchemaType<typeof ListeningProjectSchema>;
 

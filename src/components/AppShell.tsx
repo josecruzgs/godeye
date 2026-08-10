@@ -3,7 +3,6 @@
 import { usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import Topbar from "@/components/Topbar";
-import TopGlow from "@/components/TopGlow";
 import RouteTransitionOverlay from "@/components/RouteTransitionOverlay";
 import Splash from "@/components/ui/Splash";
 import { getElementForPath, ELEMENT_ACCENT_CLASS } from "@/lib/elements";
@@ -38,7 +37,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <Splash />
       <Sidebar />
       <div className={`relative flex h-screen flex-1 flex-col overflow-hidden ${accentClass}`}>
-        <TopGlow />
         <Topbar />
         <main className="relative flex-1 overflow-y-auto">
           {/* key por ruta: reinicia la animación de entrada en cada

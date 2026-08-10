@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
-import ProfileModel from "@/lib/models/Profile";
 import PostModel from "@/lib/models/Post";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
+import { findUsableProfiles } from "@/lib/auth/profiles";
 import { loginIfNeededSteps } from "@/lib/automation/loginSteps";
 import { addTasksToCampaign, createCampaignWithTasks, readCampaignName } from "@/lib/campaigns";
 
@@ -12,7 +12,7 @@ import { addTasksToCampaign, createCampaignWithTasks, readCampaignName } from "@
 // timeline, así que a diferencia de los comentarios no hay riesgo de que se
 // vea el mismo texto repetido en un solo lugar — igual se reparte distinto
 // por perfil para no dejar un patrón obvio).
-export const POST = withApiErrors(async (req: NextRequest) => {
+export const POST = withAuth(async (user, req: NextRequest) => {
   const body = await req.json();
   const homeUrl = typeof body.homeUrl === "string" ? body.homeUrl.trim() : "";
   const openSelector = typeof body.openSelector === "string" ? body.openSelector.trim() : "";
@@ -30,14 +30,16 @@ export const POST = withApiErrors(async (req: NextRequest) => {
 
   await dbConnect();
 
-  const profiles = await ProfileModel.find({ _id: { $in: profileIds } }).sort({ name: 1 });
+  const profiles = await findUsableProfiles(user, profileIds);
   if (!profiles.length) {
     return NextResponse.json({ error: "No se encontraron los perfiles seleccionados" }, { status: 404 });
   }
 
   // Reserva N publicaciones sin usar (una por perfil) antes de crear nada:
   // si no alcanza, no se crea ninguna tarea a medias.
-  const pool = await PostModel.find({ used: false }).sort({ createdAt: 1 }).limit(profiles.length);
+  const pool = await PostModel.find({ ownerId: user.objectId, used: false })
+    .sort({ createdAt: 1 })
+    .limit(profiles.length);
   if (pool.length < profiles.length) {
     return NextResponse.json(
       {
@@ -106,7 +108,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
   let campaign;
   let created;
   if (campaignId) {
-    const result = await addTasksToCampaign({ campaignId, type: "post", docs });
+    const result = await addTasksToCampaign({ ownerId: user.objectId, campaignId, type: "post", docs });
     if (!result.ok) {
       return result.error === "not_found"
         ? NextResponse.json({ error: "Campaña no encontrada" }, { status: 404 })
@@ -118,7 +120,13 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     campaign = result.campaign;
     created = result.tasks;
   } else {
-    const r = await createCampaignWithTasks({ name: campaignName, type: "post", autoRun, docs });
+    const r = await createCampaignWithTasks({
+      ownerId: user.objectId,
+      name: campaignName,
+      type: "post",
+      autoRun,
+      docs,
+    });
     campaign = r.campaign;
     created = r.tasks;
   }

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
 import { decodo, type DecodoSubscription } from "@/lib/decodo/client";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
+import { allowedGroupFilter, type SessionUser } from "@/lib/auth/dal";
 import ProfileModel from "@/lib/models/Profile";
 import TaskModel from "@/lib/models/Task";
 
@@ -34,18 +35,22 @@ function normalize(sub: DecodoSubscription) {
 const PROXY_ERROR_RE =
   /proxy|tunnel|407|ERR_|ECONN|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|net::|page\.goto: Timeout|navigating to|AdsPower API HTTP/i;
 
-async function getLocalStats() {
+// El saldo del proxy es global (una sola cuenta de Decodo para todos), pero
+// las cifras locales no: cada quien ve sus perfiles visibles y sus tareas.
+async function getLocalStats(user: SessionUser) {
   await dbConnect();
 
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const visibleProfiles = allowedGroupFilter(user);
   const proxyIssueFilter = {
+    ownerId: user.objectId,
     status: "failed",
     error: PROXY_ERROR_RE,
   };
 
   const [profileCount, activeProfileCount, recentProxyIssueCount, lastProxyIssue] = await Promise.all([
-    ProfileModel.countDocuments(),
-    ProfileModel.countDocuments({ lastStatus: "active" }),
+    ProfileModel.countDocuments(visibleProfiles),
+    ProfileModel.countDocuments({ ...visibleProfiles, lastStatus: "active" }),
     TaskModel.countDocuments({ ...proxyIssueFilter, updatedAt: { $gte: since24h } }),
     TaskModel.findOne(proxyIssueFilter).sort({ updatedAt: -1 }).select("name type error updatedAt").lean(),
   ]);
@@ -65,8 +70,8 @@ async function getLocalStats() {
   };
 }
 
-export const GET = withApiErrors(async () => {
-  const local = await getLocalStats();
+export const GET = withAuth(async (user) => {
+  const local = await getLocalStats(user);
 
   try {
     const data = await decodo.getSubscriptions();

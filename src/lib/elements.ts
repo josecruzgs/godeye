@@ -23,14 +23,6 @@ export const ELEMENT_COLOR: Record<ElementKey, string> = {
   fuego: "var(--el-fuego)",
 };
 
-// Alias histórico: el glow de la sidebar y el TopGlow ya lo importaban con
-// este nombre.
-export const ELEMENT_GLOW = ELEMENT_COLOR;
-
-// Glow por defecto para páginas fuera de los 4 elementos (Dashboard,
-// Perfiles, Grupos...). El oro es el color de la casa.
-export const DEFAULT_GLOW = "var(--gold)";
-
 // Clase de acento que reasigna --primary dentro de la página (ver
 // .accent-* en globals.css): los botones, focos y enlaces de un módulo
 // toman el color de su elemento sin tocar archivo por archivo.

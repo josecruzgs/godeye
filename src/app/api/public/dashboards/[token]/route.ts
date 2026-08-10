@@ -12,7 +12,9 @@ export const GET = withApiErrors(
     const dashboard = await DashboardModel.findOne({ token }).lean();
     if (!dashboard) return NextResponse.json({ error: "Enlace no encontrado" }, { status: 404 });
 
-    const campaigns = await getCampaignSummariesByIds(dashboard.campaignIds ?? []);
+    // Acá la credencial es el token del enlace, no una sesión. El alcance sale
+    // del dueño del dashboard: se muestran sus campañas y solo las suyas.
+    const campaigns = await getCampaignSummariesByIds(dashboard.campaignIds ?? [], dashboard.ownerId);
 
     return NextResponse.json({
       name: dashboard.name,

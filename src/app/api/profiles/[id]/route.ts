@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
-import ProfileModel from "@/lib/models/Profile";
 import { adsPower } from "@/lib/adspower/client";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
+import { findUsableProfile } from "@/lib/auth/profiles";
 
 function isMissingAdsPowerProfileError(err: unknown) {
   const message = err instanceof Error ? err.message : String(err);
@@ -20,23 +20,21 @@ function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
-export const GET = withApiErrors(
-  async (_req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+export const GET = withAuth(
+  async (user, _req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
     const { id } = await params;
     await dbConnect();
-    const profile = await ProfileModel.findById(id);
-    if (!profile) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    const profile = await findUsableProfile(user, id);
     return NextResponse.json({ profile });
   },
 );
 
-export const DELETE = withApiErrors(
-  async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+export const DELETE = withAuth(
+  async (user, req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
     const { id } = await params;
     const localOnly = req.nextUrl.searchParams.get("localOnly") === "true";
     await dbConnect();
-    const profile = await ProfileModel.findById(id);
-    if (!profile) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+    const profile = await findUsableProfile(user, id);
 
     let adsPowerDeleted = false;
     if (!localOnly) {

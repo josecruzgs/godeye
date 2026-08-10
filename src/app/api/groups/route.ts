@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
 import GroupModel from "@/lib/models/Group";
 import { adsPower } from "@/lib/adspower/client";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAdmin, withAuth } from "@/lib/apiHandler";
+import { allowedGroupIdFilter } from "@/lib/auth/dal";
 import { escapeRegex } from "@/lib/regex";
 
 // Lee grupos desde Mongo (rápido, no depende de que AdsPower esté vivo).
@@ -10,7 +11,7 @@ import { escapeRegex } from "@/lib/regex";
 //
 // Por defecto pagina (20/página). Pasa `all=true` para traer la lista
 // completa sin paginar (usada por selectores/dropdowns de grupo).
-export const GET = withApiErrors(async (req: NextRequest) => {
+export const GET = withAuth(async (user, req: NextRequest) => {
   const sp = req.nextUrl.searchParams;
   const search = sp.get("search")?.trim();
   const all = sp.get("all") === "true";
@@ -19,7 +20,7 @@ export const GET = withApiErrors(async (req: NextRequest) => {
 
   await dbConnect();
 
-  const filter: Record<string, unknown> = {};
+  const filter: Record<string, unknown> = allowedGroupIdFilter(user);
   if (search) filter.name = { $regex: escapeRegex(search), $options: "i" };
 
   if (all) {
@@ -38,7 +39,9 @@ export const GET = withApiErrors(async (req: NextRequest) => {
   return NextResponse.json({ groups, total, page, pageSize });
 });
 
-export const POST = withApiErrors(async (req: NextRequest) => {
+// Solo admin: un grupo recién creado no está en la lista de permitidos de
+// nadie, así que quien lo crea sin ser admin no podría ni verlo después.
+export const POST = withAdmin(async (_user, req: NextRequest) => {
   const body = await req.json();
   if (!body.name) {
     return NextResponse.json({ error: "'name' es requerido" }, { status: 400 });

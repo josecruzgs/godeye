@@ -1,6 +1,8 @@
+import { Types } from "mongoose";
 import { dbConnect } from "@/lib/mongodb";
 import ListeningProjectModel from "@/lib/models/ListeningProject";
 import MentionModel from "@/lib/models/Mention";
+import type { SessionUser } from "@/lib/auth/dal";
 
 export type ListeningDigest = {
   projects: number;
@@ -28,21 +30,31 @@ export type ListeningDigest = {
 /**
  * Resumen de Viento (escucha) para el dashboard principal. Una sola pasada
  * agregada en vez de reusar el endpoint de stats por proyecto: acá interesa
- * el cruce de TODOS los proyectos, no el detalle de uno.
+ * el cruce de todos los proyectos DEL USUARIO, no el detalle de uno.
+ *
+ * Las menciones no llevan dueño —cuelgan del proyecto—, así que el alcance se
+ * arma resolviendo primero sus proyectos y filtrando por esos ids.
  */
-export async function getListeningDigest(): Promise<ListeningDigest> {
+export async function getListeningDigest(user: SessionUser): Promise<ListeningDigest> {
   await dbConnect();
 
   const now = new Date();
   const d30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const d1 = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-  const [projects, activeProjects, agg, latestDocs, projectScores] = await Promise.all([
-    ListeningProjectModel.countDocuments(),
-    ListeningProjectModel.countDocuments({ status: "active" }),
+  const myProjects = (await ListeningProjectModel.find({ ownerId: user.objectId })
+    .select("status")
+    .lean()) as { _id: Types.ObjectId; status?: string }[];
 
+  const projects = myProjects.length;
+  const activeProjects = myProjects.filter((p) => p.status === "active").length;
+  // Con la lista vacía, `$in: []` no matchea nada y todo el resumen sale en
+  // cero — que es exactamente lo que hay que mostrarle a quien no tiene escucha.
+  const mine = { projectId: { $in: myProjects.map((p) => p._id) } };
+
+  const [agg, latestDocs, projectScores] = await Promise.all([
     MentionModel.aggregate([
-      { $match: { publishedAt: { $gte: d30 } } },
+      { $match: { ...mine, publishedAt: { $gte: d30 } } },
       {
         $facet: {
           totals: [
@@ -71,7 +83,7 @@ export async function getListeningDigest(): Promise<ListeningDigest> {
       },
     ]),
 
-    MentionModel.find({ publishedAt: { $gte: d30 } })
+    MentionModel.find({ ...mine, publishedAt: { $gte: d30 } })
       .sort({ publishedAt: -1 })
       .limit(6)
       .select("entity title text domain platform url sentiment publishedAt")
@@ -80,7 +92,7 @@ export async function getListeningDigest(): Promise<ListeningDigest> {
     // Solo cuenta el promedio de proyectos con volumen suficiente: con dos
     // menciones, un -80 no significa nada y desplazaría al que sí importa.
     MentionModel.aggregate([
-      { $match: { publishedAt: { $gte: d30 }, sentimentScore: { $ne: null } } },
+      { $match: { ...mine, publishedAt: { $gte: d30 }, sentimentScore: { $ne: null } } },
       { $group: { _id: "$projectId", avgScore: { $avg: "$sentimentScore" }, n: { $sum: 1 } } },
       { $match: { n: { $gte: 5 } } },
       { $sort: { avgScore: 1 } },

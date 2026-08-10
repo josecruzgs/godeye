@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
-import ProfileModel from "@/lib/models/Profile";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
+import { findUsableProfiles } from "@/lib/auth/profiles";
 import { loginIfNeededSteps } from "@/lib/automation/loginSteps";
 import { addTasksToCampaign, createCampaignWithTasks, readCampaignName } from "@/lib/campaigns";
 import { parseFacebookCommentTarget } from "@/lib/commentLinks";
@@ -11,7 +11,7 @@ import { parseFacebookCommentTarget } from "@/lib/commentLinks";
 // nombrar con un selector CSS (es igual al del post y al de los demás
 // comentarios), así que la tarea no lleva selector — lleva el id que sale del
 // link, y el runner resuelve el elemento en la página con el step "likeComment".
-export const POST = withApiErrors(async (req: NextRequest) => {
+export const POST = withAuth(async (user, req: NextRequest) => {
   const body = await req.json();
   const url = typeof body.url === "string" ? body.url.trim() : "";
   const reaction = typeof body.reaction === "string" && body.reaction.trim() ? body.reaction.trim() : "like";
@@ -45,7 +45,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
 
   await dbConnect();
 
-  const profiles = await ProfileModel.find({ _id: { $in: profileIds } }).sort({ name: 1 });
+  const profiles = await findUsableProfiles(user, profileIds);
   if (!profiles.length) {
     return NextResponse.json({ error: "No se encontraron los perfiles seleccionados" }, { status: 404 });
   }
@@ -85,7 +85,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
   let campaign;
   let created;
   if (campaignId) {
-    const result = await addTasksToCampaign({ campaignId, type: "likecomment", docs });
+    const result = await addTasksToCampaign({ ownerId: user.objectId, campaignId, type: "likecomment", docs });
     if (!result.ok) {
       return result.error === "not_found"
         ? NextResponse.json({ error: "Campaña no encontrada" }, { status: 404 })
@@ -97,7 +97,13 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     campaign = result.campaign;
     created = result.tasks;
   } else {
-    const r = await createCampaignWithTasks({ name: campaignName, type: "likecomment", autoRun, docs });
+    const r = await createCampaignWithTasks({
+      ownerId: user.objectId,
+      name: campaignName,
+      type: "likecomment",
+      autoRun,
+      docs,
+    });
     campaign = r.campaign;
     created = r.tasks;
   }

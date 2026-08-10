@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { LogOut } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import ElementIcon from "./ui/ElementIcon";
 import { getElementForPath, ELEMENT_COLOR, ELEMENT_META } from "@/lib/elements";
+import { useSession } from "@/lib/session";
+import { findCity } from "@/lib/timezones";
 
 type RoleStatus = { online: boolean; host?: string | null };
 type Status = { online: boolean; roles?: { tasks: RoleStatus; listening: RoleStatus } } | null;
@@ -40,20 +44,29 @@ function workerChip(status: NonNullable<Status>) {
   return { label: "SIN WORKER", off: true, title: "No hay ningún worker corriendo" };
 }
 
-// Reloj de sala: hora local en mono, se actualiza cada segundo. Es lo que
-// hace que la barra se lea como un panel en vivo y no como un encabezado.
-function useClock() {
+/**
+ * Reloj de sala: hora y minutos en la ciudad que eligió el usuario.
+ *
+ * La zona sale de la preferencia y no del reloj de la máquina: el VPS corre en
+ * UTC y quien mira el panel puede estar en Tijuana o en Hermosillo, que en
+ * invierno no marcan la misma hora. Mostrar la ciudad al lado es lo que hace
+ * que la cifra se pueda confrontar con el reloj de pared de cada quien.
+ *
+ * Sin segundos: son ruido en una barra que se mira de reojo, y además
+ * obligaban a repintar sesenta veces más seguido.
+ */
+function useClock(timeZone: string) {
   const [now, setNow] = useState<string | null>(null);
 
   useEffect(() => {
     const paint = () =>
-      setNow(
-        new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }),
-      );
+      setNow(new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone }));
     paint();
-    const id = setInterval(paint, 1000);
+    // Cada 15s y no cada minuto: alcanza para que el cambio de minuto se note
+    // enseguida sin tener que sincronizarse con el segundo cero.
+    const id = setInterval(paint, 15000);
     return () => clearInterval(id);
-  }, []);
+  }, [timeZone]);
 
   // null hasta que hidrata: la hora del servidor y la del cliente no
   // coinciden nunca, así que pintarla en SSR sería un error de hidratación.
@@ -63,7 +76,18 @@ function useClock() {
 export default function Topbar() {
   const [status, setStatus] = useState<Status>(null);
   const pathname = usePathname();
-  const clock = useClock();
+  const session = useSession();
+  const city = findCity(session?.preferences.city);
+  const clock = useClock(city.timeZone);
+  const brandTitle = session?.preferences.brandTitle?.trim() || "Ojo de Dios";
+  const avatar = session?.preferences.avatar || "";
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    // Recarga completa y no router.push: hay estado de cliente con datos del
+    // usuario saliente que no debe sobrevivir al cambio de sesión.
+    window.location.href = "/login";
+  }
 
   const element = getElementForPath(pathname ?? "");
   const accent = element ? ELEMENT_COLOR[element] : "var(--gold)";
@@ -107,8 +131,10 @@ export default function Topbar() {
           <ElementIcon name={element ?? "eye"} size={16} />
         </span>
         <div className="min-w-0">
+          {/* En un módulo manda el nombre del elemento; fuera de ellos, la
+              marca que el usuario haya puesto en Ajustes. */}
           <p className="font-display truncate text-[15px] font-semibold leading-tight text-ink">
-            {meta?.name ?? "Ojo de Dios"}
+            {meta?.name ?? brandTitle}
           </p>
           <p className="label-mono-sm truncate">{meta?.title ?? "Sala de inteligencia"}</p>
         </div>
@@ -118,8 +144,11 @@ export default function Topbar() {
         <span className="classchip">USO INTERNO</span>
 
         {clock && (
-          <span className="hidden font-mono text-[11px] tabular-nums text-ink-secondary sm:inline">
-            <span className="text-ink-muted">SONORA</span> {clock}
+          <span
+            title={`Hora en ${city.label}, ${city.state} · se cambia en Ajustes`}
+            className="hidden font-mono text-[11px] tabular-nums text-ink-secondary sm:inline"
+          >
+            <span className="text-ink-muted">{city.label.toUpperCase()}</span> {clock}
           </span>
         )}
 
@@ -131,6 +160,34 @@ export default function Topbar() {
         )}
 
         <ThemeToggle />
+
+        {session && (
+          <div className="flex items-center gap-1.5 border-l border-hairline pl-2.5">
+            <Link
+              href="/ajustes"
+              title={`${session.role === "admin" ? "Administrador" : "Operador"} · ir a Ajustes`}
+              className="flex items-center gap-1.5 rounded-full px-1 py-0.5 transition-colors hover:bg-page"
+            >
+              {avatar && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={avatar} alt="" className="h-5 w-5 rounded-full object-cover" />
+              )}
+              <span className="max-w-40 truncate font-mono text-[11px] text-ink-secondary">
+                {session.username}
+                {session.role === "admin" && <span className="ml-1 text-gold">·admin</span>}
+              </span>
+            </Link>
+            <button
+              type="button"
+              onClick={logout}
+              title="Cerrar sesión"
+              aria-label="Cerrar sesión"
+              className="flex h-7 w-7 items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-page hover:text-ink"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

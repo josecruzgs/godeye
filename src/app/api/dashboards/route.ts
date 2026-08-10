@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
 import DashboardModel from "@/lib/models/Dashboard";
-import { generateShareToken } from "@/lib/dashboards";
-import { withApiErrors } from "@/lib/apiHandler";
+import { assertOwnedCampaigns, generateShareToken } from "@/lib/dashboards";
+import { withAuth } from "@/lib/apiHandler";
 
-export const GET = withApiErrors(async () => {
+export const GET = withAuth(async (user) => {
   await dbConnect();
 
-  const dashboards = await DashboardModel.find().sort({ createdAt: -1 }).lean();
+  const dashboards = await DashboardModel.find({ ownerId: user.objectId }).sort({ createdAt: -1 }).lean();
 
   return NextResponse.json({
     dashboards: dashboards.map((dashboard) => ({
@@ -21,7 +21,7 @@ export const GET = withApiErrors(async () => {
   });
 });
 
-export const POST = withApiErrors(async (req: NextRequest) => {
+export const POST = withAuth(async (user, req: NextRequest) => {
   const body = await req.json();
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const campaignIds = Array.isArray(body.campaignIds)
@@ -33,6 +33,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
   }
 
   await dbConnect();
+  const ownedCampaignIds = await assertOwnedCampaigns(user, campaignIds);
 
   // Colisión de token es prácticamente imposible (9 bytes aleatorios), pero
   // el índice unique existe por si acaso: reintentamos unas pocas veces en
@@ -40,7 +41,12 @@ export const POST = withApiErrors(async (req: NextRequest) => {
   let dashboard = null;
   for (let attempt = 0; attempt < 5 && !dashboard; attempt++) {
     try {
-      dashboard = await DashboardModel.create({ name, campaignIds, token: generateShareToken() });
+      dashboard = await DashboardModel.create({
+        ownerId: user.objectId,
+        name,
+        campaignIds: ownedCampaignIds,
+        token: generateShareToken(),
+      });
     } catch (err) {
       const isDuplicateToken =
         err && typeof err === "object" && "code" in err && (err as { code: number }).code === 11000;

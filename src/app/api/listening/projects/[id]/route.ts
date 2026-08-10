@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
 import ListeningProjectModel from "@/lib/models/ListeningProject";
 import MentionModel from "@/lib/models/Mention";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
 import {
   normalizeEntities,
   assignEntityKeys,
@@ -12,11 +12,11 @@ import {
 
 type Params = { params: Promise<{ id: string }> };
 
-export const GET = withApiErrors(async (_req: NextRequest, { params }: Params) => {
+export const GET = withAuth(async (user, _req: NextRequest, { params }: Params) => {
   const { id } = await params;
   await dbConnect();
 
-  const project = await ListeningProjectModel.findById(id).lean();
+  const project = await ListeningProjectModel.findOne({ _id: id, ownerId: user.objectId }).lean();
   if (!project) return NextResponse.json({ error: "Proyecto no encontrado" }, { status: 404 });
 
   return NextResponse.json({ project });
@@ -41,7 +41,7 @@ const EDITABLE = [
   "intervalMinutes",
 ] as const;
 
-export const PATCH = withApiErrors(async (req: NextRequest, { params }: Params) => {
+export const PATCH = withAuth(async (user, req: NextRequest, { params }: Params) => {
   const { id } = await params;
   const body = await req.json();
 
@@ -66,13 +66,15 @@ export const PATCH = withApiErrors(async (req: NextRequest, { params }: Params) 
   }
 
   const before = entities
-    ? ((await ListeningProjectModel.findById(id).select("entities").lean()) as {
+    ? ((await ListeningProjectModel.findOne({ _id: id, ownerId: user.objectId })
+        .select("entities")
+        .lean()) as {
         entities: ResolvedEntity[];
       } | null)
     : null;
 
-  const project = await ListeningProjectModel.findByIdAndUpdate(
-    id,
+  const project = await ListeningProjectModel.findOneAndUpdate(
+    { _id: id, ownerId: user.objectId },
     { $set: update },
     { new: true },
   ).lean();
@@ -100,14 +102,19 @@ export const PATCH = withApiErrors(async (req: NextRequest, { params }: Params) 
   return NextResponse.json({ project });
 });
 
-export const DELETE = withApiErrors(async (_req: NextRequest, { params }: Params) => {
+export const DELETE = withAuth(async (user, _req: NextRequest, { params }: Params) => {
   const { id } = await params;
   await dbConnect();
+
+  // Se borra el proyecto primero y solo se sigue si era de este usuario: las
+  // menciones no llevan dueño, así que sin ese freno un id ajeno se llevaba
+  // puestas las de otro.
+  const deleted = await ListeningProjectModel.findOneAndDelete({ _id: id, ownerId: user.objectId });
+  if (!deleted) return NextResponse.json({ error: "Proyecto no encontrado" }, { status: 404 });
 
   // Las menciones se borran con el proyecto: sin él no hay forma de
   // consultarlas y quedarían ocupando espacio para siempre.
   await MentionModel.deleteMany({ projectId: id });
-  await ListeningProjectModel.findByIdAndDelete(id);
 
   return NextResponse.json({ ok: true });
 });

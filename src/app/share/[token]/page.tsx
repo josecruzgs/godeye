@@ -24,7 +24,7 @@ async function getDashboard(token: string) {
   const dashboard = await DashboardModel.findOne({ token }).lean();
   if (!dashboard) return null;
 
-  const campaigns = await getCampaignSummariesByIds(dashboard.campaignIds ?? []);
+  const campaigns = await getCampaignSummariesByIds(dashboard.campaignIds ?? [], dashboard.ownerId);
   return {
     name: dashboard.name,
     updatedAt: (dashboard.updatedAt as Date).toISOString(),

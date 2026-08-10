@@ -1,19 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
 import ListeningProjectModel from "@/lib/models/ListeningProject";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
 import { providerStatus } from "@/lib/listening/providers";
 import { normalizeEntities, DuplicateEntityError } from "@/lib/listening/entities";
 
-export const GET = withApiErrors(async () => {
+export const GET = withAuth(async (user) => {
   await dbConnect();
-  const projects = await ListeningProjectModel.find().sort({ createdAt: -1 }).lean();
+  const projects = await ListeningProjectModel.find({ ownerId: user.objectId })
+    .sort({ createdAt: -1 })
+    .lean();
   // El estado de los proveedores viaja con la lista para que la UI pueda
   // avisar "Bright Data está apagado porque falta el token" sin otra llamada.
   return NextResponse.json({ projects, providers: providerStatus() });
 });
 
-export const POST = withApiErrors(async (req: NextRequest) => {
+export const POST = withAuth(async (user, req: NextRequest) => {
   const body = await req.json();
 
   if (!body?.name?.trim()) {
@@ -39,6 +41,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
   await dbConnect();
 
   const project = await ListeningProjectModel.create({
+    ownerId: user.objectId,
     name: body.name.trim(),
     description: body.description?.trim(),
     entities,

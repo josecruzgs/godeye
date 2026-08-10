@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
-import ProfileModel from "@/lib/models/Profile";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
+import { findUsableProfiles } from "@/lib/auth/profiles";
 import { loginIfNeededSteps } from "@/lib/automation/loginSteps";
 import { addTasksToCampaign, createCampaignWithTasks, readCampaignName } from "@/lib/campaigns";
 
 // Crea una tarea de "like" por cada perfil elegido: todas comparten el
 // mismo link y selector del botón de like, y se pueden espaciar en el
 // tiempo (staggerSeconds) para que el worker no las dispare todas juntas.
-export const POST = withApiErrors(async (req: NextRequest) => {
+export const POST = withAuth(async (user, req: NextRequest) => {
   const body = await req.json();
   const url = typeof body.url === "string" ? body.url.trim() : "";
   const selector = typeof body.selector === "string" ? body.selector.trim() : "";
@@ -35,7 +35,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
 
   await dbConnect();
 
-  const profiles = await ProfileModel.find({ _id: { $in: profileIds } }).sort({ name: 1 });
+  const profiles = await findUsableProfiles(user, profileIds);
   if (!profiles.length) {
     return NextResponse.json({ error: "No se encontraron los perfiles seleccionados" }, { status: 404 });
   }
@@ -79,7 +79,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
   let campaign;
   let created;
   if (campaignId) {
-    const result = await addTasksToCampaign({ campaignId, type: "like", docs });
+    const result = await addTasksToCampaign({ ownerId: user.objectId, campaignId, type: "like", docs });
     if (!result.ok) {
       return result.error === "not_found"
         ? NextResponse.json({ error: "Campaña no encontrada" }, { status: 404 })
@@ -91,7 +91,13 @@ export const POST = withApiErrors(async (req: NextRequest) => {
     campaign = result.campaign;
     created = result.tasks;
   } else {
-    const r = await createCampaignWithTasks({ name: campaignName, type: "like", autoRun, docs });
+    const r = await createCampaignWithTasks({
+      ownerId: user.objectId,
+      name: campaignName,
+      type: "like",
+      autoRun,
+      docs,
+    });
     campaign = r.campaign;
     created = r.tasks;
   }

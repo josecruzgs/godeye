@@ -6,25 +6,34 @@ import TaskLogModel from "@/lib/models/TaskLog";
 // no truene con "Schema hasn't been registered" en un lambda frío que nunca
 // cargó /api/profiles antes.
 import "@/lib/models/Profile";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
 
-export const GET = withApiErrors(
-  async (_req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+export const GET = withAuth(
+  async (user, _req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
     const { id } = await params;
     await dbConnect();
-    const task = await TaskModel.findById(id).populate("profileId", "name adsPowerProfileId");
+    const task = await TaskModel.findOne({ _id: id, ownerId: user.objectId }).populate(
+      "profileId",
+      "name adsPowerProfileId",
+    );
     if (!task) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
+    // Los logs no llevan ownerId: cuelgan de la tarea, que ya se validó.
     const logs = await TaskLogModel.find({ taskId: id }).sort({ createdAt: 1 });
     return NextResponse.json({ task, logs });
   },
 );
 
-export const DELETE = withApiErrors(
-  async (_req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+export const DELETE = withAuth(
+  async (user, _req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
     const { id } = await params;
     await dbConnect();
-    await TaskModel.findByIdAndDelete(id);
+
+    // El borrado de logs va atado a que la tarea fuera realmente de este
+    // usuario: sin el chequeo, un id ajeno igual se llevaba puestos sus logs.
+    const deleted = await TaskModel.findOneAndDelete({ _id: id, ownerId: user.objectId });
+    if (!deleted) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+
     await TaskLogModel.deleteMany({ taskId: id });
     return NextResponse.json({ ok: true });
   },

@@ -7,14 +7,16 @@ import TaskModel from "@/lib/models/Task";
 // cargó /api/profiles antes.
 import "@/lib/models/Profile";
 import { makeCampaignSummary, type TaskStatusCounts } from "@/lib/campaigns";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
 
-export const GET = withApiErrors(
-  async (_req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+export const GET = withAuth(
+  async (user, _req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
     const { id } = await params;
     await dbConnect();
 
-    const campaign = await CampaignModel.findById(id).lean();
+    // Por _id y ownerId en la misma consulta: una campaña ajena no se encuentra
+    // y después se rechaza, directamente no existe para este usuario.
+    const campaign = await CampaignModel.findOne({ _id: id, ownerId: user.objectId }).lean();
     if (!campaign) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
     const tasks = await TaskModel.find({ campaignId: id })
@@ -35,12 +37,12 @@ export const GET = withApiErrors(
   },
 );
 
-export const DELETE = withApiErrors(
-  async (_req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+export const DELETE = withAuth(
+  async (user, _req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
     const { id } = await params;
     await dbConnect();
 
-    const campaign = await CampaignModel.findById(id).select("_id").lean();
+    const campaign = await CampaignModel.findOne({ _id: id, ownerId: user.objectId }).select("_id").lean();
     if (!campaign) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
     const runningCount = await TaskModel.countDocuments({ campaignId: id, status: "running" });

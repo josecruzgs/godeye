@@ -25,12 +25,16 @@ import {
   Flame,
   Rocket,
   Archive,
+  ShieldCheck,
+  SlidersHorizontal,
   type LucideIcon,
 } from "lucide-react";
-import { getElementForPath, ELEMENT_GLOW, DEFAULT_GLOW } from "@/lib/elements";
-import ProxyBalance from "@/components/ProxyBalance";
+import { useSession } from "@/lib/session";
+import { normalizeHex, sidebarStyle } from "@/lib/theme";
 
-type NavItem = { href: string; label: string; icon: LucideIcon };
+// `adminOnly` solo esconde el enlace: quien lo adivine igual choca contra el
+// 403 de withAdmin en la API. La seguridad está allá, esto es prolijidad.
+type NavItem = { href: string; label: string; icon: LucideIcon; adminOnly?: boolean };
 type NavSection = {
   key: string;
   label: string;
@@ -114,9 +118,14 @@ const NAV_SECTIONS: NavSection[] = [
       { href: "/groups", label: "Grupos", icon: FolderKanban },
       { href: "/profiles/auto-profile", label: "Auto Profile", icon: UserCog },
       { href: "/tasks/warmup", label: "Warmup", icon: Activity },
+      { href: "/ajustes", label: "Ajustes", icon: SlidersHorizontal },
+      { href: "/usuarios", label: "Usuarios", icon: ShieldCheck, adminOnly: true },
     ],
   },
 ];
+
+const BRAND_TITLE = "Ojo de Dios";
+const BRAND_SUBTITLE = "Frase de campaña";
 
 // El label solo aparece luego de que el ancho terminó de animar (~200ms):
 // mostrarlo de inmediato al expandir hace que el texto se monte a su ancho
@@ -145,6 +154,7 @@ function useIsDark() {
 export default function Sidebar() {
   const pathname = usePathname();
   const isDark = useIsDark();
+  const session = useSession();
   const [collapsed, setCollapsed] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
   const [mounted, setMounted] = useState(false);
@@ -195,38 +205,59 @@ export default function Sidebar() {
     return best;
   }, [pathname]);
 
-  const glowColor = ELEMENT_GLOW[getElementForPath(pathname) as keyof typeof ELEMENT_GLOW] ?? DEFAULT_GLOW;
+  // La sesión viene del servidor por contexto, así que el rol ya se conoce en
+  // la primera pintura: los ítems de admin no parpadean ni de más ni de menos.
+  const sections = useMemo(
+    () =>
+      NAV_SECTIONS.map((section) => ({
+        ...section,
+        items: section.items.filter((item) => !item.adminOnly || session?.role === "admin"),
+      })),
+    [session],
+  );
+
+  const prefs = session?.preferences;
+  const hasCustomSidebar = Boolean(normalizeHex(prefs?.sidebarColor));
+  const title = prefs?.brandTitle?.trim() || BRAND_TITLE;
+  const subtitle = prefs?.brandSubtitle?.trim() || BRAND_SUBTITLE;
+  const avatar = prefs?.avatar || "";
 
   return (
     <aside
+      // El estilo en línea pinta el menú del color elegido y, con él, reescribe
+      // los tokens de tinta para que el texto siga legible (ver sidebarStyle).
+      // Sin color elegido devuelve {} y mandan las clases de siempre.
+      style={sidebarStyle(prefs?.sidebarColor)}
       className={`sticky top-0 flex h-screen shrink-0 flex-col overflow-hidden border-r border-hairline bg-surface/80 backdrop-blur-md transition-[width] duration-200 ${
         collapsed ? "w-19" : "w-64"
       } ${mounted ? "" : "invisible"}`}
     >
-      <div
-        key={glowColor}
-        aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10 hidden opacity-0 transition-opacity duration-500 dark:block dark:opacity-100"
-        style={{
-          backgroundImage: `radial-gradient(420px circle at 0% 100%, color-mix(in oklab, ${glowColor} 45%, transparent), transparent 70%)`,
-        }}
-      />
-
       <div className={`flex gap-2.5 py-5 ${collapsed ? "flex-col items-center px-2" : "items-center px-5"}`}>
         <div className="relative flex h-9 w-9 shrink-0 items-center justify-center">
-          <Image
-            src={isDark ? "/media/logo.png" : "/media/logoblack.png"}
-            alt="Ojo de Dios"
-            width={36}
-            height={36}
-            className="object-contain"
-            priority
-          />
+          {avatar ? (
+            // La foto la sube el usuario y viaja como data URI, así que no pasa
+            // por el optimizador de next/image: <img> es lo correcto acá.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={avatar}
+              alt={title}
+              className="h-9 w-9 rounded-full border border-hairline object-cover"
+            />
+          ) : (
+            <Image
+              src={isDark ? "/media/logo.png" : "/media/logoblack.png"}
+              alt={title}
+              width={36}
+              height={36}
+              className="object-contain"
+              priority
+            />
+          )}
         </div>
         {showLabels && (
           <div className="animate-fade-in-up min-w-0 flex-1 overflow-hidden">
-            <p className="font-display truncate text-[17px] font-semibold leading-none text-ink">Ojo de Dios</p>
-            <p className="label-mono-sm mt-1 truncate">Sonora · Sala de inteligencia</p>
+            <p className="font-display truncate text-[17px] font-semibold leading-none text-ink">{title}</p>
+            <p className="label-mono-sm mt-1 truncate">{subtitle}</p>
           </div>
         )}
         <button
@@ -240,10 +271,16 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex flex-1 flex-col gap-4 overflow-y-auto px-3 pb-6">
-        {NAV_SECTIONS.map((section) => {
+        {sections.map((section) => {
           const SectionIcon = section.icon;
           const isOpen = !closedSections[section.key];
           const showHeader = showLabels && section.icon;
+          // Con un menú de color propio, los encabezados en su color de
+          // elemento se hunden en el fondo (el verde de Tierra sobre un vino,
+          // por ejemplo, deja de leerse). Ahí pasan a la tinta legible, que ya
+          // está calculada contra ese fondo. Sin color elegido, cada sección
+          // conserva el suyo.
+          const headerColor = hasCustomSidebar ? "text-ink" : section.accentText;
 
           return (
             <div key={section.key} className="flex flex-col gap-1">
@@ -253,11 +290,11 @@ export default function Sidebar() {
                   onClick={() => section.collapsible && toggleSection(section.key)}
                   className="animate-fade-in-up flex items-center gap-2 px-3 pb-1 text-left"
                 >
-                  <SectionIcon className={`h-3.5 w-3.5 shrink-0 ${section.accentText}`} />
+                  <SectionIcon className={`h-3.5 w-3.5 shrink-0 ${headerColor}`} />
                   {/* La etiqueta de sección va en mono con tracking ancho —
                       el mismo registro tipográfico que los separadores de
                       sección del dashboard. */}
-                  <span className={`flex-1 font-mono text-[9.5px] uppercase tracking-[0.2em] ${section.accentText}`}>
+                  <span className={`flex-1 font-mono text-[9.5px] uppercase tracking-[0.2em] ${headerColor}`}>
                     {section.label}
                   </span>
                   {section.collapsible && (
@@ -309,7 +346,29 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <ProxyBalance collapsed={collapsed} />
+      {/* Al pie, quién está conectado. Es también la entrada a Ajustes, que es
+          donde se cambian su foto, su color y su hora. */}
+      {session && (
+        <Link
+          href="/ajustes"
+          title={`${session.username} · ir a Ajustes`}
+          className={`flex shrink-0 items-center gap-2.5 border-t border-hairline py-3 transition-colors hover:bg-surface-2 ${
+            collapsed ? "justify-center px-2" : "px-5"
+          }`}
+        >
+          {avatar ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={avatar} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover" />
+          ) : (
+            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-hairline text-[11px] font-semibold uppercase text-ink-secondary">
+              {session.username.slice(0, 1)}
+            </span>
+          )}
+          {showLabels && (
+            <span className="min-w-0 flex-1 truncate text-[13px] text-ink-secondary">{session.username}</span>
+          )}
+        </Link>
+      )}
     </aside>
   );
 }

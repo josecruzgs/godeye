@@ -126,18 +126,42 @@ pegar deja el arranque fallando por una razón difícil de ver:
 scp .env.local godeye@177.7.53.246:~/godeye/.env.local
 ```
 
-Y ahí cambiá estas tres:
+Y ahí cambiá estas cuatro:
 
 ```bash
-SITE_PASSWORD=una-larga-y-nueva      # es la única puerta del panel en internet
+SESSION_SECRET=                      # firma las sesiones — generarla, ver abajo
 NEXT_PUBLIC_SHARE_BASE_URL=https://godeye.iagent.mx
 ADSPOWER_API_BASE_URL=http://127.0.0.1:50325   # AdsPower corre acá — sección 6
 ADSPOWER_API_KEY=                    # vacío si dejás la verificación apagada
 ```
 
+`SESSION_SECRET` se genera con
+`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. No
+tiene que ser memorable ni la escribe nadie: firma la cookie de sesión. Cambiarla
+cierra todas las sesiones abiertas.
+
 `NEXT_PUBLIC_SHARE_BASE_URL` se inyecta **en el build**, no en el arranque: si la
 cambiás después, hay que volver a correr `npm run build` o los links de campañas
 seguirán apuntando a donde apuntaban.
+
+### El primer usuario
+
+El panel no tiene contraseña compartida: cada persona entra con su usuario, y los
+usuarios viven en Mongo. El primero se crea por línea de comandos, en el VPS,
+**una sola vez**:
+
+```bash
+npm run users:admin -- --username jose --password "una-larga-y-nueva"
+```
+
+Ese comando también adopta todo lo que existía antes de que hubiera usuarios
+—campañas, tareas, dashboards, bancos de textos y proyectos de escucha— y lo pone
+a nombre de ese admin. Sin correrlo, lo viejo queda sin dueño y no lo ve nadie.
+Correrlo dos veces no hace daño: no toca lo que ya tiene dueño ni pisa la
+contraseña salvo que agregues `--reset-password`.
+
+De ahí en adelante los usuarios se administran desde **/usuarios**, dentro del
+panel: alta, baja, rol y a qué grupos de AdsPower accede cada uno.
 
 ## 4. Los procesos
 

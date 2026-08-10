@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
+import { dbConnect } from "@/lib/mongodb";
+import { assertOwnedProject } from "@/lib/listening/ownership";
 import { buildExecutiveBrief } from "@/lib/listening/analyze";
 import { parseDayRange } from "@/lib/listening/range";
 
 type Params = { params: Promise<{ id: string }> };
 
-export const POST = withApiErrors(async (req: NextRequest, { params }: Params) => {
+export const POST = withAuth(async (user, req: NextRequest, { params }: Params) => {
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
+
+  await dbConnect();
+  await assertOwnedProject(user, id);
 
   const { from, to } = parseDayRange(body.from ?? null, body.to ?? null);
 

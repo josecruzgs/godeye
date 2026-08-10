@@ -17,6 +17,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const next = searchParams.get("next") || "/";
 
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -29,11 +30,11 @@ function LoginForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ username, password }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        throw new Error(data?.error ?? "Contraseña incorrecta");
+        throw new Error(data?.error ?? "Usuario o contraseña incorrectos");
       }
       // Recarga completa (no router.push) para que el middleware vuelva a
       // evaluar la request con la cookie recién seteada.
@@ -68,9 +69,9 @@ function LoginForm() {
           <Image src="/media/logoblack.png" alt="Ojo de Dios" width={44} height={44} className="object-contain dark:hidden" />
           <Image src="/media/logo.png" alt="Ojo de Dios" width={44} height={44} className="hidden object-contain dark:block" />
           <h1 className="font-display mt-1 text-2xl font-semibold tracking-[-0.02em] text-ink">Ojo de Dios</h1>
-          <p className="label-mono-sm">Sonora · Sala de inteligencia</p>
+          <p className="label-mono-sm">Frase de campaña</p>
           <p className="mt-2 flex items-center gap-1.5 text-[13px] text-ink-secondary">
-            <Lock className="h-3.5 w-3.5" /> Ingresa la contraseña para continuar
+            <Lock className="h-3.5 w-3.5" /> Ingresa con tu usuario para continuar
           </p>
         </div>
 
@@ -82,8 +83,21 @@ function LoginForm() {
 
         <input
           autoFocus
+          type="text"
+          required
+          autoComplete="username"
+          autoCapitalize="none"
+          spellCheck={false}
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder="Usuario"
+          className="rounded-[9px] border border-hairline bg-page px-3 py-2.5 text-sm outline-none transition-colors focus:border-gold"
+        />
+
+        <input
           type="password"
           required
+          autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Contraseña"
@@ -91,7 +105,7 @@ function LoginForm() {
         />
 
         <button
-          disabled={loading || !password}
+          disabled={loading || !username || !password}
           className="glow-btn rounded-[9px] bg-primary px-4 py-2.5 text-sm font-semibold text-primary-fg shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md disabled:pointer-events-none disabled:opacity-50"
         >
           {loading ? "Entrando..." : "Entrar"}

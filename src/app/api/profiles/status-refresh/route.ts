@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
 import ProfileModel from "@/lib/models/Profile";
 import { adsPower } from "@/lib/adspower/client";
-import { withApiErrors } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
+import { allowedGroupFilter } from "@/lib/auth/dal";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -14,7 +15,7 @@ function sleep(ms: number) {
 // endpoint consulta el estado real en AdsPower para un lote acotado de
 // perfiles (los de la página visible, no los 100+ de golpe: la Local API
 // rate-limitea ~1 req/seg).
-export const POST = withApiErrors(async (req: NextRequest) => {
+export const POST = withAuth(async (user, req: NextRequest) => {
   const body = await req.json();
   const ids: string[] = Array.isArray(body.ids) ? body.ids.slice(0, 20) : [];
   if (ids.length === 0) {
@@ -22,7 +23,9 @@ export const POST = withApiErrors(async (req: NextRequest) => {
   }
 
   await dbConnect();
-  const profiles = await ProfileModel.find({ _id: { $in: ids } });
+  // Los que caen fuera del alcance simplemente no vuelven: es un refresco de
+  // la página visible, no una selección explícita que valga la pena rechazar.
+  const profiles = await ProfileModel.find({ _id: { $in: ids }, ...allowedGroupFilter(user) });
 
   const statuses: Record<string, string> = {};
   for (const [i, profile] of profiles.entries()) {
