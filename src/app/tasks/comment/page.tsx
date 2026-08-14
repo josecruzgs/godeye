@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, MessageSquare, CheckCircle2, ExternalLink, Download, SlidersHorizontal } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { COMMENT_PRESETS as PLATFORM_PRESETS } from "@/lib/automation/socialSelectors";
 import StatusBadge from "@/components/StatusBadge";
 import Card from "@/components/Card";
 import Meter from "@/components/Meter";
@@ -28,51 +29,6 @@ type CreatedCampaign = {
 };
 
 type PoolComment = { _id: string; text: string };
-
-type PlatformPreset = {
-  label: string;
-  selector: string;
-  submitMethod: "enter" | "button";
-  submitSelector: string;
-};
-
-const FACEBOOK_COMMENT_BOX_SELECTOR = [
-  'div[role="textbox"][contenteditable="true"][aria-label*="Write a comment"]',
-  'div[role="textbox"][contenteditable="true"][aria-label*="Escribe un comentario"]',
-  'div[role="textbox"][contenteditable="true"][aria-placeholder*="Write a comment"]',
-  'div[role="textbox"][contenteditable="true"][aria-placeholder*="Escribe un comentario"]',
-  'div[aria-label*="Write a comment"]',
-  'div[aria-label*="Escribe un comentario"]',
-  'form div[role="textbox"][contenteditable="true"]',
-].join(", ");
-
-const PLATFORM_PRESETS: Record<string, PlatformPreset> = {
-  facebook: {
-    label: "Facebook",
-    selector: FACEBOOK_COMMENT_BOX_SELECTOR,
-    submitMethod: "enter",
-    submitSelector: "",
-  },
-  instagram: {
-    label: "Instagram",
-    selector: 'textarea[aria-label="Add a comment…"], textarea[aria-label="Añade un comentario..."]',
-    submitMethod: "enter",
-    submitSelector: "",
-  },
-  tiktok: {
-    label: "TikTok",
-    selector: '[data-e2e="comment-input"]',
-    submitMethod: "button",
-    submitSelector: '[data-e2e="comment-post"]',
-  },
-  x: {
-    label: "X / Twitter",
-    selector: '[data-testid="tweetTextarea_0"]',
-    submitMethod: "button",
-    submitSelector: '[data-testid="tweetButtonInline"]',
-  },
-  custom: { label: "Personalizado", selector: "", submitMethod: "enter", submitSelector: "" },
-};
 
 const DEFAULT_SHEET_CSV_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vSbUfu9pvyPULSSFWDN7F7qxs0Y8jfZJZ5U0xoSL-QZKxItYrWjyRVdn2QhTtLoG3o65EDVerPgo4XI/pub?gid=0&single=true&output=csv";

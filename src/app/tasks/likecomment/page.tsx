@@ -5,6 +5,10 @@ import Link from "next/link";
 import { ArrowLeft, MessageCircleHeart, CheckCircle2, SlidersHorizontal, TriangleAlert } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { parseFacebookCommentTarget } from "@/lib/commentLinks";
+// El picker de reacciones de un comentario es el mismo que el de una
+// publicación (se abre en una capa flotante al mantener el cursor sobre "Me
+// gusta"), así que comparte los selectores con /tasks/like.
+import { REACTIONS, reactionSelectorFor } from "@/lib/automation/socialSelectors";
 import StatusBadge from "@/components/StatusBadge";
 import Card from "@/components/Card";
 import Modal from "@/components/Modal";
@@ -24,37 +28,6 @@ type CreatedCampaign = {
   status: string;
   taskCount: number;
 };
-
-function selectorForAriaLabels(labels: string[]): string {
-  return labels
-    .flatMap((label) => [
-      `div[role="dialog"] [aria-label="${label}"]`,
-      `[role="button"][aria-label="${label}"]`,
-      `div[role="button"]:has(svg[aria-label="${label}"])`,
-      `svg[aria-label="${label}"]`,
-      `[aria-label="${label}"]`,
-    ])
-    .join(", ");
-}
-
-// El picker de reacciones de un comentario es el mismo que el de una
-// publicación (se abre en una capa flotante al mantener el cursor sobre "Me
-// gusta"), así que los selectores son idénticos a los de /tasks/like.
-const REACTIONS: { key: string; label: string; ariaLabels?: string[] }[] = [
-  { key: "like", label: "👍 Me gusta (default)" },
-  { key: "love", label: "❤️ Me encanta", ariaLabels: ["Me encanta", "Love"] },
-  { key: "care", label: "🤗 Me importa", ariaLabels: ["Me importa", "Care"] },
-  { key: "haha", label: "😆 Me divierte", ariaLabels: ["Me divierte", "Haha"] },
-  { key: "wow", label: "😮 Me asombra", ariaLabels: ["Me asombra", "Wow"] },
-  { key: "sad", label: "😢 Me entristece", ariaLabels: ["Me entristece", "Sad"] },
-  { key: "angry", label: "😡 Me enoja", ariaLabels: ["Me enoja", "Angry"] },
-];
-
-function reactionSelectorFor(key: string): string {
-  const r = REACTIONS.find((x) => x.key === key);
-  if (!r?.ariaLabels) return "";
-  return selectorForAriaLabels(r.ariaLabels);
-}
 
 export default function LikeCommentCampaignPage() {
   const [profiles, setProfiles] = useState<PickerProfile[]>([]);

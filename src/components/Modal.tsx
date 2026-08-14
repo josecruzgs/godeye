@@ -4,15 +4,22 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
+// Clases literales, no interpoladas: el scanner de Tailwind necesita verlas
+// escritas tal cual para generarlas.
+const MAX_WIDTH = { md: "max-w-lg", xl: "max-w-4xl" } as const;
+
 export default function Modal({
   open,
   onClose,
   title,
+  size = "md",
   children,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
+  /** "xl" para lo que lleva una tabla adentro (el selector de perfiles). */
+  size?: keyof typeof MAX_WIDTH;
   children: React.ReactNode;
 }) {
   // El portal necesita document.body, que no existe en el render del
@@ -51,7 +58,9 @@ export default function Modal({
       {/* Sombra larga y muy difusa (no la `shadow-lg` genérica): es lo que
           despega el diálogo del plano sin necesidad de un borde fuerte,
           igual que las tarjetas de la sala. */}
-      <div className="card-surface animate-fade-in-up relative flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden shadow-[0_26px_64px_-18px_rgba(0,0,0,0.9)]">
+      <div
+        className={`card-surface animate-fade-in-up relative flex max-h-[85vh] w-full ${MAX_WIDTH[size]} flex-col overflow-hidden shadow-[0_26px_64px_-18px_rgba(0,0,0,0.9)]`}
+      >
         <div className="flex shrink-0 items-center justify-between border-b border-hairline px-6 py-4">
           <h2 className="font-display text-lg font-semibold text-ink">{title}</h2>
           <button

@@ -24,6 +24,7 @@ export type ProjectDraft = {
   sources: Record<string, boolean>;
   brightDataPlatforms: string[];
   autoAnalyze: boolean;
+  autoBrief: boolean;
   intervalMinutes: number;
 };
 
@@ -40,6 +41,7 @@ export const EMPTY_DRAFT: ProjectDraft = {
   sources: { googleNews: true, gdelt: true, rss: true, youtube: false, brightData: false },
   brightDataPlatforms: [],
   autoAnalyze: true,
+  autoBrief: true,
   intervalMinutes: 60,
 };
 
@@ -366,6 +368,22 @@ export default function ProjectForm({
               </div>
             </label>
           </div>
+
+          <label className="card-flat flex cursor-pointer items-center gap-3 p-3">
+            <input
+              type="checkbox"
+              checked={draft.autoBrief !== false}
+              onChange={(e) => set("autoBrief", e.target.checked)}
+              className="accent-primary"
+            />
+            <div>
+              <p className="text-[13px] font-medium text-ink">Resumen ejecutivo cada 3 días</p>
+              <p className="label-mono-sm mt-0.5 normal-case tracking-normal">
+                El worker cierra cada ventana de tres días al vencer. Un período ya analizado no se
+                vuelve a generar.
+              </p>
+            </div>
+          </label>
         </div>
       )}
     </div>

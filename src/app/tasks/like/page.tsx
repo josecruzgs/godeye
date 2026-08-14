@@ -5,6 +5,11 @@ import Link from "next/link";
 import { ArrowLeft, Heart, CheckCircle2, SlidersHorizontal, TriangleAlert } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { parseFacebookCommentTarget } from "@/lib/commentLinks";
+import {
+  REACTIONS,
+  REACTION_PRESETS as PLATFORM_PRESETS,
+  reactionSelectorFor,
+} from "@/lib/automation/socialSelectors";
 import StatusBadge from "@/components/StatusBadge";
 import Card from "@/components/Card";
 import Modal from "@/components/Modal";
@@ -25,63 +30,6 @@ type CreatedCampaign = {
   status: string;
   taskCount: number;
 };
-
-function selectorForAriaLabels(labels: string[]): string {
-  return labels
-    .flatMap((label) => [
-      `div[role="dialog"] [aria-label="${label}"]`,
-      `[role="button"][aria-label="${label}"]`,
-      `div[role="button"]:has(svg[aria-label="${label}"])`,
-      `svg[aria-label="${label}"]`,
-      `[aria-label="${label}"]`,
-    ])
-    .join(", ");
-}
-
-const FACEBOOK_REACTION_TRIGGER_SELECTOR = selectorForAriaLabels([
-  "Like",
-  "Me gusta",
-  "React",
-  "Reaccionar",
-  "Reacciona",
-]);
-
-// Facebook no monta siempre el boton de reaccion en el mismo arbol: algunos
-// permalinks lo dejan dentro del dialog y otros links de foto/post lo exponen
-// en la pagina. El runner escoge el match visible antes de clickear/hover.
-const PLATFORM_PRESETS: Record<string, { label: string; selector: string }> = {
-  facebook: {
-    label: "Facebook",
-    selector: FACEBOOK_REACTION_TRIGGER_SELECTOR,
-  },
-  instagram: { label: "Instagram", selector: 'svg[aria-label="Like"], svg[aria-label="Me gusta"]' },
-  tiktok: { label: "TikTok", selector: '[data-e2e="like-icon"]' },
-  x: { label: "X / Twitter", selector: '[data-testid="like"]' },
-  custom: { label: "Personalizado", selector: "" },
-};
-
-// El picker de reacciones (mantener el cursor sobre "Me gusta" para que
-// aparezcan las demás) es un patrón exclusivo de Facebook — las otras
-// plataformas solo tienen like/no-like, así que el selector de reacción
-// queda oculto fuera de Facebook. Cada aria-label trae español e inglés
-// juntos (comma-list SÍ funciona como OR en selectores de atributo CSS
-// planos, a diferencia del engine text= — confirmado en Publicar/Auto
-// Profile este mismo proyecto).
-const REACTIONS: { key: string; label: string; ariaLabels?: string[] }[] = [
-  { key: "like", label: "👍 Me gusta (default)" },
-  { key: "love", label: "❤️ Me encanta", ariaLabels: ["Me encanta", "Love"] },
-  { key: "care", label: "🤗 Me importa", ariaLabels: ["Me importa", "Care"] },
-  { key: "haha", label: "😆 Me divierte", ariaLabels: ["Me divierte", "Haha"] },
-  { key: "wow", label: "😮 Me asombra", ariaLabels: ["Me asombra", "Wow"] },
-  { key: "sad", label: "😢 Me entristece", ariaLabels: ["Me entristece", "Sad"] },
-  { key: "angry", label: "😡 Me enoja", ariaLabels: ["Me enoja", "Angry"] },
-];
-
-function reactionSelectorFor(key: string): string {
-  const r = REACTIONS.find((x) => x.key === key);
-  if (!r?.ariaLabels) return "";
-  return selectorForAriaLabels(r.ariaLabels);
-}
 
 export default function LikeCampaignPage() {
   const [profiles, setProfiles] = useState<PickerProfile[]>([]);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { use } from "react";
 import {
@@ -13,6 +13,7 @@ import {
   Trash2,
   BrainCircuit,
   Radio,
+  Megaphone,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
@@ -78,6 +79,8 @@ type Brief = {
   _id?: string;
   from?: string;
   to?: string;
+  windowStart?: string | null;
+  partial?: boolean;
   createdAt?: string;
   snapshot?: { mentions: number; avgScore: number | null; negative: number };
   headline: string;
@@ -87,6 +90,36 @@ type Brief = {
   recommendations: (string | BriefPoint)[];
 };
 
+/** Una ventana de la grilla de tres días (ver src/lib/listening/briefWindows.ts). */
+type ScheduledWindow = {
+  index: number;
+  startDay: string;
+  endDay: string;
+  closed: boolean;
+  mentions: number;
+  briefId: string | null;
+  partial: boolean;
+  pending: boolean;
+};
+
+type BriefSchedule = {
+  anchorDay: string | null;
+  windowDays: number;
+  windows: ScheduledWindow[];
+  pending: ScheduledWindow[];
+  current: ScheduledWindow | null;
+};
+
+// Cuántas ventanas se muestran sin desplegar. Un proyecto con medio año de
+// historial tiene sesenta chips: de a dieciséis la tira sigue leyéndose de un
+// vistazo y el resto queda a un clic.
+const VISIBLE_WINDOWS = 16;
+
+// Tope de informes que genera un solo clic en "Generar pendientes". Cada uno es
+// una llamada con razonamiento profundo sobre cientos de menciones, así que un
+// proyecto con meses de atraso podría encadenar decenas sin este freno.
+const MAX_BRIEF_BATCH = 12;
+
 const PRESETS = [
   { label: "7 días", days: 7 },
   { label: "30 días", days: 30 },
@@ -95,6 +128,26 @@ const PRESETS = [
 
 function isoDay(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+/** `2026-08-13` → `13 ago`. En UTC, que es la zona en que se cortan los días. */
+function shortDay(day: string): string {
+  return new Date(`${day}T00:00:00Z`).toLocaleDateString("es-MX", {
+    day: "2-digit",
+    month: "short",
+    timeZone: "UTC",
+  });
+}
+
+/**
+ * Color de un score de sentimiento. La banda muerta de ±10 existe porque un
+ * promedio de 4 puntos sobre cien menciones no es "favorable", es ruido.
+ */
+function scoreTone(score: number | null | undefined): string {
+  if (score === null || score === undefined) return "var(--text-muted)";
+  if (score > 10) return "var(--ok)";
+  if (score < -10) return "var(--danger)";
+  return "var(--amber)";
 }
 
 // "Sin analizar" es una serie más, no una ausencia: si no estuviera, una
@@ -165,6 +218,13 @@ export default function ProyectoPage({ params }: { params: Promise<{ id: string 
 
   const [brief, setBrief] = useState<Brief | null>(null);
   const [briefHistory, setBriefHistory] = useState<Brief[]>([]);
+  const [schedule, setSchedule] = useState<BriefSchedule | null>(null);
+  const [briefProgress, setBriefProgress] = useState<string | null>(null);
+  const [allWindows, setAllWindows] = useState(false);
+  // Corta el bucle de "generar pendientes" entre informe e informe. Va en una
+  // ref y no en estado porque el bucle es una función async que ya capturó su
+  // render: un `useState` le quedaría siempre en false.
+  const stopBriefs = useRef(false);
   // Colapsado por defecto: el informe completo ocupa más de una pantalla y
   // empuja el feed de menciones fuera de vista.
   const [briefOpen, setBriefOpen] = useState(false);
@@ -214,8 +274,14 @@ export default function ProyectoPage({ params }: { params: Promise<{ id: string 
   }, [id, from, to, page, sentiment, entity, search, relevance]);
 
   const loadBriefs = useCallback(async () => {
-    const data = await apiFetch<{ briefs: Brief[] }>(`/api/listening/projects/${id}/briefs`);
+    // El límite alto no es capricho: la tira de períodos resuelve cada clic
+    // contra esta lista, así que un historial más corto que la grilla dejaría
+    // ventanas ya generadas que no abren nada al clickearlas.
+    const data = await apiFetch<{ briefs: Brief[]; schedule: BriefSchedule }>(
+      `/api/listening/projects/${id}/briefs?limit=200`,
+    );
     setBriefHistory(data.briefs);
+    setSchedule(data.schedule);
     // Al entrar se muestra el último guardado: el informe deja de perderse
     // al recargar la página.
     setBrief((current) => current ?? data.briefs[0] ?? null);
@@ -279,15 +345,98 @@ export default function ProyectoPage({ params }: { params: Promise<{ id: string 
     }
   }
 
-  async function generateBrief() {
+  type BriefResponse = { brief: Brief | null; window: ScheduledWindow | null; pending: number };
+
+  /**
+   * Pide UN informe y devuelve la respuesta cruda. El servidor nunca genera
+   * más de uno por llamada: encadenar varias ventanas de razonamiento profundo
+   * en un mismo request se lleva puesto cualquier timeout.
+   */
+  const requestBrief = useCallback(
+    async (body: Record<string, unknown>) =>
+      apiFetch<BriefResponse>(`/api/listening/projects/${id}/brief`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    [id],
+  );
+
+  /**
+   * Cierra las ventanas de tres días que falten, de la más vieja a la más
+   * nueva. Se detiene al llegar al tope del lote, cuando el usuario aprieta
+   * "detener", o cuando el servidor contesta que no queda ninguna.
+   */
+  async function generatePendingBriefs() {
+    setBusy("brief");
+    setError(null);
+    setNotice(null);
+    stopBriefs.current = false;
+
+    let done = 0;
+    try {
+      for (let i = 0; i < MAX_BRIEF_BATCH && !stopBriefs.current; i += 1) {
+        const res = await requestBrief({});
+        if (!res.brief) break;
+
+        done += 1;
+        setBrief(res.brief);
+        setBriefProgress(
+          `${done} informe${done === 1 ? "" : "s"} generado${done === 1 ? "" : "s"} · ${res.pending} pendiente${res.pending === 1 ? "" : "s"}`,
+        );
+        await loadBriefs();
+        if (res.pending <= 0) break;
+      }
+
+      setNotice(
+        done === 0
+          ? "No hay períodos pendientes por analizar."
+          : `${done} informe(s) generado(s).`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBriefProgress(null);
+      setBusy(null);
+    }
+  }
+
+  /** Genera o rehace una ventana puntual de la grilla. */
+  async function generateWindow(startDay: string) {
     setBusy("brief");
     setError(null);
     try {
-      const res = await apiFetch<{ brief: Brief }>(`/api/listening/projects/${id}/brief`, {
-        method: "POST",
-        body: JSON.stringify({ from, to }),
-      });
-      setBrief(res.brief);
+      const res = await requestBrief({ windowStart: startDay });
+      if (res.brief) setBrief(res.brief);
+      await loadBriefs();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Adelanto de la ventana en curso: queda parcial y se rehace al cerrar. */
+  async function generateCurrentBrief() {
+    setBusy("brief");
+    setError(null);
+    try {
+      const res = await requestBrief({ current: true });
+      if (res.brief) setBrief(res.brief);
+      await loadBriefs();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Informe suelto del período que muestra la barra de arriba, fuera de la grilla. */
+  async function generateRangeBrief() {
+    setBusy("brief");
+    setError(null);
+    try {
+      const res = await requestBrief({ from, to });
+      if (res.brief) setBrief(res.brief);
       await loadBriefs();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -336,14 +485,7 @@ export default function ProyectoPage({ params }: { params: Promise<{ id: string 
   }
 
   const avgScore = stats?.totals.avgScore;
-  const scoreColor =
-    avgScore === null || avgScore === undefined
-      ? "var(--text-muted)"
-      : avgScore > 10
-        ? "var(--ok)"
-        : avgScore < -10
-          ? "var(--danger)"
-          : "var(--amber)";
+  const scoreColor = scoreTone(avgScore);
 
   const dailyChart = useMemo(
     () =>
@@ -359,6 +501,10 @@ export default function ProyectoPage({ params }: { params: Promise<{ id: string 
   );
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pendingWindows = schedule?.pending.length ?? 0;
+  // Los de rango libre no entran en la tira de períodos (no pertenecen a
+  // ninguna ventana), así que llevan su propia fila al pie del panel.
+  const rangeBriefs = useMemo(() => briefHistory.filter((b) => !b.windowStart), [briefHistory]);
 
   return (
     <div className="flex animate-fade-in-up flex-col gap-5">
@@ -384,6 +530,13 @@ export default function ProyectoPage({ params }: { params: Promise<{ id: string 
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <Link
+            href={`/scrapping/proyecto/${id}/publicaciones`}
+            className="tbtn inline-flex items-center gap-1.5 text-viento"
+            style={{ borderColor: "color-mix(in srgb, var(--el-viento) 45%, transparent)" }}
+          >
+            <Megaphone className="h-3.5 w-3.5" /> Publicaciones +
+          </Link>
           <button onClick={run} disabled={busy !== null} className="tbtn inline-flex items-center gap-1.5">
             <RefreshCw className={`h-3.5 w-3.5 ${busy === "run" ? "animate-spin" : ""}`} />
             {busy === "run" ? "Buscando..." : "Buscar ahora"}
@@ -583,14 +736,7 @@ export default function ProyectoPage({ params }: { params: Promise<{ id: string 
               {stats!.byEntity.map((row) => {
                 const max = Math.max(...stats!.byEntity.map((r) => r.count));
                 const pct = max > 0 ? (row.count / max) * 100 : 0;
-                const tone =
-                  row.avgScore === null
-                    ? "var(--text-muted)"
-                    : row.avgScore > 10
-                      ? "var(--ok)"
-                      : row.avgScore < -10
-                        ? "var(--danger)"
-                        : "var(--amber)";
+                const tone = scoreTone(row.avgScore);
                 return (
                   <div key={row.name}>
                     <div className="mb-1.5 flex items-baseline justify-between gap-2">
@@ -645,14 +791,7 @@ export default function ProyectoPage({ params }: { params: Promise<{ id: string 
                 <tbody>
                   {stats!.byPlatform.map((row) => {
                     const meta = PLATFORM_META[row.name] ?? { label: row.name, color: "var(--gold)" };
-                    const tone =
-                      row.avgScore === null
-                        ? "var(--text-muted)"
-                        : row.avgScore > 10
-                          ? "var(--ok)"
-                          : row.avgScore < -10
-                            ? "var(--danger)"
-                            : "var(--amber)";
+                    const tone = scoreTone(row.avgScore);
                     return (
                       <tr key={row.name} className="border-b border-hairline last:border-0">
                         <td className="px-2 py-2.5">
@@ -708,7 +847,7 @@ export default function ProyectoPage({ params }: { params: Promise<{ id: string 
         <Panel
           col={12}
           title="Resumen ejecutivo"
-          tag="generado con Claude"
+          tag={`cada ${schedule?.windowDays ?? 3} días · Claude`}
           accent="var(--gold)"
           icon={<Sparkles className="h-3.5 w-3.5" />}
           right={
@@ -729,76 +868,99 @@ export default function ProyectoPage({ params }: { params: Promise<{ id: string 
                   )}
                 </button>
               )}
-              <button onClick={generateBrief} disabled={busy !== null} className="tbtn">
-                {busy === "brief" ? "Analizando..." : brief ? "Regenerar" : "Generar"}
+              {briefProgress !== null && (
+                <button onClick={() => (stopBriefs.current = true)} className="tbtn">
+                  Detener
+                </button>
+              )}
+              <button
+                onClick={generatePendingBriefs}
+                disabled={busy !== null || pendingWindows === 0}
+                className="tbtn"
+              >
+                {busy === "brief"
+                  ? "Analizando..."
+                  : pendingWindows === 0
+                    ? "Al día"
+                    : `Generar pendientes (${pendingWindows})`}
               </button>
             </div>
           }
         >
-          {briefHistory.length > 0 && (
-            <div className="mb-4 flex flex-wrap items-center gap-2 border-b border-hairline pb-4">
-              <span className="label-mono">Historial</span>
-              {briefHistory.map((b) => {
-                const active = brief?._id === b._id;
-                return (
+          {/* La tira de períodos es el índice del módulo: cada casilla es una
+              ventana de tres días, y de un vistazo se ve cuáles ya se leyeron,
+              cuáles faltan y cómo venía el sentimiento en cada una. */}
+          {schedule && schedule.windows.length > 0 && (
+            <div className="mb-4 flex flex-col gap-2.5 border-b border-hairline pb-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="label-mono">Períodos de {schedule.windowDays} días</span>
+                {briefProgress && (
+                  <span className="label-mono-sm normal-case tracking-normal text-gold">
+                    {briefProgress}
+                  </span>
+                )}
+                {schedule.current && (
                   <button
-                    key={b._id}
-                    onClick={() => setBrief(b)}
-                    className={`rounded-[7px] border px-2.5 py-1 font-mono text-[10.5px] transition-colors ${
-                      active
-                        ? "border-gold/55 bg-gold/12 text-gold"
-                        : "border-hairline text-ink-secondary hover:text-ink"
-                    }`}
-                    title={`${b.snapshot?.mentions ?? 0} menciones · sentimiento ${b.snapshot?.avgScore ?? "—"}`}
+                    onClick={generateCurrentBrief}
+                    disabled={busy !== null}
+                    className="tbtn ml-auto"
+                    title="Genera un adelanto del período que todavía no termina. Se reemplaza solo cuando cierre."
                   >
-                    {b.from ? new Date(b.from).toLocaleDateString("es-MX", { day: "2-digit", month: "short" }) : "?"}
-                    {" → "}
-                    {b.to ? new Date(b.to).toLocaleDateString("es-MX", { day: "2-digit", month: "short" }) : "?"}
-                    {b.snapshot?.avgScore !== null && b.snapshot?.avgScore !== undefined && (
-                      <span
-                        className="ml-1.5 tabular-nums"
-                        style={{
-                          color:
-                            b.snapshot.avgScore > 10
-                              ? "var(--ok)"
-                              : b.snapshot.avgScore < -10
-                                ? "var(--danger)"
-                                : "var(--amber)",
-                        }}
-                      >
-                        {b.snapshot.avgScore}
-                      </span>
-                    )}
+                    Adelanto del período en curso
                   </button>
-                );
-              })}
+                )}
+              </div>
+
+              <WindowStrip
+                windows={schedule.windows}
+                expanded={allWindows}
+                onToggleExpand={() => setAllWindows((v) => !v)}
+                activeBriefId={brief?._id ?? null}
+                disabled={busy !== null}
+                onView={(briefId) => {
+                  const found = briefHistory.find((b) => b._id === briefId);
+                  if (found) setBrief(found);
+                }}
+                onGenerate={generateWindow}
+              />
             </div>
           )}
 
           {!brief ? (
             <p className="py-6 text-center text-[13px] text-ink-secondary">
-              Genera una lectura del período: qué se movió, qué riesgos hay y qué hacer al respecto.
-              Cada informe queda guardado con su período para poder compararlos después.
+              {schedule?.anchorDay
+                ? `Hay ${pendingWindows} período(s) de ${schedule.windowDays} días sin analizar. Genéralos para tener la lectura de cada tramo: qué se movió, qué riesgos hay y qué hacer al respecto.`
+                : "Todavía no hay menciones de las cuales sacar una lectura. Corré “Buscar ahora” primero."}
             </p>
           ) : (
             <div className="flex flex-col gap-4">
               {(brief.from || brief.snapshot) && (
-                <p className="label-mono-sm normal-case tracking-normal">
+                <p className="label-mono-sm flex flex-wrap items-center gap-x-1.5 normal-case tracking-normal">
                   {brief.from && brief.to && (
-                    <>
-                      Período {new Date(brief.from).toLocaleDateString("es-MX")} –{" "}
-                      {new Date(brief.to).toLocaleDateString("es-MX")}
-                    </>
+                    <span>
+                      Período {new Date(brief.from).toLocaleDateString("es-MX", { timeZone: "UTC" })} –{" "}
+                      {new Date(brief.to).toLocaleDateString("es-MX", { timeZone: "UTC" })}
+                    </span>
                   )}
+                  {!brief.windowStart && <span className="pill-mono">rango libre</span>}
+                  {brief.partial && <span className="pill-mono text-amber">adelanto</span>}
                   {brief.snapshot && (
-                    <>
-                      {" · "}
-                      {brief.snapshot.mentions} menciones · sentimiento {brief.snapshot.avgScore ?? "—"} ·{" "}
-                      {brief.snapshot.negative} adversas
-                    </>
+                    <span>
+                      · {brief.snapshot.mentions} menciones · sentimiento{" "}
+                      {brief.snapshot.avgScore ?? "—"} · {brief.snapshot.negative} adversas
+                    </span>
                   )}
                   {brief.createdAt && (
-                    <> · generado el {new Date(brief.createdAt).toLocaleString("es-MX")}</>
+                    <span>· generado el {new Date(brief.createdAt).toLocaleString("es-MX")}</span>
+                  )}
+                  {brief.windowStart && (
+                    <button
+                      onClick={() => generateWindow(String(brief.windowStart).slice(0, 10))}
+                      disabled={busy !== null}
+                      className="underline transition-colors hover:text-gold"
+                    >
+                      rehacer
+                    </button>
                   )}
                 </p>
               )}
@@ -835,6 +997,30 @@ export default function ProyectoPage({ params }: { params: Promise<{ id: string 
               )}
             </div>
           )}
+
+          {/* Salida de emergencia: un informe del rango que muestra la barra de
+              arriba, fuera de la grilla. Sirve para investigar un episodio
+              puntual sin ensuciar la serie de tres días. */}
+          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-hairline pt-4">
+            <span className="label-mono">Rango libre</span>
+            <button onClick={generateRangeBrief} disabled={busy !== null} className="tbtn">
+              Analizar {from} → {to}
+            </button>
+            {rangeBriefs.map((b) => (
+              <button
+                key={b._id}
+                onClick={() => setBrief(b)}
+                title={`${b.snapshot?.mentions ?? 0} menciones · sentimiento ${b.snapshot?.avgScore ?? "—"}`}
+                className={`rounded-[7px] border px-2.5 py-1 font-mono text-[10.5px] transition-colors ${
+                  brief?._id === b._id
+                    ? "border-gold/55 bg-gold/12 text-gold"
+                    : "border-hairline text-ink-secondary hover:text-ink"
+                }`}
+              >
+                {shortDay(String(b.from).slice(0, 10))} → {shortDay(String(b.to).slice(0, 10))}
+              </button>
+            ))}
+          </div>
         </Panel>
 
         <SubHead>Menciones</SubHead>
@@ -937,6 +1123,89 @@ export default function ProyectoPage({ params }: { params: Promise<{ id: string 
           </button>
         </div>
       </Modal>
+    </div>
+  );
+}
+
+/**
+ * La grilla de ventanas como una tira de casillas: hechas, pendientes, en
+ * curso y vacías. Clickear una hecha la muestra; clickear una pendiente la
+ * genera, que es la forma de recuperar un solo período sin disparar el lote
+ * entero.
+ */
+function WindowStrip({
+  windows,
+  expanded,
+  onToggleExpand,
+  activeBriefId,
+  disabled,
+  onView,
+  onGenerate,
+}: {
+  windows: ScheduledWindow[];
+  expanded: boolean;
+  onToggleExpand: () => void;
+  activeBriefId: string | null;
+  disabled: boolean;
+  onView: (briefId: string) => void;
+  onGenerate: (startDay: string) => void;
+}) {
+  const shown = expanded ? windows : windows.slice(-VISIBLE_WINDOWS);
+  const hidden = windows.length - shown.length;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {hidden > 0 && (
+        <button onClick={onToggleExpand} className="label-mono transition-colors hover:text-gold">
+          +{hidden} anteriores
+        </button>
+      )}
+      {expanded && windows.length > VISIBLE_WINDOWS && (
+        <button onClick={onToggleExpand} className="label-mono transition-colors hover:text-gold">
+          − contraer
+        </button>
+      )}
+
+      {shown.map((window) => {
+        const label = `${shortDay(window.startDay)} → ${shortDay(window.endDay)}`;
+        const active = Boolean(window.briefId) && window.briefId === activeBriefId;
+        const empty = window.mentions === 0;
+
+        const title = empty
+          ? `${label} · sin menciones en el período`
+          : window.briefId
+            ? `${label} · ${window.mentions} menciones${window.partial ? " · adelanto, se rehará al cerrar" : ""} — clic para ver`
+            : `${label} · ${window.mentions} menciones${window.closed ? "" : " · el período sigue abierto"} — clic para analizarlo`;
+
+        // Cuatro estados y cuatro tratamientos: el hecho tiene borde sólido, el
+        // adelanto y el pendiente van punteados (les falta algo), y el vacío se
+        // apaga porque no hay nada que se pueda hacer con él.
+        const tone = window.briefId
+          ? window.partial
+            ? "border-dashed border-amber/55 text-amber"
+            : active
+              ? "border-gold/70 bg-gold/12 text-gold"
+              : "border-gold/40 text-ink-secondary hover:text-ink"
+          : empty
+            ? "border-dashed border-hairline text-ink-muted opacity-45"
+            : window.closed
+              ? "border-dashed border-hairline text-ink-secondary hover:border-gold/50 hover:text-gold"
+              : "border-dotted border-viento/55 text-viento";
+
+        return (
+          <button
+            key={window.startDay}
+            title={title}
+            disabled={disabled || empty}
+            onClick={() =>
+              window.briefId ? onView(window.briefId) : onGenerate(window.startDay)
+            }
+            className={`rounded-[7px] border px-2 py-1 font-mono text-[10px] transition-colors disabled:cursor-not-allowed ${tone}`}
+          >
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 }

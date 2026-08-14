@@ -9,6 +9,7 @@ import ListeningProjectModel from "@/lib/models/ListeningProject";
 import { runTask } from "@/lib/automation/runner";
 import { findDueProjects, ingestProject } from "@/lib/listening/ingest";
 import { analyzeMentions } from "@/lib/listening/analyze";
+import { generateNextBriefWindow } from "@/lib/listening/briefSchedule";
 
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS ?? 5000);
 
@@ -75,6 +76,31 @@ async function tick() {
   }
 }
 
+/**
+ * Cierra UNA ventana de tres días pendiente del resumen ejecutivo.
+ *
+ * Una por pasada y no todas las que falten: el brief corre con razonamiento
+ * profundo sobre cientos de menciones, y un proyecto recién importado con
+ * meses de historial dispararía decenas de llamadas seguidas apenas arranca el
+ * worker. Como la ingesta vuelve a pasar por acá cada vez que el proyecto
+ * vence su intervalo, el atraso se drena solo sin picos de gasto.
+ *
+ * El error se registra y se traga: un informe que falla no debe cortar la
+ * ingesta de los proyectos que siguen en la cola.
+ */
+async function closeDueBriefWindow(projectId: string) {
+  try {
+    const result = await generateNextBriefWindow(projectId);
+    if (!result) return;
+    console.log(
+      `[escucha] ${projectId}: informe ${result.window.startDay} → ${result.window.endDay}` +
+        ` (${result.window.mentions} menciones, quedan ${result.remaining})`,
+    );
+  } catch (err) {
+    console.error(`[escucha] error al generar el informe de ${projectId}:`, err);
+  }
+}
+
 /** Ingesta de los proyectos de escucha cuyo intervalo ya venció. */
 async function listeningTick() {
   if (Date.now() - lastListeningCheck < LISTENING_CHECK_MS) return;
@@ -92,13 +118,17 @@ async function listeningTick() {
           `${report.errors.length > 0 ? ` (${report.errors.length} fuentes con error)` : ""}`,
       );
 
-      const project = await ListeningProjectModel.findById(projectId).select("autoAnalyze").lean();
+      const project = await ListeningProjectModel.findById(projectId)
+        .select("autoAnalyze autoBrief")
+        .lean();
       if (project?.autoAnalyze && report.saved > 0) {
         // Si falta la API key de Claude esto tira; se registra y la ingesta
         // igual queda guardada, que es lo que importa preservar.
         const analyzed = await analyzeMentions(projectId);
         console.log(`[escucha] ${projectId}: ${analyzed} menciones analizadas`);
       }
+
+      if (project?.autoBrief !== false) await closeDueBriefWindow(projectId);
     } catch (err) {
       console.error(`[escucha] error en el proyecto ${projectId}:`, err);
     }

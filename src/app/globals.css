@@ -22,20 +22,23 @@
   color-scheme: light;
 
   /* --- Superficies ---
-     Gris claro neutro y plano: sin imagen de fondo y sin tinte cálido, para
-     que el oro del acento sea el único color de marca en la página. */
-  --surface-1: #fafbfb;
-  --surface-2: #f1f3f4;
-  --page-plane: #eef0f1;
+     Gris neutro de verdad: R=G=B. La versión anterior decía "neutro" pero
+     todos los valores llevaban dos o tres puntos más de azul que de rojo, y
+     sobre un plano tan claro ese sesgo mínimo se lee como un celeste lavado —
+     el ojo compara contra el blanco del papel, no contra el gris. Se conservan
+     las mismas luminancias, así que ningún contraste cambia. */
+  --surface-1: #fafafa;
+  --surface-2: #f2f2f2;
+  --page-plane: #fcfcfc;
   --card-from: #ffffff;
-  --card-to: #f5f7f8;
+  --card-to: #f6f6f6;
 
   --text-primary: #14181f;
   --text-secondary: #55606f;
   --text-muted: #868e99;
-  --gridline: #e1e4e7;
-  --baseline: #c2c7cd;
-  --border-hairline: #dde1e5;
+  --gridline: #e3e3e3;
+  --baseline: #c6c6c6;
+  --border-hairline: #e0e0e0;
   --border-hi: rgba(20, 24, 31, 0.22);
 
   /* --- Acento de marca ---

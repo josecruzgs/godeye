@@ -70,6 +70,11 @@ const ListeningProjectSchema = new Schema(
     // temas. Se puede apagar para ahorrar tokens en proyectos de alto volumen.
     autoAnalyze: { type: Boolean, default: true },
 
+    // El worker cierra solo las ventanas de tres días del resumen ejecutivo a
+    // medida que van venciendo (ver briefWindows.ts). Apagarlo deja la grilla
+    // igual, solo que las ventanas se generan a mano desde el panel.
+    autoBrief: { type: Boolean, default: true },
+
     status: { type: String, enum: ["active", "paused"], default: "active" },
     intervalMinutes: { type: Number, default: 60 },
 
@@ -108,7 +113,7 @@ const ListeningProjectSchema = new Schema(
 ListeningProjectSchema.index({ status: 1, lastRunAt: 1 });
 ListeningProjectSchema.index({ ownerId: 1, createdAt: -1 });
 
-dropStaleModel("ListeningProject", ["ownerId"]);
+dropStaleModel("ListeningProject", ["ownerId", "autoBrief"]);
 
 export type ListeningProject = InferSchemaType<typeof ListeningProjectSchema>;
 

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
 import ListeningProjectModel from "@/lib/models/ListeningProject";
 import MentionModel from "@/lib/models/Mention";
+import ExecutiveBriefModel from "@/lib/models/ExecutiveBrief";
+import ActionPlayModel from "@/lib/models/ActionPlay";
 import { withAuth } from "@/lib/apiHandler";
 import {
   normalizeEntities,
@@ -37,6 +39,7 @@ const EDITABLE = [
   "sources",
   "brightDataPlatforms",
   "autoAnalyze",
+  "autoBrief",
   "status",
   "intervalMinutes",
 ] as const;
@@ -112,9 +115,15 @@ export const DELETE = withAuth(async (user, _req: NextRequest, { params }: Param
   const deleted = await ListeningProjectModel.findOneAndDelete({ _id: id, ownerId: user.objectId });
   if (!deleted) return NextResponse.json({ error: "Proyecto no encontrado" }, { status: 404 });
 
-  // Las menciones se borran con el proyecto: sin él no hay forma de
-  // consultarlas y quedarían ocupando espacio para siempre.
-  await MentionModel.deleteMany({ projectId: id });
+  // Todo lo que cuelga del proyecto se va con él: sin proyecto no hay forma de
+  // consultarlo y quedaría ocupando espacio para siempre. Las jugadas ya
+  // despachadas dejan atrás sus campañas a propósito — esas viven en Agua y
+  // son historial de lo que efectivamente se ejecutó.
+  await Promise.all([
+    MentionModel.deleteMany({ projectId: id }),
+    ExecutiveBriefModel.deleteMany({ projectId: id }),
+    ActionPlayModel.deleteMany({ projectId: id }),
+  ]);
 
   return NextResponse.json({ ok: true });
 });

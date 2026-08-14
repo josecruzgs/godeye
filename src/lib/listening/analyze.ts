@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { dbConnect } from "@/lib/mongodb";
 import MentionModel from "@/lib/models/Mention";
 import ListeningProjectModel from "@/lib/models/ListeningProject";
-import ExecutiveBriefModel from "@/lib/models/ExecutiveBrief";
+import ExecutiveBriefModel, { type ExecutiveBriefDoc } from "@/lib/models/ExecutiveBrief";
 
 const MODEL = "claude-opus-5";
 
@@ -222,12 +222,25 @@ const BRIEF_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-/** Resumen ejecutivo del período: qué se está diciendo y qué hacer al respecto. */
+/**
+ * Resumen ejecutivo del período: qué se está diciendo y qué hacer al respecto.
+ *
+ * Con `windowStart` el informe queda anclado a una ventana de la grilla de
+ * tres días y se guarda con `findOneAndUpdate`, no con `create`: la ventana es
+ * la clave de idempotencia, así que regenerarla reemplaza el informe en vez de
+ * ensuciar el historial con dos lecturas del mismo período. Sin `windowStart`
+ * es un informe de rango libre y siempre se agrega uno nuevo.
+ *
+ * Devuelve el documento guardado (y no solo lo que dijo el modelo) porque la
+ * interfaz necesita su `_id`, su período y su `snapshot` para pintarlo sin
+ * tener que ir a buscarlo de nuevo.
+ */
 export async function buildExecutiveBrief(
   projectId: string,
   since: Date,
   until: Date,
-): Promise<ExecutiveBrief> {
+  { windowStart = null, partial = false }: { windowStart?: Date | null; partial?: boolean } = {},
+): Promise<ExecutiveBriefDoc & { _id: unknown }> {
   await dbConnect();
 
   const project = await ListeningProjectModel.findById(projectId).lean();
@@ -318,10 +331,10 @@ ${JSON.stringify(corpus)}`,
       ? Math.round(scored.reduce((sum, m) => sum + (m.sentimentScore ?? 0), 0) / scored.length)
       : undefined;
 
-  await ExecutiveBriefModel.create({
-    projectId,
+  const fields = {
     from: since,
     to: until,
+    partial,
     ...brief,
     snapshot: {
       mentions: mentions.length,
@@ -329,7 +342,16 @@ ${JSON.stringify(corpus)}`,
       negative: mentions.filter((m) => m.sentiment === "negative").length,
       entities: [...new Set(mentions.map((m) => m.entity).filter(Boolean))],
     },
-  });
+  };
 
-  return brief;
+  if (windowStart) {
+    return (await ExecutiveBriefModel.findOneAndUpdate(
+      { projectId, windowStart },
+      { $set: fields, $setOnInsert: { projectId, windowStart } },
+      { new: true, upsert: true },
+    ).lean()) as ExecutiveBriefDoc & { _id: unknown };
+  }
+
+  const created = await ExecutiveBriefModel.create({ projectId, windowStart: null, ...fields });
+  return created.toObject() as ExecutiveBriefDoc & { _id: unknown };
 }

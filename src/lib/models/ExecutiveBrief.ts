@@ -1,4 +1,5 @@
 import { Schema, models, model, type InferSchemaType } from "mongoose";
+import { dropStaleModel } from "./staleModel";
 
 /**
  * Un resumen ejecutivo guardado, con el período que analizó.
@@ -16,6 +17,24 @@ const ExecutiveBriefSchema = new Schema(
     // ventana es incomparable con cualquier otro.
     from: { type: Date, required: true },
     to: { type: Date, required: true },
+
+    /**
+     * Día de inicio de la ventana de tres días a la que pertenece (ver
+     * `briefWindows.ts`). Es la clave de idempotencia: mientras esté puesta,
+     * el informe se reescribe en su lugar en vez de crear otro, y por eso un
+     * período ya analizado no se vuelve a mandar a Claude.
+     *
+     * Va vacía en los informes de rango libre —los de "investigar un episodio
+     * puntual"— y en todos los generados antes de que existiera la grilla.
+     */
+    windowStart: { type: Date, default: null },
+
+    /**
+     * El informe se hizo sobre una ventana que todavía no terminaba, así que
+     * le faltan días. Es lo único que se puede regenerar: cuando la ventana
+     * cierra, se reemplaza por el definitivo.
+     */
+    partial: { type: Boolean, default: false },
 
     headline: { type: String, required: true },
     narrative: { type: String, required: true },
@@ -46,6 +65,17 @@ const ExecutiveBriefSchema = new Schema(
 
 ExecutiveBriefSchema.index({ projectId: 1, createdAt: -1 });
 
+// Parcial (`sparse`) porque los informes de rango libre dejan `windowStart` en
+// null y son varios por proyecto: sin el filtro, el único índice los tomaría
+// como duplicados entre sí. Único para que dos corridas simultáneas —el worker
+// y el botón, por ejemplo— no puedan dejar dos informes de la misma ventana.
+ExecutiveBriefSchema.index(
+  { projectId: 1, windowStart: 1 },
+  { unique: true, partialFilterExpression: { windowStart: { $type: "date" } } },
+);
+
 export type ExecutiveBriefDoc = InferSchemaType<typeof ExecutiveBriefSchema>;
+
+dropStaleModel("ExecutiveBrief", ["windowStart"]);
 
 export default models.ExecutiveBrief ?? model("ExecutiveBrief", ExecutiveBriefSchema);
