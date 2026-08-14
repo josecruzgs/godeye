@@ -181,7 +181,6 @@ export default function PublicacionesPage({ params }: { params: Promise<{ id: st
         title="Publicaciones +"
         subtitle="Qué hacer sobre lo que la escucha encontró, para mover el sentimiento hacia la figura"
         icon={<Megaphone className="h-4.5 w-4.5" />}
-        accent="var(--el-viento)"
         right={
           <button onClick={generate} disabled={busy} className="tbtn inline-flex items-center gap-1.5">
             <Sparkles className={`h-3.5 w-3.5 ${busy ? "animate-pulse" : ""}`} />
@@ -207,9 +206,7 @@ export default function PublicacionesPage({ params }: { params: Promise<{ id: st
             key={t.key}
             onClick={() => setTab(t.key)}
             className={`rounded-[7px] border px-2.5 py-1 font-mono text-[11px] transition-colors ${
-              tab === t.key
-                ? "border-viento/55 bg-viento/12 text-viento"
-                : "border-hairline text-ink-secondary hover:text-ink"
+              tab === t.key ? "accent-fill" : "border-hairline text-ink-secondary hover:text-ink"
             }`}
           >
             {t.label} {counts[t.key] ? `(${counts[t.key]})` : ""}

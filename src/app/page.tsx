@@ -310,7 +310,7 @@ export default async function Home() {
         {escucha.mentions30d === 0 ? (
           <Panel col={12} accent="var(--el-viento)">
             <div className="flex flex-col items-center gap-3 py-8 text-center">
-              <span className="grid h-12 w-12 place-items-center rounded-2xl border border-viento/40 bg-viento/12 text-viento">
+              <span className="grid h-12 w-12 place-items-center rounded-2xl accent-fill border">
                 <ElementIcon name="viento" size={22} />
               </span>
               <p className="max-w-md text-[13px] leading-relaxed text-ink-secondary">

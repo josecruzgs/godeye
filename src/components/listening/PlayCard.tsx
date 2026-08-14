@@ -121,14 +121,12 @@ export default function PlayCard({
     >
       <header className="flex flex-wrap items-start justify-between gap-2">
         <div className="flex min-w-0 items-start gap-2.5">
-          <span
-            className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-[8px] border"
-            style={{
-              color: kind.color,
-              borderColor: `color-mix(in srgb, ${kind.color} 40%, transparent)`,
-              background: `color-mix(in srgb, ${kind.color} 12%, transparent)`,
-            }}
-          >
+          {/* Relleno con el acento, no con el color de la jugada: `like` usa
+              --danger y un rojo sólido con la tinta del acento encima no tiene
+              contraste garantizado. Comentar y reaccionar se distinguen por el
+              filo de la tarjeta y por la etiqueta de abajo, que sí llevan el
+              color de la jugada. */}
+          <span className="accent-fill mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-[8px] border">
             <TopicIcon className="h-3.5 w-3.5" />
           </span>
           <div className="min-w-0">

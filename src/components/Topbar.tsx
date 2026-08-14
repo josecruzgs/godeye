@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { LogOut } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import ElementIcon from "./ui/ElementIcon";
-import { getElementForPath, ELEMENT_COLOR, ELEMENT_META } from "@/lib/elements";
+import { getElementForPath, ELEMENT_META } from "@/lib/elements";
 import { useSession } from "@/lib/session";
 import { findCity } from "@/lib/timezones";
 
@@ -90,7 +90,6 @@ export default function Topbar() {
   }
 
   const element = getElementForPath(pathname ?? "");
-  const accent = element ? ELEMENT_COLOR[element] : "var(--gold)";
   const meta = element ? ELEMENT_META[element] : null;
 
   useEffect(() => {
@@ -116,18 +115,12 @@ export default function Topbar() {
 
   return (
     <header className="sticky top-0 z-10 flex flex-wrap items-center gap-3 border-b border-hairline bg-page/85 px-6 py-3 backdrop-blur-xl">
-      {/* Marca del elemento en curso: cuadro tintado + nombre + rol, igual
-          que el encabezado de vista de la sala. En páginas generales
-          (Dashboard, Perfiles…) cae al oro de la casa. */}
+      {/* Marca del elemento en curso: cuadro relleno + nombre + rol, igual
+          que el encabezado de vista de la sala. Los cuatro elementos y las
+          páginas generales comparten el acento, así que el cuadro se pinta
+          con --primary y su tinta legible. */}
       <div key={element ?? "general"} className="animate-rise flex min-w-0 items-center gap-2.5">
-        <span
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] border"
-          style={{
-            color: accent,
-            borderColor: `color-mix(in srgb, ${accent} 55%, transparent)`,
-            background: `color-mix(in srgb, ${accent} 12%, transparent)`,
-          }}
-        >
+        <span className="accent-fill grid h-8 w-8 shrink-0 place-items-center rounded-[10px] border">
           <ElementIcon name={element ?? "eye"} size={16} />
         </span>
         <div className="min-w-0">

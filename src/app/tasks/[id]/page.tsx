@@ -78,7 +78,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const busy = task.status === "running" || task.status === "queued";
 
   return (
-    <div className="accent-agua flex animate-fade-in-up flex-col gap-6">
+    <div className="flex animate-fade-in-up flex-col gap-6">
       <div>
         <Link href="/tasks" className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-ink hover:underline">
           <ArrowLeft className="h-3.5 w-3.5" /> Tareas

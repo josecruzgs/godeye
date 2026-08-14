@@ -89,7 +89,7 @@ export default function EscuchaPage() {
     <div className="flex animate-fade-in-up flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-viento/55 bg-viento/12 text-viento">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] accent-fill border">
             <ElementIcon name="viento" size={18} />
           </span>
           <div className="min-w-0">
@@ -138,7 +138,7 @@ export default function EscuchaPage() {
         </div>
       ) : projects.length === 0 ? (
         <div className="card-surface flex flex-col items-center gap-3 px-8 py-14 text-center">
-          <span className="grid h-14 w-14 place-items-center rounded-2xl border border-viento/40 bg-viento/12 text-viento">
+          <span className="grid h-14 w-14 place-items-center rounded-2xl accent-fill border">
             <ElementIcon name="viento" size={26} />
           </span>
           <h2 className="font-display text-xl font-semibold text-ink">Todavía no escuchas a nadie</h2>

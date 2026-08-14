@@ -1,17 +1,12 @@
-// Colores por "elemento" de sección. Los cuatro elementos son la columna
-// vertebral del producto: cada módulo pertenece a uno y hereda su color, su
-// ícono y su lema. Ver src/app/globals.css por los tokens --el-* detrás.
+// Los cuatro elementos son la columna vertebral del producto: cada módulo
+// pertenece a uno y hereda su ícono y su lema.
+//
+// Lo que YA NO heredan es un color propio. Agua, Viento, Tierra y Fuego se
+// pintan todos con el acento —el oro de la casa, o el color que el usuario
+// haya elegido en /ajustes—, y la sección se reconoce por el ícono, el título
+// y qué está marcado en el menú. Los tokens --el-* siguen existiendo en
+// globals.css como alias del acento: ahí está el único punto de reversión.
 export type ElementKey = "agua" | "viento" | "tierra" | "fuego";
-
-// Clases de Tailwind completas (no interpoladas) para que el scanner las
-// detecte. "bg" es un color sólido — se combina con texto oscuro en el ícono;
-// "text" se usa aparte para textos tintados (ver DisabledModule).
-export const ELEMENT_ACCENTS: Record<ElementKey, { text: string; bg: string }> = {
-  agua: { text: "text-agua", bg: "bg-agua" },
-  viento: { text: "text-viento", bg: "bg-viento" },
-  tierra: { text: "text-tierra", bg: "bg-tierra" },
-  fuego: { text: "text-fuego", bg: "bg-fuego" },
-};
 
 // Color crudo (no clase Tailwind) para degradados, filos de tarjeta y glows
 // radiales — se usan directo por style inline, así que necesitan el valor
@@ -21,16 +16,6 @@ export const ELEMENT_COLOR: Record<ElementKey, string> = {
   viento: "var(--el-viento)",
   tierra: "var(--el-tierra)",
   fuego: "var(--el-fuego)",
-};
-
-// Clase de acento que reasigna --primary dentro de la página (ver
-// .accent-* en globals.css): los botones, focos y enlaces de un módulo
-// toman el color de su elemento sin tocar archivo por archivo.
-export const ELEMENT_ACCENT_CLASS: Record<ElementKey, string> = {
-  agua: "accent-agua",
-  viento: "accent-viento",
-  tierra: "accent-tierra",
-  fuego: "accent-fuego",
 };
 
 // Nombre, rol y lema de cada elemento — el copy de la sala de inteligencia.

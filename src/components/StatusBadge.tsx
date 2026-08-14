@@ -5,7 +5,10 @@ const COLORS: Record<string, string> = {
   pending: "var(--text-muted)",
   queued: "var(--blue)",
   running: "var(--amber)",
-  paused: "var(--el-fuego)",
+  // Naranja del semáforo, no el de Fuego: "pausada" es un estado, y los
+  // estados no pueden seguir al acento del usuario o dejarían de distinguirse
+  // entre sí (ver --el-* en globals.css, que ahora son todos el acento).
+  paused: "var(--status-serious)",
   success: "var(--ok)",
   failed: "var(--danger)",
   // "partial" = terminó con algunas fallidas mezcladas entre las exitosas —

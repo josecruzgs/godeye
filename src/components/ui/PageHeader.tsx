@@ -1,34 +1,30 @@
 import type { ReactNode } from "react";
 
 /**
- * Encabezado de vista: cuadro de ícono tintado, título en Fraunces y una
- * línea mono de contexto, todo sobre una regla que separa del contenido.
- * Es el mismo bloque con el que la sala abre cada módulo.
+ * Encabezado de vista: cuadro de ícono relleno con el acento, título en
+ * Fraunces y una línea mono de contexto, todo sobre una regla que separa del
+ * contenido. Es el mismo bloque con el que la sala abre cada módulo.
+ *
+ * Ya no recibe `accent`: desde que los cuatro elementos se pintan con el color
+ * elegido en /ajustes, la única respuesta posible era el acento, y una prop que
+ * solo acepta un valor es una invitación a pasarle otro que no se vería bien
+ * (`accent-fill` da por sentado que la tinta es --primary-fg).
  */
 export default function PageHeader({
   title,
   subtitle,
   icon,
-  accent = "var(--gold)",
   right,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
   icon?: ReactNode;
-  accent?: string;
   right?: ReactNode;
 }) {
   return (
     <header className="mb-5 flex flex-wrap items-center gap-3 border-b border-hairline pb-4">
       {icon && (
-        <span
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border"
-          style={{
-            color: accent,
-            borderColor: `color-mix(in srgb, ${accent} 55%, transparent)`,
-            background: `color-mix(in srgb, ${accent} 12%, transparent)`,
-          }}
-        >
+        <span className="accent-fill grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border">
           {icon}
         </span>
       )}

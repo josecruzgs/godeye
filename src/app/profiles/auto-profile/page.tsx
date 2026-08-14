@@ -594,7 +594,7 @@ export default function AutoProfilePage() {
           <ArrowLeft className="h-3.5 w-3.5" /> Perfiles
         </Link>
         <div className="mt-2 flex items-center gap-2.5">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-primary/55 bg-primary/12 text-primary">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] accent-fill border">
             <UserCog className="h-4.5 w-4.5" />
           </span>
           <h1 className="text-2xl font-semibold text-ink">Auto Profile</h1>

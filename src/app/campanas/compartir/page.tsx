@@ -217,7 +217,7 @@ export default function ShareDashboardsPage() {
   }, [campaigns, campaignSearch]);
 
   return (
-    <div className="accent-agua flex animate-fade-in-up flex-col gap-6">
+    <div className="flex animate-fade-in-up flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -346,7 +346,7 @@ export default function ShareDashboardsPage() {
           <Card className="flex h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden sm:h-auto sm:max-h-[calc(100dvh-3rem)]">
             <div className="flex shrink-0 items-start justify-between gap-3 border-b border-hairline p-4 sm:p-5">
               <div className="flex items-center gap-2">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <span className="accent-fill flex h-9 w-9 items-center justify-center rounded-lg">
                   <Share2 className="h-4 w-4" />
                 </span>
                 <h2 className="text-lg font-semibold tracking-tight text-ink">

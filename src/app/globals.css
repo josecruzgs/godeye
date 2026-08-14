@@ -50,12 +50,19 @@
   --primary: #8a6a28;
   --primary-fg: #ffffff;
 
-  /* --- Los cuatro elementos (mismos hues que la referencia, oscurecidos
-     lo justo para leerse sobre fondo claro) --- */
-  --el-viento: #4b7aad;
-  --el-agua: #2f7c9f;
-  --el-tierra: #5c7f38;
-  --el-fuego: #b25a25;
+  /* --- Los cuatro elementos ---
+     Ya no tienen color propio: los cuatro apuntan al acento, que es el oro de
+     la casa o el color que el usuario haya elegido en /ajustes. La señal de en
+     qué sección estás la dan el ícono, el título y el menú, no el color.
+
+     Se conservan como tokens en vez de borrarse porque son el punto único de
+     reversión: hay unas treinta referencias a `--el-*` y `text-viento`
+     repartidas por la app, y devolverle color propio a un elemento es cambiar
+     una línea acá, no perseguirlas de nuevo una por una. */
+  --el-viento: var(--gold);
+  --el-agua: var(--gold);
+  --el-tierra: var(--gold);
+  --el-fuego: var(--gold);
   /* Alias histórico: el sidebar y las páginas de Tareas lo usan. */
   --agua: var(--el-agua);
 
@@ -122,10 +129,11 @@
      ::selection. Con blanco encima, el oro no pasa contraste. */
   --primary-fg: #0a0d14;
 
-  --el-viento: #8fb0d6;
-  --el-agua: #4596bb;
-  --el-tierra: #84a85c;
-  --el-fuego: #cc7440;
+  /* Igual que en claro: los cuatro elementos son el acento (ver :root). */
+  --el-viento: var(--gold);
+  --el-agua: var(--gold);
+  --el-tierra: var(--gold);
+  --el-fuego: var(--gold);
   --agua: var(--el-agua);
 
   --ok: #49c194;
@@ -162,26 +170,15 @@
   --seq-550: #9acdee;
 }
 
-/* Las páginas de Agua (Tareas, Likes, Comentar) reasignan --primary al azul
-   de Agua acá adentro — todo lo que ya usa bg-primary/text-primary/
-   accent-primary/focus:border-primary dentro de este scope cambia de acento
-   sin tocar esos archivos uno por uno. */
-.accent-agua {
-  --primary: var(--el-agua);
-  --primary-fg: #ffffff;
-}
-.accent-viento {
-  --primary: var(--el-viento);
-  --primary-fg: #0a0d14;
-}
-.accent-tierra {
-  --primary: var(--el-tierra);
-  --primary-fg: #0a0d14;
-}
-.accent-fuego {
-  --primary: var(--el-fuego);
-  --primary-fg: #0a0d14;
-}
+/* Acá vivían .accent-agua/.accent-viento/.accent-tierra/.accent-fuego, que
+   reasignaban --primary al color del elemento dentro de cada módulo. Se
+   quitaron con los colores por sección: --primary tiene que quedarse en el
+   acento del usuario en toda la app.
+
+   No alcanzaba con dejarlas apuntando al acento, además: cada una fijaba un
+   --primary-fg literal (#0a0d14 o #ffffff) calculado para su color viejo, y
+   con un acento elegido a mano eso deja texto oscuro sobre botón oscuro. El
+   par correcto lo calcula readableInk() en src/lib/theme.ts. */
 
 @theme inline {
   --color-page: var(--page-plane);
@@ -265,7 +262,9 @@ body {
   background:
     radial-gradient(1000px 600px at 84% -12%, color-mix(in srgb, var(--gold) 9%, transparent), transparent 60%),
     radial-gradient(820px 520px at 2% 0%, color-mix(in srgb, var(--blue) 7%, transparent), transparent 60%),
-    radial-gradient(900px 700px at 50% 120%, color-mix(in srgb, var(--el-fuego) 6%, transparent), transparent 60%);
+    /* Era el naranja de Fuego; ahora el acento, para que el halo siga el color
+       elegido en vez de traer de vuelta un elemento por la ventana. */
+    radial-gradient(900px 700px at 50% 120%, color-mix(in srgb, var(--gold) 6%, transparent), transparent 60%);
 }
 
 /* En @layer base para que las utilidades de Tailwind (@layer utilities,
@@ -538,6 +537,25 @@ body {
   font-weight: 600;
   padding: 2px 7px;
   border-radius: 4px;
+}
+
+/* Relleno sólido del acento: cuadros de ícono de encabezado y pastillas
+   seleccionadas (pestañas, presets de período, plataformas elegidas).
+   Reemplaza al patrón viejo `border-X/55 bg-X/12 text-X`.
+
+   El tinte al 12% funcionaba mientras el acento era el oro de la casa sobre
+   gris. Con un acento elegido por el usuario deja de funcionar: contra un
+   fondo claro un rosa al 12% es casi blanco, y lo seleccionado no se lee como
+   seleccionado.
+
+   La tinta sale de --primary-fg, que readableInk() calcula contra el acento
+   (src/lib/theme.ts) — por eso esto sirve solo para lo que se pinta CON el
+   acento. Lo que lleva color propio (los estados de StatusBadge, las series de
+   las gráficas) se queda tintado: ahí el color ES el dato. */
+.accent-fill {
+  background: var(--primary);
+  color: var(--primary-fg);
+  border-color: transparent;
 }
 
 /* Sello de clasificación de la topbar ("USO INTERNO"). */

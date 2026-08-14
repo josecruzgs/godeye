@@ -193,7 +193,7 @@ function NewTaskContent() {
   }
 
   return (
-    <div className="accent-agua flex animate-fade-in-up flex-col gap-6">
+    <div className="flex animate-fade-in-up flex-col gap-6">
       <h1 className="text-2xl font-semibold text-ink">Nueva tarea</h1>
 
       {error && <p className="rounded-xl bg-critical/10 p-3 text-sm text-critical">{error}</p>}

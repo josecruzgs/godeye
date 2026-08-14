@@ -7,8 +7,11 @@ import { AXIS_TICK, GRID_STROKE, BASELINE_STROKE, TOOLTIP_BOX } from "./chartThe
 
 export type TrendPoint = { day: string; label: string; likes: number; comments: number };
 
+// Paleta categórica, no colores de elemento: las dos series tienen que
+// distinguirse entre sí, y --el-agua ahora resuelve al mismo acento que
+// --gold (ver globals.css), lo que dejaba las dos curvas del mismo color.
 const SERIES = [
-  { key: "likes", name: "Likes completados", color: "var(--el-agua)" },
+  { key: "likes", name: "Likes completados", color: "var(--series-1)" },
   { key: "comments", name: "Comentarios completados", color: "var(--gold)" },
 ] as const;
 

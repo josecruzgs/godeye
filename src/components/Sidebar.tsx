@@ -39,25 +39,30 @@ type NavSection = {
   key: string;
   label: string;
   icon?: LucideIcon;
-  accentText: string;
-  accentBg: string;
-  accentSolid: string;
   collapsible: boolean;
   items: NavItem[];
 };
 
+// Un solo acento para todo el menú. Antes cada elemento traía el suyo (Agua
+// azul, Viento celeste, Tierra verde, Fuego naranja); ahora los cinco grupos
+// usan el acento de la casa, que es el oro o el color que el usuario haya
+// elegido en /ajustes — `text-gold` resuelve a --gold, y accentStyle() lo
+// reescribe en línea sobre <html>.
+//
 // Clases completas y literales a propósito (no interpoladas): el scanner de
 // Tailwind necesita verlas escritas tal cual en el código para generarlas.
-// El oro es el acento de la casa — los módulos de un elemento lo pisan con
-// el color de su elemento.
-const DEFAULT_ACCENT = { accentText: "text-gold", accentBg: "bg-gold/10", accentSolid: "bg-gold" };
+//
+// El ítem activo NO usa esto: va relleno sólido con `bg-primary text-primary-fg`
+// (ver abajo). Un tinte al 10% del acento se sostenía sobre el gris de la casa,
+// pero sobre un menú pintado de un color propio queda compitiendo con el fondo
+// y el ítem seleccionado deja de leerse como seleccionado.
+const ACCENT_TEXT = "text-gold";
 
 const NAV_SECTIONS: NavSection[] = [
   {
     key: "general",
     label: "General",
     collapsible: false,
-    ...DEFAULT_ACCENT,
     items: [{ href: "/", label: "Dashboard", icon: LayoutDashboard }],
   },
   {
@@ -65,9 +70,6 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Agua",
     icon: Droplets,
     collapsible: true,
-    accentText: "text-agua",
-    accentBg: "bg-agua/10",
-    accentSolid: "bg-agua",
     items: [
       { href: "/campanas", label: "Campañas", icon: FolderKanban },
       { href: "/tasks", label: "Tareas", icon: ListChecks },
@@ -82,9 +84,6 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Viento",
     icon: Wind,
     collapsible: true,
-    accentText: "text-viento",
-    accentBg: "bg-viento/10",
-    accentSolid: "bg-viento",
     items: [{ href: "/scrapping", label: "Escucha", icon: Radar }],
   },
   {
@@ -92,9 +91,6 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Tierra",
     icon: Mountain,
     collapsible: true,
-    accentText: "text-tierra",
-    accentBg: "bg-tierra/10",
-    accentSolid: "bg-tierra",
     items: [{ href: "/actividades", label: "Actividades", icon: Trees }],
   },
   {
@@ -102,9 +98,6 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Fuego",
     icon: Flame,
     collapsible: true,
-    accentText: "text-fuego",
-    accentBg: "bg-fuego/10",
-    accentSolid: "bg-fuego",
     items: [{ href: "/dia-d", label: "Día D", icon: Rocket }],
   },
   {
@@ -112,7 +105,6 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Recursos",
     icon: Archive,
     collapsible: true,
-    ...DEFAULT_ACCENT,
     items: [
       { href: "/profiles", label: "Perfiles", icon: Users },
       { href: "/groups", label: "Grupos", icon: FolderKanban },
@@ -275,12 +267,10 @@ export default function Sidebar() {
           const SectionIcon = section.icon;
           const isOpen = !closedSections[section.key];
           const showHeader = showLabels && section.icon;
-          // Con un menú de color propio, los encabezados en su color de
-          // elemento se hunden en el fondo (el verde de Tierra sobre un vino,
-          // por ejemplo, deja de leerse). Ahí pasan a la tinta legible, que ya
-          // está calculada contra ese fondo. Sin color elegido, cada sección
-          // conserva el suyo.
-          const headerColor = hasCustomSidebar ? "text-ink" : section.accentText;
+          // Con un menú de color propio, el acento se hunde en el fondo (un
+          // oro sobre un vino deja de leerse). Ahí los encabezados pasan a la
+          // tinta legible, que sidebarStyle() ya calculó contra ese fondo.
+          const headerColor = hasCustomSidebar ? "text-ink" : ACCENT_TEXT;
 
           return (
             <div key={section.key} className="flex flex-col gap-1">
@@ -329,12 +319,18 @@ export default function Sidebar() {
                           showLabels ? "pl-7 pr-3" : "px-3"
                         } ${
                           active
-                            ? `${section.accentBg} ${section.accentText} border-current/35`
+                            ? // `--primary-fg` no es blanco fijo: lo calcula
+                              // readableInk() contra el acento elegido, así un
+                              // acento claro recibe tinta oscura en vez de
+                              // quedar blanco sobre blanco.
+                              "border-transparent bg-primary text-primary-fg"
                             : "border-transparent text-ink-secondary hover:border-hairline hover:bg-surface-2 hover:text-ink"
                         }`}
                       >
-                        {active && <span className={`absolute left-3 h-5 w-0.5 rounded-full ${section.accentSolid}`} />}
-                        <Icon className={`h-4 w-4 shrink-0 ${active ? section.accentText : "text-ink-muted group-hover:text-ink"}`} />
+                        {/* El ícono hereda la tinta del pill relleno. */}
+                        <Icon
+                          className={`h-4 w-4 shrink-0 ${active ? "" : "text-ink-muted group-hover:text-ink"}`}
+                        />
                         {showLabels && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
                       </Link>
                     );

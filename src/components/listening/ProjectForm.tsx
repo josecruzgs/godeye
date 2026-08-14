@@ -252,9 +252,7 @@ export default function ProjectForm({
                     )
                   }
                   className={`rounded-[9px] border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.08em] transition-colors ${
-                    active
-                      ? "border-primary/55 bg-primary/12 text-primary"
-                      : "border-hairline text-ink-secondary hover:text-ink"
+                    active ? "accent-fill" : "border-hairline text-ink-secondary hover:text-ink"
                   }`}
                 >
                   {platform}

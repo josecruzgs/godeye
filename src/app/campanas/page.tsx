@@ -324,10 +324,10 @@ function CampaignsContent() {
   }
 
   return (
-    <div className="accent-agua flex animate-fade-in-up flex-col gap-6">
+    <div className="flex animate-fade-in-up flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-agua/55 bg-agua/12 text-agua">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] accent-fill border">
             <ElementIcon name="agua" size={18} />
           </span>
           <div className="min-w-0">

@@ -55,13 +55,18 @@ type NamedRow = {
 
 // Nombre presentable y color de cada fuente. La clave es el campo `platform`
 // que guarda la ingesta.
+//
+// Son colores categóricos: lo único que importa es que ninguna fila comparta
+// tono con otra. Por eso ninguno sale de los tokens --el-*, que desde que se
+// quitaron los colores por sección resuelven todos al mismo acento y habrían
+// dejado tres redes pintadas igual.
 const PLATFORM_META: Record<string, { label: string; color: string }> = {
   news: { label: "Prensa y web", color: "var(--gold)" },
-  x: { label: "X (Twitter)", color: "var(--el-viento)" },
+  x: { label: "X (Twitter)", color: "var(--series-6)" },
   instagram: { label: "Instagram", color: "var(--series-3)" },
   tiktok: { label: "TikTok", color: "var(--teal)" },
   facebook: { label: "Facebook", color: "var(--blue)" },
-  linkedin: { label: "LinkedIn", color: "var(--el-agua)" },
+  linkedin: { label: "LinkedIn", color: "var(--series-2)" },
   youtube: { label: "YouTube", color: "var(--danger)" },
 };
 
@@ -157,7 +162,9 @@ const SENTIMENT_SERIES = [
   { key: "positive", name: "Favorable", color: "var(--ok)" },
   { key: "neutral", name: "Neutral", color: "var(--text-muted)" },
   { key: "negative", name: "Adverso", color: "var(--danger)" },
-  { key: "unanalyzed", name: "Sin analizar", color: "var(--el-viento)" },
+  // Color categórico y no el acento: las cuatro bandas del área apilada tienen
+  // que leerse por separado.
+  { key: "unanalyzed", name: "Sin analizar", color: "var(--series-3)" },
 ] as const;
 
 const inputClass =
@@ -517,7 +524,7 @@ export default function ProyectoPage({ params }: { params: Promise<{ id: string 
             <ArrowLeft className="h-3.5 w-3.5" /> Escucha
           </Link>
           <div className="mt-2 flex items-center gap-2.5">
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] border border-viento/55 bg-viento/12 text-viento">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] accent-fill border">
               <ElementIcon name="viento" size={18} />
             </span>
             <div className="min-w-0">
@@ -603,9 +610,7 @@ export default function ProyectoPage({ params }: { params: Promise<{ id: string 
                 setPage(1);
               }}
               className={`rounded-[7px] border px-2.5 py-1 font-mono text-[11px] transition-colors ${
-                active
-                  ? "border-primary/55 bg-primary/12 text-primary"
-                  : "border-hairline text-ink-secondary hover:text-ink"
+                active ? "accent-fill" : "border-hairline text-ink-secondary hover:text-ink"
               }`}
             >
               {preset.label}
@@ -1013,7 +1018,7 @@ export default function ProyectoPage({ params }: { params: Promise<{ id: string 
                 title={`${b.snapshot?.mentions ?? 0} menciones · sentimiento ${b.snapshot?.avgScore ?? "—"}`}
                 className={`rounded-[7px] border px-2.5 py-1 font-mono text-[10.5px] transition-colors ${
                   brief?._id === b._id
-                    ? "border-gold/55 bg-gold/12 text-gold"
+                    ? "accent-fill"
                     : "border-hairline text-ink-secondary hover:text-ink"
                 }`}
               >
@@ -1184,7 +1189,7 @@ function WindowStrip({
           ? window.partial
             ? "border-dashed border-amber/55 text-amber"
             : active
-              ? "border-gold/70 bg-gold/12 text-gold"
+              ? "accent-fill"
               : "border-gold/40 text-ink-secondary hover:text-ink"
           : empty
             ? "border-dashed border-hairline text-ink-muted opacity-45"
