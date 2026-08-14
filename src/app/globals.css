@@ -401,6 +401,158 @@ body {
   border-radius: 10px;
 }
 
+/* ============================================================================
+   KPI A COLOR PLENO
+   La tarjeta se pinta ENTERA con el acento (--kpi-c) y lleva el ícono en
+   grande, translúcido, saliéndose por la esquina inferior derecha.
+
+   Pintar con el acento tiene un problema: el acento lo elige el usuario y
+   puede ser un vino casi negro o un amarillo pastel, así que ninguna tinta
+   fija sirve para los dos. Se resuelve con color relativo de OKLCH, que
+   permite leer la luminosidad `l` del acento y operar con ella.
+
+   La pieza de la que cuelga todo es el peso
+
+       W = clamp(0, (0.62 - l) * 1000, 1)
+
+   que vale 1 si el acento es oscuro o medio y 0 si es claro — multiplicar
+   por mil convierte la rampa en un salto, y el clamp lo recorta a los dos
+   extremos. Con W la tarjeta cae en uno de dos regímenes:
+
+   · acento oscuro/medio (W=1) → se hunde a la banda [0.40, 0.52] y lleva
+     tinta blanca. Es el caso del oro claro, del vino y de los teales.
+   · acento claro (W=0) → se sube a la banda [0.74, 0.88] y lleva tinta
+     negra. Es el caso del oro oscuro y de las series pastel.
+
+   Los dos extremos se interpolan con `W * A + (1 - W) * B`, que es la forma
+   de escribir un `if` dentro de calc(). Se hace así, y no clavando toda la
+   luminosidad a una banda media, porque comprimir un oro pastel a tono medio
+   lo vuelve verde oliva: el matiz sobrevive, la identidad no.
+
+   La tinta sale del mismo W (`oklch(... W 0 0)` = blanco o negro puro) y
+   todo lo demás —ícono, píldora, punto de "en vivo"— se pinta con
+   `currentColor`, así que la decisión se toma UNA vez.
+
+   El brillo especular sí es blanco siempre: es luz, no tinta, y sobre un
+   acento claro simplemente desaparece.
+
+   La declaración plana de `background` que va primero es el respaldo para
+   navegadores sin color relativo (Firefox < 128): mezcla contra un azul casi
+   negro para garantizar la tinta blanca del respaldo. Va afuera del
+   @supports para que la versión buena no la tumbe al no parsearse. */
+.kpi-solid {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  color: #fff;
+  background: color-mix(in srgb, var(--kpi-c, var(--gold)) 74%, #0b0f16);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.16) inset,
+    0 18px 34px -26px color-mix(in srgb, var(--kpi-c, var(--gold)) 75%, transparent);
+  transition: transform 0.18s, box-shadow 0.18s;
+}
+
+@supports (color: oklch(from red l c h)) {
+  .kpi-solid {
+    color: oklch(from var(--kpi-c, var(--gold)) clamp(0, (0.62 - l) * 1000, 1) 0 0);
+    background:
+      radial-gradient(115% 130% at 92% 4%, rgba(255, 255, 255, 0.14), transparent 62%),
+      linear-gradient(
+        146deg,
+        oklch(
+            from var(--kpi-c, var(--gold))
+              calc(
+                clamp(0, (0.62 - l) * 1000, 1) * clamp(0.4, l, 0.52) + (1 - clamp(0, (0.62 - l) * 1000, 1)) *
+                  clamp(0.74, l, 0.88)
+              )
+              c h
+          )
+          0%,
+        oklch(
+            from var(--kpi-c, var(--gold))
+              calc(
+                clamp(0, (0.62 - l) * 1000, 1) * clamp(0.4, l, 0.52) + (1 - clamp(0, (0.62 - l) * 1000, 1)) *
+                  clamp(0.74, l, 0.88) - 0.06
+              )
+              c h
+          )
+          100%
+      );
+  }
+}
+
+/* Ícono de fondo: grande, en la tinta al 16% y recortado por la esquina. El
+   trazo fino es a propósito — con el grosor normal a 86px se lee como una
+   mancha. */
+.kpi-glyph {
+  position: absolute;
+  right: -8px;
+  bottom: -12px;
+  width: 86px;
+  height: 86px;
+  opacity: 0.16;
+  pointer-events: none;
+}
+
+/* Halo detrás del ícono, para que la esquina no quede plana. */
+.kpi-solid::after {
+  content: "";
+  position: absolute;
+  right: -46px;
+  bottom: -58px;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.15), transparent 62%);
+  pointer-events: none;
+}
+
+.kpi-label {
+  position: relative;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  opacity: 0.88;
+}
+
+.kpi-number {
+  position: relative;
+  font-family: var(--font-inter), ui-sans-serif, sans-serif;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Delta sobre color: el verde y el rojo de siempre se pierden encima del
+   acento, así que el signo lo carga la flecha y el fondo solo separa —
+   translúcido para lo que sube, más marcado para lo que baja. */
+.kpi-delta {
+  position: relative;
+  display: inline-block;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.kpi-delta.is-down {
+  background: color-mix(in srgb, currentColor 32%, transparent);
+}
+
+.kpi-lift:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.24) inset,
+    0 26px 46px -24px color-mix(in srgb, var(--kpi-c, var(--gold)) 85%, transparent);
+}
+
 /* Encabezado de panel: ícono + título + tag a la izquierda, acciones a la
    derecha. */
 .panel-head {

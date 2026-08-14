@@ -297,14 +297,6 @@ export default async function Home() {
           href="/scrapping"
           icon={AlertTriangle}
           accent="fuego"
-          delta={
-            escucha.mentions30d > 0
-              ? {
-                  text: `${Math.round((escucha.negative30d / escucha.mentions30d) * 100)}% del total`,
-                  positive: false,
-                }
-              : undefined
-          }
         />
 
         {escucha.mentions30d === 0 ? (

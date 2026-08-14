@@ -22,9 +22,12 @@ const ACCENT_VALUES: Record<StatAccent, string> = {
 };
 
 /**
- * Cifra de cabecera del panel: barra de acento a la izquierda, etiqueta mono
- * en versalitas, número tabular que cuenta al montarse y —opcional— una
- * línea de delta debajo.
+ * Cifra de cabecera del panel: la tarjeta se pinta entera con el acento, con
+ * el ícono en grande y translúcido saliéndose por la esquina, etiqueta mono
+ * en versalitas y número tabular que cuenta al montarse.
+ *
+ * La legibilidad de la tinta blanca no se resuelve acá sino en `.kpi-solid`
+ * (globals.css), que normaliza la luminosidad del acento antes de pintarlo.
  */
 export default function StatCard({
   label,
@@ -47,34 +50,24 @@ export default function StatCard({
   col?: PanelCol;
 }) {
   const c = ACCENT_VALUES[accent];
-  const className = `card-surface c${col} relative flex min-h-26 flex-col px-4.5 py-4 ${href ? "card-lift" : ""}`;
+  const className = `kpi-solid c${col} relative flex min-h-26 flex-col px-4.5 py-4 ${href ? "kpi-lift" : ""}`;
 
   const content = (
     <>
-      <span
-        aria-hidden
-        className="absolute left-0 top-0 bottom-0 w-0.75"
-        style={{ background: `linear-gradient(${c}, color-mix(in srgb, ${c} 40%, transparent))` }}
-      />
-      <div className="label-mono flex items-center gap-1.5">
+      {/* Trazo fino y tamaño grande: el ícono es textura de fondo, no dato. */}
+      {Icon && <Icon aria-hidden className="kpi-glyph" strokeWidth={1.25} />}
+      <div className="kpi-label flex items-center gap-1.5">
         <span className="truncate">{label}</span>
-        {live && <span className="dot-live shrink-0" style={{ background: c }} />}
-        {Icon && <Icon className="ml-auto h-3.5 w-3.5 shrink-0 opacity-70" style={{ color: c }} />}
+        {live && <span className="dot-live shrink-0" style={{ background: "currentColor" }} />}
       </div>
       <div className="mt-2.5 flex flex-wrap items-baseline gap-2">
-        <span className="stat-value">
+        <span className="kpi-number">
           <Num t={value} />
         </span>
       </div>
       {delta && (
         <div className="mt-2">
-          <span
-            className="pill-mono inline-block whitespace-nowrap"
-            style={{
-              color: delta.positive ? "var(--ok)" : "var(--danger)",
-              background: `color-mix(in srgb, ${delta.positive ? "var(--ok)" : "var(--danger)"} 16%, transparent)`,
-            }}
-          >
+          <span className={`kpi-delta ${delta.positive ? "" : "is-down"}`}>
             {delta.positive ? "▲" : "▼"} {delta.text}
           </span>
         </div>
@@ -84,14 +77,14 @@ export default function StatCard({
 
   if (href) {
     return (
-      <Link href={href} className={className} style={{ ["--edge-c" as string]: c }}>
+      <Link href={href} className={className} style={{ ["--kpi-c" as string]: c }}>
         {content}
       </Link>
     );
   }
 
   return (
-    <div className={className} style={{ ["--edge-c" as string]: c }}>
+    <div className={className} style={{ ["--kpi-c" as string]: c }}>
       {content}
     </div>
   );

@@ -14,8 +14,15 @@ import { BRIEF_ICONS } from "./analyze";
 const MODEL = "claude-opus-5";
 const FALLBACK_BETA = "server-side-fallback-2026-07-01";
 
-/** Cuántas jugadas propone una corrida. */
-export const DEFAULT_PLAY_COUNT = 20;
+/**
+ * Cuántas jugadas propone una corrida, sumando likes y comentarios.
+ *
+ * Diez y no veinte: la lista se revisa a mano una por una antes de activar
+ * nada, y con veinte tarjetas la revisión se convierte en scroll. Es un techo,
+ * no una cuota — el prompt pide explícitamente devolver menos si solo unas
+ * pocas publicaciones ameritan acción.
+ */
+export const DEFAULT_PLAY_COUNT = 10;
 
 /**
  * Ventana de la que salen los candidatos. Comentar una nota de hace dos meses

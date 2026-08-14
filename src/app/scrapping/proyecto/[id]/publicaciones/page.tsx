@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState, use } from "react";
 import Link from "next/link";
-import { ArrowLeft, Sparkles, Megaphone } from "lucide-react";
+import { ArrowLeft, Sparkles, Megaphone, Footprints, PenLine } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import Modal from "@/components/Modal";
 import PageHeader from "@/components/ui/PageHeader";
 import ProfilePicker, { type PickerGroup, type PickerProfile } from "@/components/ProfilePicker";
 import PlayCard, { type ActionPlayRow } from "@/components/listening/PlayCard";
+import IdeaCard, { type ImageIdeaRow } from "@/components/listening/IdeaCard";
 
 type Project = { _id: string; name: string; entities: { name: string }[] };
 
@@ -32,6 +33,12 @@ export default function PublicacionesPage({ params }: { params: Promise<{ id: st
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Las ideas van por su cuenta: no cuelgan de una publicación, no se filtran
+  // por pestaña y generarlas es otra llamada. Compartir el estado con las
+  // jugadas obligaría a recargarlas juntas sin motivo.
+  const [ideas, setIdeas] = useState<ImageIdeaRow[]>([]);
+  const [ideasBusy, setIdeasBusy] = useState(false);
 
   // Se cargan una vez y se comparten entre todos los despachos: son cientos de
   // perfiles y volver a pedirlos cada vez que se abre el diálogo haría esperar
@@ -62,9 +69,24 @@ export default function PublicacionesPage({ params }: { params: Promise<{ id: st
     }
   }, [id, tab]);
 
+  const loadIdeas = useCallback(async () => {
+    try {
+      const data = await apiFetch<{ ideas: ImageIdeaRow[] }>(
+        `/api/listening/projects/${id}/ideas`,
+      );
+      setIdeas(data.ideas);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [id]);
+
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    loadIdeas();
+  }, [loadIdeas]);
 
   useEffect(() => {
     Promise.all([
@@ -86,7 +108,7 @@ export default function PublicacionesPage({ params }: { params: Promise<{ id: st
     try {
       const res = await apiFetch<{ plays: ActionPlayRow[] }>(
         `/api/listening/projects/${id}/plays`,
-        { method: "POST", body: JSON.stringify({ count: 20 }) },
+        { method: "POST", body: JSON.stringify({ count: 10 }) },
       );
       setNotice(`${res.plays.length} jugadas propuestas.`);
       setTab("suggested");
@@ -95,6 +117,53 @@ export default function PublicacionesPage({ params }: { params: Promise<{ id: st
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function generateIdeas() {
+    setIdeasBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await apiFetch<{ ideas: ImageIdeaRow[] }>(
+        `/api/listening/projects/${id}/ideas`,
+        { method: "POST", body: JSON.stringify({ count: 10 }) },
+      );
+      setNotice(`${res.ideas.length} ideas nuevas.`);
+      await loadIdeas();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setIdeasBusy(false);
+    }
+  }
+
+  async function patchIdea(ideaId: string, patch: Record<string, unknown>) {
+    setIdeasBusy(true);
+    setError(null);
+    try {
+      await apiFetch(`/api/listening/projects/${id}/ideas/${ideaId}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      });
+      await loadIdeas();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setIdeasBusy(false);
+    }
+  }
+
+  async function removeIdea(ideaId: string) {
+    if (!confirm("¿Borrar esta idea?")) return;
+    setIdeasBusy(true);
+    try {
+      await apiFetch(`/api/listening/projects/${id}/ideas/${ideaId}`, { method: "DELETE" });
+      await loadIdeas();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setIdeasBusy(false);
     }
   }
 
@@ -161,6 +230,12 @@ export default function PublicacionesPage({ params }: { params: Promise<{ id: st
     }
   }
 
+  // Una columna cada uno. El filtro va acá y no en dos consultas separadas
+  // porque el lote se genera de una sola vez: pedirlo dos veces sería el mismo
+  // documento partido en dos viajes.
+  const acciones = ideas.filter((idea) => idea.kind === "accion");
+  const publicaciones = ideas.filter((idea) => idea.kind === "publicacion");
+
   const suggestedCount = dispatching?.suggestedCount ?? 0;
   // En una jugada de comentario hay un texto por cuenta, así que elegir más
   // perfiles que textos obligaría a repetir un comentario en la misma
@@ -177,16 +252,13 @@ export default function PublicacionesPage({ params }: { params: Promise<{ id: st
         <ArrowLeft className="h-3.5 w-3.5" /> {project?.name ?? "Proyecto"}
       </Link>
 
+      {/* El botón de generar ya no vive acá: son dos generaciones distintas,
+          una por columna, y un botón solo en la cabecera no deja ver cuál de
+          las dos rehace. Cada columna trae el suyo. */}
       <PageHeader
         title="Publicaciones +"
         subtitle="Qué hacer sobre lo que la escucha encontró, para mover el sentimiento hacia la figura"
         icon={<Megaphone className="h-4.5 w-4.5" />}
-        right={
-          <button onClick={generate} disabled={busy} className="tbtn inline-flex items-center gap-1.5">
-            <Sparkles className={`h-3.5 w-3.5 ${busy ? "animate-pulse" : ""}`} />
-            {busy ? "Analizando..." : "Generar jugadas"}
-          </button>
-        }
       />
 
       {error && (
@@ -200,43 +272,151 @@ export default function PublicacionesPage({ params }: { params: Promise<{ id: st
         </p>
       )}
 
-      <div className="card-surface flex flex-wrap items-center gap-2 px-4 py-3">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`rounded-[7px] border px-2.5 py-1 font-mono text-[11px] transition-colors ${
-              tab === t.key ? "accent-fill" : "border-hairline text-ink-secondary hover:text-ink"
-            }`}
-          >
-            {t.label} {counts[t.key] ? `(${counts[t.key]})` : ""}
-          </button>
-        ))}
-      </div>
+      {/* Dos columnas desde lg, y `items-start` para que la columna corta no
+          se estire a la altura de la larga.
 
-      {plays.length === 0 ? (
-        <div className="card-surface px-8 py-12 text-center">
-          <p className="mx-auto max-w-2xl text-[13px] leading-relaxed text-ink-secondary">
-            {tab === "suggested"
-              ? "Sin jugadas propuestas. “Generar jugadas” lee las publicaciones de redes del último mes y el resumen ejecutivo vigente, y propone dónde conviene comentar para defender y dónde mandar reacciones para amplificar. Necesita menciones de Facebook, Instagram, TikTok o X: en una nota de prensa no hay nada que comentar ni likear."
-              : "Nada por acá todavía."}
-          </p>
+          El corte es por quién ejecuta: a la izquierda lo que hace la figura
+          por cuenta propia —primero las acciones de terreno, después las
+          publicaciones nuevas— y a la derecha lo que hacen los perfiles sobre
+          publicaciones que ya existen. Abajo de lg se apila en ese mismo
+          orden, que es el de importancia. */}
+      <div className="grid items-start gap-6 lg:grid-cols-2">
+        {/* --- Columna izquierda: ideas de imagen --- */}
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="min-w-0">
+              <p className="overline">Ideas para mover la imagen</p>
+              <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-secondary">
+                Del análisis del último mes: qué hacer en el terreno y qué publicar. Generar de
+                nuevo reemplaza el lote, salvo lo que hayas guardado con el marcador.
+              </p>
+            </div>
+            <button
+              onClick={generateIdeas}
+              disabled={ideasBusy}
+              className="tbtn inline-flex shrink-0 items-center gap-1.5"
+            >
+              <Sparkles className={`h-3.5 w-3.5 ${ideasBusy ? "animate-pulse" : ""}`} />
+              {ideasBusy ? "Pensando..." : ideas.length > 0 ? "Generar otras" : "Generar ideas"}
+            </button>
+          </div>
+
+          {ideas.length === 0 ? (
+            <div className="card-surface px-6 py-10 text-center">
+              <p className="text-[13px] leading-relaxed text-ink-secondary">
+                Todavía no hay ideas. “Generar ideas” lee las menciones del último mes y el resumen
+                ejecutivo vigente, y propone diez acciones de terreno —que no se resuelven
+                publicando— y diez publicaciones nuevas, cada una con su borrador.
+              </p>
+            </div>
+          ) : (
+            <>
+              <section className="flex flex-col gap-3">
+                <h3 className="label-mono flex items-center gap-1.5">
+                  <Footprints className="h-3.5 w-3.5" style={{ color: "var(--el-tierra)" }} />
+                  Acciones · qué hacer ({acciones.length})
+                </h3>
+                {acciones.length === 0 ? (
+                  <p className="label-mono-sm normal-case tracking-normal">
+                    El último lote no propuso acciones.
+                  </p>
+                ) : (
+                  acciones.map((idea) => (
+                    <IdeaCard
+                      key={idea._id}
+                      idea={idea}
+                      busy={ideasBusy}
+                      onKeep={(kept) => patchIdea(idea._id, { kept })}
+                      onDelete={() => removeIdea(idea._id)}
+                    />
+                  ))
+                )}
+              </section>
+
+              <section className="flex flex-col gap-3">
+                <h3 className="label-mono flex items-center gap-1.5">
+                  <PenLine className="h-3.5 w-3.5" style={{ color: "var(--el-viento)" }} />
+                  Publicaciones · qué subir ({publicaciones.length})
+                </h3>
+                {publicaciones.length === 0 ? (
+                  <p className="label-mono-sm normal-case tracking-normal">
+                    El último lote no propuso publicaciones.
+                  </p>
+                ) : (
+                  publicaciones.map((idea) => (
+                    <IdeaCard
+                      key={idea._id}
+                      idea={idea}
+                      busy={ideasBusy}
+                      onKeep={(kept) => patchIdea(idea._id, { kept })}
+                      onDelete={() => removeIdea(idea._id)}
+                    />
+                  ))
+                )}
+              </section>
+            </>
+          )}
         </div>
-      ) : (
-        <div className="flex flex-col gap-3.5">
-          {plays.map((play) => (
-            <PlayCard
-              key={play._id}
-              play={play}
-              busy={busy}
-              onSave={(patch) => patchPlay(play._id, patch)}
-              onStatus={(status) => patchPlay(play._id, { status })}
-              onDispatch={() => openDispatch(play)}
-              onDelete={() => removePlay(play._id)}
-            />
-          ))}
+
+        {/* --- Columna derecha: jugadas sobre publicaciones que ya existen --- */}
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="min-w-0">
+              <p className="overline">Publicaciones a intensificar</p>
+              <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-secondary">
+                Diez jugadas de likes y comentarios sobre publicaciones que la escucha ya encontró.
+                Cada una se activa como campaña con los perfiles que elijas.
+              </p>
+            </div>
+            <button
+              onClick={generate}
+              disabled={busy}
+              className="tbtn inline-flex shrink-0 items-center gap-1.5"
+            >
+              <Sparkles className={`h-3.5 w-3.5 ${busy ? "animate-pulse" : ""}`} />
+              {busy ? "Analizando..." : "Generar jugadas"}
+            </button>
+          </div>
+
+          <div className="card-surface flex flex-wrap items-center gap-2 px-4 py-3">
+            {TABS.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className={`rounded-[7px] border px-2.5 py-1 font-mono text-[11px] transition-colors ${
+                  tab === t.key ? "accent-fill" : "border-hairline text-ink-secondary hover:text-ink"
+                }`}
+              >
+                {t.label} {counts[t.key] ? `(${counts[t.key]})` : ""}
+              </button>
+            ))}
+          </div>
+
+          {plays.length === 0 ? (
+            <div className="card-surface px-6 py-10 text-center">
+              <p className="text-[13px] leading-relaxed text-ink-secondary">
+                {tab === "suggested"
+                  ? "Sin jugadas propuestas. “Generar jugadas” lee las publicaciones de redes del último mes y el resumen ejecutivo vigente, y propone dónde conviene comentar para defender y dónde mandar reacciones para amplificar. Necesita menciones de Facebook, Instagram, TikTok o X: en una nota de prensa no hay nada que comentar ni likear."
+                  : "Nada por acá todavía."}
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3.5">
+              {plays.map((play) => (
+                <PlayCard
+                  key={play._id}
+                  play={play}
+                  busy={busy}
+                  onSave={(patch) => patchPlay(play._id, patch)}
+                  onStatus={(status) => patchPlay(play._id, { status })}
+                  onDispatch={() => openDispatch(play)}
+                  onDelete={() => removePlay(play._id)}
+                />
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       <Modal
         open={dispatching !== null}
