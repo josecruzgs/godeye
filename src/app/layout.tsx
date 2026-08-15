@@ -32,8 +32,8 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ojo de Dios · Sala de Inteligencia",
-  description: "Panel para automatizar cuentas de redes sociales con Ojo de Dios",
+  title: "Julieta Ramirez · Yo con Julieta",
+  description: "Panel para automatizar cuentas de redes sociales",
   // Apunta directo a public/media/*.png en vez de mantener una copia en
   // src/app/icon.png: así el favicon nunca se puede desincronizar del logo
   // cuando se reemplacen esos archivos. logo.png es blanco (para navegador

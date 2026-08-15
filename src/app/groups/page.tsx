@@ -103,7 +103,7 @@ export default function GroupsPage() {
           className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-surface px-3 py-2 text-sm font-medium shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50"
         >
           <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-          {syncing ? "Sincronizando..." : "Sincronizar con Ojo de Dios"}
+          {syncing ? "Sincronizando..." : "Sincronizar con Sistema"}
         </button>
       </div>
 

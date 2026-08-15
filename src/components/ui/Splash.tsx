@@ -14,9 +14,9 @@ const UNMOUNT_MS = 2350;
  * pestaña —la marca vive en sessionStorage— y se puede saltar con un clic.
  */
 export default function Splash({
-  name = "Ojo de Dios",
+  name = "Julieta Ramirez",
   tag = "Sala de Inteligencia",
-  lead = "El ojo todo lo observa.",
+  lead = "Yo con Julieta",
   icon = "eye",
   color = "var(--gold)",
   storageKey = "splash-seen",

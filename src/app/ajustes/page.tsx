@@ -9,7 +9,7 @@ import { useSession } from "@/lib/session";
 import { CITIES, findCity } from "@/lib/timezones";
 
 const HOUSE_ACCENT = "#8a6a28";
-const HOUSE_TITLE = "Ojo de Dios";
+const HOUSE_TITLE = "Julieta Ramirez · Yo con Julieta";
 
 const AVATAR_SIZE = 256;
 

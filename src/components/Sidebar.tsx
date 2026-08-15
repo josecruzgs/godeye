@@ -116,8 +116,8 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-const BRAND_TITLE = "Ojo de Dios";
-const BRAND_SUBTITLE = "Frase de campaña";
+const BRAND_TITLE = "Julieta Ramirez";
+const BRAND_SUBTITLE = "Yo con Julieta";
 
 // El label solo aparece luego de que el ancho terminó de animar (~200ms):
 // mostrarlo de inmediato al expandir hace que el texto se monte a su ancho

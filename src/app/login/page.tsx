@@ -66,9 +66,9 @@ function LoginForm() {
         className="card-surface animate-fade-in-up relative z-10 flex w-full max-w-sm flex-col gap-4 p-7"
       >
         <div className="flex flex-col items-center gap-2 text-center">
-          <Image src="/media/logoblack.png" alt="Ojo de Dios" width={44} height={44} className="object-contain dark:hidden" />
-          <Image src="/media/logo.png" alt="Ojo de Dios" width={44} height={44} className="hidden object-contain dark:block" />
-          <h1 className="font-display mt-1 text-2xl font-semibold tracking-[-0.02em] text-ink">Ojo de Dios</h1>
+          <Image src="/media/logoblack.png" alt="Julieta Ramirez · Yo con Julieta" width={44} height={44} className="object-contain dark:hidden" />
+          <Image src="/media/logo.png" alt="Julieta Ramirez · Yo con Julieta" width={44} height={44} className="hidden object-contain dark:block" />
+          <h1 className="font-display mt-1 text-2xl font-semibold tracking-[-0.02em] text-ink">Julieta Ramirez · Yo con Julieta</h1>
           <p className="label-mono-sm">Frase de campaña</p>
           <p className="mt-2 flex items-center gap-1.5 text-[13px] text-ink-secondary">
             <Lock className="h-3.5 w-3.5" /> Ingresa con tu usuario para continuar

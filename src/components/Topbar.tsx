@@ -79,7 +79,7 @@ export default function Topbar() {
   const session = useSession();
   const city = findCity(session?.preferences.city);
   const clock = useClock(city.timeZone);
-  const brandTitle = session?.preferences.brandTitle?.trim() || "Ojo de Dios";
+  const brandTitle = session?.preferences.brandTitle?.trim() || "Julieta Ramirez · Yo con Julieta";
   const avatar = session?.preferences.avatar || "";
 
   async function logout() {

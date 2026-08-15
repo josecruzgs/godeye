@@ -170,7 +170,7 @@ const ELEMENT_LINKS: Record<string, { href: string; cta: string }> = {
 };
 
 const PASOS = [
-  { n: "1", t: "Abre el cliente de escritorio de Ojo de Dios en esta máquina." },
+  { n: "1", t: "Abre el cliente de escritorio o en esta máquina." },
   { n: "2", t: "Corre el worker en otra terminal: npm run worker", code: "npm run worker" },
   { n: "3", t: "Sincroniza o crea grupos.", href: "/groups", link: "Grupos" },
   { n: "4", t: "Sincroniza perfiles y arranca o detén navegadores.", href: "/profiles", link: "Perfiles" },
@@ -192,7 +192,7 @@ export default async function Home() {
     <>
       {/* Portada editorial. */}
       <section className="animate-fade-in-up py-6">
-        <p className="overline">SALA DE INTELIGENCIA · OJO DE DIOS · USO INTERNO</p>
+        <p className="overline">Julieta Ramirez · Yo con Julieta · USO INTERNO</p>
         <h1 className="hero-h1">Esto es lo que se mueve hoy</h1>
         <p className="hero-p">
           Cuatro elementos, un vistazo: qué está corriendo, qué se acumuló en la cola y qué tanto está saliendo
