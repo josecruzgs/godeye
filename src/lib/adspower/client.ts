@@ -201,4 +201,16 @@ export const adsPower = {
       query: { user_id: profileId },
     });
   },
+
+  /**
+   * Los navegadores abiertos en esta máquina, en UNA sola llamada.
+   *
+   * Preguntar perfil por perfil con `browserStatus` cuesta ~1.1 seg cada uno
+   * por la cola de acá arriba, así que refrescar una página de 20 tenía la cola
+   * tomada 22 segundos —y todo lo demás, incluidas las tareas del worker,
+   * esperando atrás.
+   */
+  async localActiveBrowsers() {
+    return request<{ list: { user_id: string }[] }>("/api/v1/browser/local-active");
+  },
 };

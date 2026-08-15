@@ -112,7 +112,20 @@ export default function ProfilesPage() {
     }
   }
 
+  // Cada carga cancela la anterior. El refresco de estados tarda ~1 seg por
+  // perfil (la cola del cliente de AdsPower separa las llamadas 1100 ms), o sea
+  // unos 22 seg por página; sin abortarlo sobrevivía al cambio de página y con
+  // seis páginas seguidas se agotaban las conexiones que el navegador permite
+  // por origen —seis en HTTP/1.1—, así que el GET de la tabla ni siquiera salía
+  // y la pantalla quedaba congelada hasta que drenara la cola.
+  const inFlight = useRef<AbortController | null>(null);
+
   async function loadProfiles() {
+    inFlight.current?.abort();
+    const controller = new AbortController();
+    inFlight.current = controller;
+    const { signal } = controller;
+
     setLoading(true);
     setError(null);
     try {
@@ -125,14 +138,17 @@ export default function ProfilesPage() {
       if (tagFilter) params.set("tag", tagFilter);
       if (ageMinFilter) params.set("ageMin", ageMinFilter);
       if (ageMaxFilter) params.set("ageMax", ageMaxFilter);
-      const data = await apiFetch<{ profiles: Profile[]; total: number }>(`/api/profiles?${params}`);
+      const data = await apiFetch<{ profiles: Profile[]; total: number }>(`/api/profiles?${params}`, { signal });
+      if (signal.aborted) return;
       setProfiles(data.profiles);
       setTotal(data.total);
-      refreshStatuses(data.profiles.map((p) => p._id));
+      refreshStatuses(data.profiles.map((p) => p._id), signal);
     } catch (e) {
+      if (signal.aborted) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      // Si nos abortaron, el spinner es de la carga nueva: no lo apaga la vieja.
+      if (!signal.aborted) setLoading(false);
     }
   }
 
@@ -140,15 +156,18 @@ export default function ProfilesPage() {
   // detuvieron desde esta app; para el resto (ej. recién sincronizados)
   // consultamos el estado real en AdsPower, pero solo para los perfiles de
   // la página visible (no los cientos que pueda haber en total).
-  async function refreshStatuses(ids: string[]) {
+  async function refreshStatuses(ids: string[], signal: AbortSignal) {
     try {
       const { statuses } = await apiFetch<{ statuses: Record<string, string> }>("/api/profiles/status-refresh", {
         method: "POST",
         body: JSON.stringify({ ids }),
+        signal,
       });
+      if (signal.aborted) return;
       setProfiles((prev) => prev.map((p) => (statuses[p._id] ? { ...p, lastStatus: statuses[p._id] } : p)));
     } catch {
-      // Si AdsPower no está corriendo, dejamos el estado guardado tal cual.
+      // AdsPower caído, o el cambio de página abortó el refresco: en ambos
+      // casos se deja el estado guardado tal cual.
     }
   }
 
@@ -168,6 +187,9 @@ export default function ProfilesPage() {
 
   useEffect(() => {
     loadProfiles();
+    // Al salir de la página también se corta lo que quede en vuelo, para no
+    // dejar al servidor consultando AdsPower por una tabla que ya no existe.
+    return () => inFlight.current?.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, groupFilter, platformFilter, statusFilter, search, genderFilter, tagFilter, ageMinFilter, ageMaxFilter]);
 
