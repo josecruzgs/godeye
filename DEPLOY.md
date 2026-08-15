@@ -197,6 +197,29 @@ sudo certbot --nginx -d yoconjulieta.iagent.mx
 
 Certbot deja la renovación automática configurada.
 
+### Cambiar el dominio más adelante
+
+El dominio vive en tres lugares, ninguno en la máquina de quien despliega: el
+`server_name` de Nginx, el certificado de certbot y `NEXT_PUBLIC_SHARE_BASE_URL`
+del `.env.local` **del VPS**.
+
+Una vez que certbot pasó por el archivo, **no edites el `server_name` a mano**:
+reescribí `/etc/nginx/sites-available/godeye` entero, cambiando también las rutas
+de `ssl_certificate`. Si el `server_name` del bloque de 443 no coincide con el
+dominio que le pasás a certbot, este no lo encuentra y agrega un `server` propio
+en 443 con `return 301 https://$host$request_uri`: el sitio queda redirigiendo a
+sí mismo y el navegador muestra `ERR_TOO_MANY_REDIRECTS`.
+
+```bash
+nginx -t && systemctl reload nginx
+certbot --nginx -d NUEVO.dominio.mx
+curl -I https://NUEVO.dominio.mx     # 200 o 307, nunca 301 al mismo host
+```
+
+Después, como `godeye`, actualizá `NEXT_PUBLIC_SHARE_BASE_URL` y **rebuildeá** —
+se inyecta en el build, no al arrancar. Y borrá el certificado viejo o su
+renovación empieza a fallar en silencio: `certbot delete --cert-name VIEJO.dominio.mx`.
+
 ## 6. AdsPower en el VPS
 
 AdsPower es una aplicación de escritorio: su API solo escucha en el localhost de
@@ -361,3 +384,4 @@ pm2 monit
 | El chip dice `SIN WORKER` con PM2 arriba | El worker no conecta a Mongo — `pm2 logs godeye-listening` |
 | Todo cae tras reiniciar el VPS | Faltó ejecutar el comando que imprimió `pm2 startup` |
 | `nginx -t` dice que el puerto ya está en uso | Otra app tomó el 3001. Cambiá `PORT` en `ecosystem.config.cjs` y el `proxy_pass` del bloque de nginx |
+| `ERR_TOO_MANY_REDIRECTS` después de cambiar el dominio | El `server_name` no coincidía con el dominio que se le pasó a certbot, así que certbot agregó un `server` propio en 443 que redirige HTTPS a HTTPS. Ver «Cambiar el dominio más adelante» |
