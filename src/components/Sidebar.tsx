@@ -17,13 +17,9 @@ import {
   UserCog,
   ChevronsLeft,
   ChevronDown,
-  Droplets,
-  Wind,
+  Send,
+  Telescope,
   Radar,
-  Mountain,
-  Trees,
-  Flame,
-  Rocket,
   Archive,
   ShieldCheck,
   SlidersHorizontal,
@@ -44,7 +40,7 @@ type NavSection = {
 };
 
 // Un solo acento para todo el menú. Antes cada elemento traía el suyo (Agua
-// azul, Viento celeste, Tierra verde, Fuego naranja); ahora los cinco grupos
+// azul, Viento celeste, Tierra verde, Fuego naranja); ahora todos los grupos
 // usan el acento de la casa, que es el oro o el color que el usuario haya
 // elegido en /ajustes — `text-gold` resuelve a --gold, y accentStyle() lo
 // reescribe en línea sobre <html>.
@@ -65,10 +61,15 @@ const NAV_SECTIONS: NavSection[] = [
     collapsible: false,
     items: [{ href: "/", label: "Dashboard", icon: LayoutDashboard }],
   },
+  // `key` sigue siendo el del elemento (agua/viento) aunque el label ya no lo
+  // nombre: es lo que persiste el estado de abierto/cerrado en localStorage y
+  // lo que cruza con ELEMENT_* en lib/elements.ts. Cambiarlo solo por cosmética
+  // reabriría todos los menús de todos los usuarios y desalinearía el fondo de
+  // sección.
   {
     key: "agua",
-    label: "Agua",
-    icon: Droplets,
+    label: "Publicar",
+    icon: Send,
     collapsible: true,
     items: [
       { href: "/campanas", label: "Campañas", icon: FolderKanban },
@@ -81,25 +82,14 @@ const NAV_SECTIONS: NavSection[] = [
   },
   {
     key: "viento",
-    label: "Viento",
-    icon: Wind,
+    label: "Scrapping",
+    icon: Telescope,
     collapsible: true,
     items: [{ href: "/scrapping", label: "Escucha", icon: Radar }],
   },
-  {
-    key: "tierra",
-    label: "Tierra",
-    icon: Mountain,
-    collapsible: true,
-    items: [{ href: "/actividades", label: "Actividades", icon: Trees }],
-  },
-  {
-    key: "fuego",
-    label: "Fuego",
-    icon: Flame,
-    collapsible: true,
-    items: [{ href: "/dia-d", label: "Día D", icon: Rocket }],
-  },
+  // Tierra (/actividades) y Fuego (/dia-d) están ocultos del menú a pedido.
+  // Las páginas siguen existiendo y responden si se entra por URL; para
+  // devolverlas basta con reponer sus secciones acá.
   {
     key: "recursos",
     label: "Recursos",
