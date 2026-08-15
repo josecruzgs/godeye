@@ -235,7 +235,7 @@ export default function AjustesPage() {
               value={brandSubtitle}
               onChange={(e) => setBrandSubtitle(e.target.value)}
               maxLength={60}
-              placeholder="Frase de campaña"
+              placeholder="Yo con Julieta"
               className="w-72 rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none focus:border-primary"
             />
           </div>
