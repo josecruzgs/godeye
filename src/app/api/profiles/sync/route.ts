@@ -67,6 +67,10 @@ export const POST = withAuth(async (user, req: NextRequest) => {
     await ProfileModel.updateOne({ adsPowerProfileId: p.user_id }, { $set: update }, { upsert: true });
   }
 
+  // AdsPower es la fuente de verdad: cualquier perfil que ya no aparezca ahi
+  // (borrado, renombrado de user_id, etc.) se elimina tambien de Mongo para
+  // que /profiles no muestre perfiles fantasma. Solo para el admin, que es el
+  // único cuya barrida cubre todo lo que debería existir.
   let deletedCount = 0;
   if (admin) {
     const currentIds = list.map((p) => p.user_id);
