@@ -66,10 +66,10 @@ function LoginForm() {
         className="card-surface animate-fade-in-up relative z-10 flex w-full max-w-sm flex-col gap-4 p-7"
       >
         <div className="flex flex-col items-center gap-2 text-center">
-          <Image src="/media/logoblack.png" alt="Marina del Pilar · Baja California · USO INTERNO" width={44} height={44} className="object-contain dark:hidden" />
-          <Image src="/media/logo.png" alt="Marina del Pilar · Baja California · USO INTERNO" width={44} height={44} className="hidden object-contain dark:block" />
-          <h1 className="font-display mt-1 text-2xl font-semibold tracking-[-0.02em] text-ink">Marina del Pilar</h1>
-          <p className="label-mono-sm">Baja California · USO INTERNO</p>
+          <Image src="/media/logoblack.png" alt="Julieta Ramirez · Yo con Julieta" width={44} height={44} className="object-contain dark:hidden" />
+          <Image src="/media/logo.png" alt="Julieta Ramirez · Yo con Julieta" width={44} height={44} className="hidden object-contain dark:block" />
+          <h1 className="font-display mt-1 text-2xl font-semibold tracking-[-0.02em] text-ink">Julieta Ramirez</h1>
+          <p className="label-mono-sm">Yo con Julieta</p>
           <p className="mt-2 flex items-center gap-1.5 text-[13px] text-ink-secondary">
             <Lock className="h-3.5 w-3.5" /> Ingresa con tu usuario para continuar
           </p>
@@ -111,7 +111,7 @@ function LoginForm() {
           {loading ? "Entrando..." : "Entrar"}
         </button>
 
-        <p className="classchip mx-auto mt-1">Baja California · USO INTERNO</p>
+        <p className="classchip mx-auto mt-1">USO INTERNO</p>
       </form>
     </div>
   );

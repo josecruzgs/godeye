@@ -186,7 +186,7 @@ export default function LikeCommentCampaignPage() {
             <input
               value={campaignName}
               onChange={(e) => setCampaignName(e.target.value)}
-              placeholder="Ej. Apoyo al comentario"
+              placeholder="Ej. Apoyo al comentario de Froy"
               className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
             />
           </div>

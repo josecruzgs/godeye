@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
+import { Fraunces, Inter, IBM_Plex_Mono } from "next/font/google";
 import ThemeScript from "@/components/ThemeScript";
 import AppShell from "@/components/AppShell";
 import { currentUser } from "@/lib/auth/dal";
@@ -7,32 +7,32 @@ import { SessionProvider, type ClientSession } from "@/lib/session";
 import { accentStyle } from "@/lib/theme";
 import "./globals.css";
 
-// Tres familias con roles fijos: display para titulares, sans para UI y
-// cuerpo, mono para etiquetas de instrumentación y cifras.
-//
-// La tríada cambió entera respecto del proyecto del que salió este código
-// (Fraunces + Inter + IBM Plex Mono). El cambio de fondo está en el rol de
-// display: era una SERIF editorial y ahora es una grotesca técnica, que es lo
-// que más rápido registra el ojo al comparar dos pantallas. Inter y Plex Mono
-// son además las dos tipografías más reconocibles de cualquier panel, así que
-// mientras siguieran ahí el parecido se sostenía por sí solo.
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-grotesk",
+// Tres familias con roles fijos, como la sala de inteligencia: Fraunces
+// (display) para titulares, Inter para UI y cuerpo, IBM Plex Mono para
+// etiquetas de instrumentación y cifras.
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  // Fraunces es variable en dos ejes; `opsz` es el que hace que a 42px las
+  // astas se afinen en vez de verse como el mismo dibujo escalado. Sin
+  // pedirlo explícitamente, next/font solo trae `wght`.
+  axes: ["opsz"],
+});
+
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
 });
 
-const jakarta = Plus_Jakarta_Sans({
-  variable: "--font-jakarta",
+const plexMono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
   subsets: ["latin"],
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-jetbrains",
-  subsets: ["latin"],
+  // IBM Plex Mono no es variable: hay que enumerar los pesos que se usan.
+  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
-  title: "Marina del Pilar · Baja California",
+  title: "Julieta Ramirez · Yo con Julieta",
   description: "Panel para automatizar cuentas de redes sociales",
   // Apunta directo a public/media/*.png en vez de mantener una copia en
   // src/app/icon.png: así el favicon nunca se puede desincronizar del logo
@@ -71,7 +71,7 @@ export default async function RootLayout({
     <html
       lang="es"
       style={accentStyle(session?.preferences.accentColor)}
-      className={`${jakarta.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      className={`${inter.variable} ${fraunces.variable} ${plexMono.variable} h-full antialiased`}
       // ThemeScript toggles the "dark" class on this element before React
       // hydrates (to avoid a flash of the wrong theme); that intentional,
       // out-of-band mutation is exactly what this flag exists to allow.

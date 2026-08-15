@@ -489,7 +489,7 @@ export default function PostCampaignPage() {
             <input
               value={campaignName}
               onChange={(e) => setCampaignName(e.target.value)}
-              placeholder="Ej. Publicaciones"
+              placeholder="Ej. Publicaciones Froy"
               className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
             />
           </div>

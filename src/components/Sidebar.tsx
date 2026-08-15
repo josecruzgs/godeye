@@ -116,8 +116,8 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-const BRAND_TITLE = "Marina del Pilar";
-const BRAND_SUBTITLE = "Baja California";
+const BRAND_TITLE = "Julieta Ramirez";
+const BRAND_SUBTITLE = "Yo con Julieta";
 
 // El label solo aparece luego de que el ancho terminó de animar (~200ms):
 // mostrarlo de inmediato al expandir hace que el texto se monte a su ancho
@@ -220,10 +220,7 @@ export default function Sidebar() {
       // los tokens de tinta para que el texto siga legible (ver sidebarStyle).
       // Sin color elegido devuelve {} y mandan las clases de siempre.
       style={sidebarStyle(prefs?.sidebarColor)}
-      // sticky top-3 + my-3 ml-3 y alto de viewport MENOS esos márgenes: es lo
-      // que lo deja flotando en vez de pegado al canto. overflow-hidden es
-      // necesario para que el radio recorte el contenido del menú.
-      className={`glass-rail sticky top-3 my-3 ml-3 flex h-[calc(100vh-1.5rem)] shrink-0 flex-col overflow-hidden transition-[width] duration-200 ${
+      className={`sticky top-0 flex h-screen shrink-0 flex-col overflow-hidden border-r border-hairline bg-surface/80 backdrop-blur-md transition-[width] duration-200 ${
         collapsed ? "w-19" : "w-64"
       } ${mounted ? "" : "invisible"}`}
     >
