@@ -191,7 +191,7 @@ export default function LikeCampaignPage() {
             <input
               value={campaignName}
               onChange={(e) => setCampaignName(e.target.value)}
-              placeholder="Ej. Likes Reel Froy"
+              placeholder="Ej. Likes Reel"
               className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
             />
           </div>

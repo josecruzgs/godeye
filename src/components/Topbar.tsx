@@ -79,7 +79,7 @@ export default function Topbar() {
   const session = useSession();
   const city = findCity(session?.preferences.city);
   const clock = useClock(city.timeZone);
-  const brandTitle = session?.preferences.brandTitle?.trim() || "Marina del Pilar · Yo con Julieta";
+  const brandTitle = session?.preferences.brandTitle?.trim() || "Marina del Pilar · Baja California";
   const avatar = session?.preferences.avatar || "";
 
   async function logout() {
@@ -114,7 +114,7 @@ export default function Topbar() {
   }, []);
 
   return (
-    <header className="sticky top-0 z-10 flex flex-wrap items-center gap-3 border-b border-hairline bg-page/85 px-6 py-3 backdrop-blur-xl">
+    <header className="glass-bar sticky top-0 z-10 flex flex-wrap items-center gap-3 px-6 py-3">
       {/* Marca del elemento en curso: cuadro relleno + nombre + rol, igual
           que el encabezado de vista de la sala. Los cuatro elementos y las
           páginas generales comparten el acento, así que el cuadro se pinta

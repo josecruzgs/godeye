@@ -16,7 +16,7 @@ const UNMOUNT_MS = 2350;
 export default function Splash({
   name = "Marina del Pilar",
   tag = "Sala de Inteligencia",
-  lead = "Yo con Julieta",
+  lead = "Baja California",
   icon = "eye",
   color = "var(--gold)",
   storageKey = "splash-seen",
