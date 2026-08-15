@@ -14,7 +14,7 @@ const UNMOUNT_MS = 2350;
  * pestaña —la marca vive en sessionStorage— y se puede saltar con un clic.
  */
 export default function Splash({
-  name = "Julieta Ramirez",
+  name = "Marina del Pilar",
   tag = "Sala de Inteligencia",
   lead = "Yo con Julieta",
   icon = "eye",

@@ -192,7 +192,7 @@ export default async function Home() {
     <>
       {/* Portada editorial. */}
       <section className="animate-fade-in-up py-6">
-        <p className="overline">Julieta Ramirez · Yo con Julieta · USO INTERNO</p>
+        <p className="overline">Marina del Pilar · Yo con Julieta · USO INTERNO</p>
         <h1 className="hero-h1">Esto es lo que se mueve hoy</h1>
         <p className="hero-p">
           Cuatro elementos, un vistazo: qué está corriendo, qué se acumuló en la cola y qué tanto está saliendo

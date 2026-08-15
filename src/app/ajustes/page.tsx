@@ -9,7 +9,7 @@ import { useSession } from "@/lib/session";
 import { CITIES, findCity } from "@/lib/timezones";
 
 const HOUSE_ACCENT = "#8a6a28";
-const HOUSE_TITLE = "Julieta Ramirez · Yo con Julieta";
+const HOUSE_TITLE = "Marina del Pilar · Yo con Julieta";
 
 const AVATAR_SIZE = 256;
 

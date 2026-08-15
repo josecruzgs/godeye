@@ -32,7 +32,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Julieta Ramirez · Yo con Julieta",
+  title: "Marina del Pilar · Yo con Julieta",
   description: "Panel para automatizar cuentas de redes sociales",
   // Apunta directo a public/media/*.png en vez de mantener una copia en
   // src/app/icon.png: así el favicon nunca se puede desincronizar del logo

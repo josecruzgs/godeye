@@ -130,7 +130,7 @@ Y ahí cambiá estas cuatro:
 
 ```bash
 SESSION_SECRET=                      # firma las sesiones — generarla, ver abajo
-NEXT_PUBLIC_SHARE_BASE_URL=https://yoconjulieta.iagent.mx
+NEXT_PUBLIC_SHARE_BASE_URL=https://marina.agentikha.com
 ADSPOWER_API_BASE_URL=http://127.0.0.1:50325   # AdsPower corre acá — sección 6
 ADSPOWER_API_KEY=                    # vacío si dejás la verificación apagada
 ```
@@ -183,7 +183,7 @@ pm2 logs godeye-listening --lines 50
 
 Apuntá un registro **A** de tu dominio a la IP del VPS y esperá a que propague.
 
-El archivo ya viene con `yoconjulieta.iagent.mx`; si usás otro dominio, cambialo ahí.
+El archivo ya viene con `marina.agentikha.com`; si usás otro dominio, cambialo ahí.
 
 ```bash
 sudo cp deploy/nginx.conf /etc/nginx/sites-available/godeye
@@ -192,7 +192,7 @@ sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
 
 sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d yoconjulieta.iagent.mx
+sudo certbot --nginx -d marina.agentikha.com
 ```
 
 Certbot deja la renovación automática configurada.

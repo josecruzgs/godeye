@@ -116,7 +116,7 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-const BRAND_TITLE = "Julieta Ramirez";
+const BRAND_TITLE = "Marina del Pilar";
 const BRAND_SUBTITLE = "Yo con Julieta";
 
 // El label solo aparece luego de que el ancho terminó de animar (~200ms):
