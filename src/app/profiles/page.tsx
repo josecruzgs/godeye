@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { RefreshCw, Search, Plus, Trash2 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { useSession } from "@/lib/session";
 import StatusBadge from "@/components/StatusBadge";
 import Pagination from "@/components/Pagination";
 import Card from "@/components/Card";
@@ -57,6 +58,7 @@ async function requestProfileDelete(id: string, localOnly = false) {
 }
 
 export default function ProfilesPage() {
+  const session = useSession();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [availableTags, setAvailableTags] = useState<Tag[]>([]);
@@ -311,7 +313,14 @@ export default function ProfilesPage() {
     try {
       // Secuencial (no en paralelo): la Local API de AdsPower rate-limitea
       // ~1 req/seg y estas llamadas ya paginan internamente.
-      await apiFetch<{ groups: Group[] }>("/api/groups/sync", { method: "POST" });
+      //
+      // La de grupos es solo para admin —escribe la tabla que decide qué
+      // grupos existen para asignar permisos— y devuelve 403 a los demás. El
+      // operador se la saltea en vez de comerse el error: lo que necesita
+      // refrescar son sus perfiles, y esa sí la puede correr.
+      if (session?.role === "admin") {
+        await apiFetch<{ groups: Group[] }>("/api/groups/sync", { method: "POST" });
+      }
       const { removed } = await apiFetch<{ removed?: number }>("/api/profiles/sync", { method: "POST" });
       await loadGroups();
       await loadTags();
