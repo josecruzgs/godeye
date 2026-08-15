@@ -220,7 +220,10 @@ export default function Sidebar() {
       // los tokens de tinta para que el texto siga legible (ver sidebarStyle).
       // Sin color elegido devuelve {} y mandan las clases de siempre.
       style={sidebarStyle(prefs?.sidebarColor)}
-      className={`glass-rail sticky top-0 flex h-screen shrink-0 flex-col overflow-hidden transition-[width] duration-200 ${
+      // sticky top-3 + my-3 ml-3 y alto de viewport MENOS esos márgenes: es lo
+      // que lo deja flotando en vez de pegado al canto. overflow-hidden es
+      // necesario para que el radio recorte el contenido del menú.
+      className={`glass-rail sticky top-3 my-3 ml-3 flex h-[calc(100vh-1.5rem)] shrink-0 flex-col overflow-hidden transition-[width] duration-200 ${
         collapsed ? "w-19" : "w-64"
       } ${mounted ? "" : "invisible"}`}
     >

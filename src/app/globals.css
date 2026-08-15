@@ -8,21 +8,24 @@
 /* ============================================================================
    SISTEMA VISUAL "SALA DE INTELIGENCIA" — ACABADO VIDRIO
    ----------------------------------------------------------------------------
-   Tipografía y estructura de la sala de inteligencia original (Fraunces para
-   display, Inter para texto/UI, IBM Plex Mono para instrumentación), pero con
-   dos cambios que lo separan a la vista del proyecto del que salió:
+   Misma estructura que la sala de inteligencia original, pero con cuatro
+   cambios que lo separan a la vista del proyecto del que salió este código:
 
-   1. El plano dejó de ser azul marino y pasó a CARBÓN CÁLIDO con un bloom
-      oliva/ámbar. El azul era la identidad del otro despliegue; compartir
-      código no obliga a compartir cara.
+   1. El plano dejó de ser azul marino y pasó a GUINDA. El azul era la
+      identidad del otro despliegue; compartir código no obliga a compartir
+      cara. El vino va oscurísimo en el plano y saturado solo en el bloom del
+      pie: de fondo, un guinda pleno cansa la vista y le pelea el color a los
+      datos.
    2. Las superficies dejaron de ser chapa opaca y pasaron a VIDRIO: fondo
-      translúcido + backdrop-filter, filo claro arriba y sombra larga. Por eso
-      el plano de abajo importa tanto — un vidrio sobre un gris liso no se lee
-      como vidrio, se lee como un gris un poco más claro.
+      translúcido + backdrop-filter, filo claro arriba y sombra larga.
+   3. Detrás de todo hay una FOTOGRAFÍA desenfocada (body::after). No es
+      decoración: es lo que le da al backdrop-filter algo que refractar. Un
+      vidrio sobre un plano liso no se lee como vidrio, se lee como un gris un
+      poco más claro.
+   4. La TIPOGRAFÍA cambió entera — ver src/app/layout.tsx.
 
-   Todo lo demás (los tokens, los tres roles tipográficos, el acento que el
-   usuario elige en /ajustes) sigue igual: el rediseño se hizo moviendo valores
-   acá, no tocando los ~70 componentes.
+   Los tokens y el acento que el usuario elige en /ajustes siguen igual: el
+   rediseño se hizo moviendo valores acá, no tocando los ~70 componentes.
    ========================================================================= */
 
 :root {
@@ -70,11 +73,21 @@
   --r-card: 22px;
   --r-inner: 14px;
 
-  /* --- Bloom del plano (ver body::before) --- */
+  /* --- Bloom del plano (ver body::before) ---
+     Queda uno solo, al pie. Los dos de arriba se fueron con la llegada de la
+     fotografía de fondo. */
   --bloom-cool: #7e8a63;
-  --bloom-1: 24%;
-  --bloom-2: 17%;
   --bloom-3: 18%;
+
+  /* --- Fotografía de fondo (ver body::after) ---
+     El velo (--bg-scrim) es lo que decide si esto es un fondo o un problema:
+     es el porcentaje de plano opaco que se interpone entre la foto y el
+     contenido. En claro va más alto porque la foto es oscura y el texto de
+     esta pantalla es tinta negra: sin velo, cualquier párrafo que caiga sobre
+     la parte oscura de la imagen deja de leerse. */
+  --bg-opacity: 0.55;
+  --bg-blur: 40px;
+  --bg-scrim: 74%;
 
   /* --- Acento de marca ---
      El oro es la identidad de la sala. En claro se baja de luminancia
@@ -142,30 +155,50 @@
 :root.dark {
   color-scheme: dark;
 
-  /* Carbón cálido. El plano es apenas más claro que el negro (#121110) para
-     que el vidrio tenga de dónde levantarse: sobre negro puro, un blanco al
-     5% no alcanza a separarse y las tarjetas desaparecen. */
-  --surface-1: #1c1b18;
-  --surface-2: #24221e;
-  --page-plane: #121110;
-  --card-from: #211f1b;
-  --card-to: #191714;
+  /* Guinda. El plano es apenas más claro que el negro para que el vidrio
+     tenga de dónde levantarse: sobre negro puro, un blanco al 7% no alcanza a
+     separarse y las tarjetas desaparecen.
 
-  --text-primary: #f4f1ea;
-  --text-secondary: #a8a094;
-  --text-muted: #7b7367;
-  --gridline: #262420;
-  --baseline: #37332c;
-  --border-hairline: #2f2c26;
+     El rojo entra por luminancia, no por saturación: #150a0f es un vino tan
+     oscuro que casi no se lee como color hasta que se lo compara con un gris
+     al lado. Un guinda saturado de fondo —el del logo, #6d1f35— cansa la
+     vista en una pantalla que se mira ocho horas y le pelea el color a todos
+     los datos. El guinda de identidad vive en el bloom y en el chasis, que es
+     donde se ve sin competir. */
+  --surface-1: #241419;
+  --surface-2: #2d1a21;
+  --page-plane: #1a0b12;
+  --card-from: #281620;
+  --card-to: #1d0f16;
+
+  /* Tinta con un punto de rosa: un blanco neutro sobre vino se ve verdoso por
+     contraste simultáneo.
+
+     Los dos tonos de apoyo van más altos que en un tema oscuro normal porque
+     el fondo no es un plano fijo sino una fotografía con zonas claras, y un
+     gris medio que se sostenía sobre negro se evapora sobre la parte
+     iluminada. */
+  --text-primary: #f6eff1;
+  --text-secondary: #c4b0b7;
+  --text-muted: #9b8790;
+  --gridline: #2b1a20;
+  --baseline: #3f2831;
+  --border-hairline: #38222b;
   --border-hi: rgba(255, 255, 255, 0.2);
 
   /* --- Vidrio ---
-     Blanco a muy baja opacidad, que es lo que hace de "vidrio esmerilado"
-     sobre el plano oscuro. La saturación del backdrop sube a 150%: al
-     desenfocar, el bloom de atrás pierde croma, y sin recuperarlo el vidrio
-     queda gris muerto en vez de recoger el oliva del fondo. */
-  --glass-bg: rgba(255, 255, 255, 0.07);
-  --glass-bg-2: rgba(255, 255, 255, 0.035);
+     Tinte OSCURO, no blanco —al revés que en el tema claro—. Con una
+     fotografía luminosa detrás, un vidrio de blanco al 7% deja el panel más
+     claro que su propio texto y las etiquetas secundarias se borran. El panel
+     tiene que ser más oscuro que el fondo para que la tinta clara se
+     sostenga: eso es lo que hace este vino al 55%. El brillo de vidrio no lo
+     pone el relleno sino el filo (--glass-hi) y el borde, que siguen claros.
+
+     La saturación del backdrop sube a 150% porque al desenfocar, lo de atrás
+     pierde croma; sin recuperarlo el vidrio queda gris muerto en vez de
+     recoger el guinda de la foto. */
+  --glass-bg: rgba(26, 11, 18, 0.55);
+  --glass-bg-2: rgba(26, 11, 18, 0.32);
   --glass-border: rgba(255, 255, 255, 0.1);
   /* Anillo EXTERIOR, no interior: sobre carbón el contorno que define la
      lámina es una sombra dura, no una luz. La luz va en --glass-hi, arriba. */
@@ -175,15 +208,26 @@
   --glass-blur: 22px;
   --glass-sat: 150%;
 
-  /* Más suave que en claro —sobre carbón el mismo porcentaje se lee como
-     niebla y le come el negro al plano— pero no tanto como para dejar el
-     fondo liso: el vidrio necesita algo que refractar o se ve como un
-     rectángulo gris. Esta es la banda donde todavía hay atmósfera sin que el
-     plano deje de leerse como oscuro. */
-  --bloom-cool: #79855f;
-  --bloom-1: 19%;
-  --bloom-2: 14%;
-  --bloom-3: 13%;
+  /* Acá sí vive el guinda de identidad: como luz, no como pintura. El foco
+     frío pasa a ser el vino del logo, así el color de la casa se ve de verdad
+     —es lo primero que registra el ojo al entrar— sin que ningún texto tenga
+     que leerse encima.
+
+     Más suave que en claro —sobre un plano oscuro el mismo porcentaje se lee
+     como niebla y le come el negro— pero no tanto como para dejar el fondo
+     liso: el vidrio necesita algo que refractar o se ve como un rectángulo
+     gris. */
+  --bloom-cool: #8e2049;
+  --bloom-3: 16%;
+
+  /* La foto se ve mucho más acá que en claro: sobre un plano oscuro la imagen
+     suma luz en vez de restarla, así que aguanta poco velo y mucha opacidad.
+     El límite no es estético sino de lectura —el titular y las etiquetas de
+     sección van directo sobre esto, sin tarjeta que los respalde— y 48% de
+     velo es donde todavía pasan sin pelear con la foto. */
+  --bg-opacity: 0.9;
+  --bg-blur: 30px;
+  --bg-scrim: 48%;
 
   --gold: #cbb074;
   --gold-vivid: #e0c68d;
@@ -288,9 +332,9 @@
   /* Tres roles tipográficos fijos, como la referencia:
      display (Fraunces) para titulares, sans (Inter) para UI y cuerpo,
      mono (IBM Plex Mono) para etiquetas de instrumentación y cifras. */
-  --font-sans: var(--font-inter);
-  --font-mono: var(--font-plex-mono);
-  --font-display: var(--font-fraunces);
+  --font-sans: var(--font-jakarta);
+  --font-mono: var(--font-jetbrains);
+  --font-display: var(--font-grotesk);
 }
 
 /* ============================================================================
@@ -305,23 +349,19 @@ body {
 body {
   background: var(--page-plane);
   color: var(--text-primary);
-  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
   transition: background-color 0.25s ease, color 0.25s ease;
 }
 
-/* Los tres focos que le dan atmósfera al plano. Van en position:fixed para
-   que no se muevan al hacer scroll dentro de <main>.
+/* El velo de la fotografía, y un único foco que le levanta el pie a la
+   página. Va en position:fixed para que no se mueva al hacer scroll dentro
+   de <main>.
 
-   Antes existían SOLO en oscuro: sobre una base clara un degradado suave se
-   leía como mancha sucia. Con vidrio esa regla se invierte y hay que
-   sostenerla igual en los dos temas — una superficie translúcida sobre un
-   plano liso no tiene nada que refractar y se ve como un rectángulo gris. Lo
-   que cambia por tema es la fuerza, no la existencia: en claro el bloom va
-   más marcado porque compite contra mucha más luz.
-
-   El foco cálido sigue al acento del usuario; el frío es un oliva fijo, que
-   es lo que le da el tinte verdoso al conjunto y lo aleja del azul del
-   proyecto original. */
+   Eran tres focos: dos arriba y uno abajo. Los de arriba se quitaron al
+   entrar la fotografía de fondo — hacían el mismo trabajo (dar mancha de
+   color para que el vidrio tenga qué refractar) pero ahora sumaban encima de
+   la imagen y dejaban una neblina en el borde superior, justo donde vive el
+   titular. La foto ya aporta ese color, y mejor. */
 body::before {
   content: "";
   position: fixed;
@@ -329,17 +369,40 @@ body::before {
   z-index: -2;
   pointer-events: none;
   background:
-    radial-gradient(900px 620px at 78% 6%, color-mix(in srgb, var(--gold) var(--bloom-1), transparent), transparent 62%),
     radial-gradient(
-      780px 560px at 10% 2%,
-      color-mix(in srgb, var(--bloom-cool) var(--bloom-2), transparent),
-      transparent 60%
-    ),
-    radial-gradient(
-      1000px 780px at 46% 114%,
-      color-mix(in srgb, var(--gold) var(--bloom-3), transparent),
+      1100px 820px at 52% 116%,
+      color-mix(in srgb, var(--bloom-cool) var(--bloom-3), transparent),
       transparent 62%
+    ),
+    /* Velo. Va ÚLTIMO —o sea, debajo de los tres focos y encima de la foto—
+       porque su trabajo es apagar la fotografía sin apagar el bloom. */
+    linear-gradient(
+      0deg,
+      color-mix(in srgb, var(--page-plane) var(--bg-scrim), transparent),
+      color-mix(in srgb, var(--page-plane) var(--bg-scrim), transparent)
     );
+}
+
+/* La fotografía de fondo, detrás de todo (z-index menor que el bloom).
+   Desenfocada de verdad y no solo oscurecida: lo que aporta al vidrio es
+   MANCHA DE COLOR de baja frecuencia. Una foto nítida detrás de un panel
+   translúcido compite con los datos; desenfocada a 34px es solo atmósfera con
+   la forma y el color correctos, que es justo lo que el backdrop-filter de
+   las tarjetas necesita para tener algo que refractar.
+
+   `scale(1.12)` no es decorativo: `filter: blur()` desvanece los bordes del
+   propio elemento, así que sin agrandarlo aparecería un halo blando en los
+   cuatro cantos de la pantalla. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -3;
+  pointer-events: none;
+  background: url("/media/backgrounds/fondo.jpg") center / cover no-repeat;
+  filter: blur(var(--bg-blur)) saturate(115%);
+  transform: scale(1.12);
+  opacity: var(--bg-opacity);
 }
 
 /* En @layer base para que las utilidades de Tailwind (@layer utilities,
@@ -382,7 +445,7 @@ body::before {
    ========================================================================= */
 
 .font-display {
-  font-family: var(--font-fraunces), Georgia, serif;
+  font-family: var(--font-grotesk), ui-sans-serif, system-ui, sans-serif;
 }
 
 /* Solo h1 —el título de la vista— hereda el display. Los h2/h3 son títulos
@@ -390,7 +453,7 @@ body::before {
    editorial, no cualquier encabezado. */
 @layer base {
   h1 {
-    font-family: var(--font-fraunces), Georgia, serif;
+    font-family: var(--font-grotesk), ui-sans-serif, system-ui, sans-serif;
     letter-spacing: -0.02em;
   }
 }
@@ -398,7 +461,7 @@ body::before {
 /* Etiqueta mono en versalitas: el "9px con tracking ancho" que la referencia
    usa encima de cada cifra. */
 .label-mono {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 9px;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -406,7 +469,7 @@ body::before {
 }
 
 .label-mono-sm {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 8.5px;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -415,7 +478,7 @@ body::before {
 
 /* Cifra grande tabular — nunca "baila" cuando el número cambia en vivo. */
 .stat-value {
-  font-family: var(--font-inter), ui-sans-serif, sans-serif;
+  font-family: var(--font-jakarta), ui-sans-serif, sans-serif;
   font-size: 28px;
   font-weight: 700;
   line-height: 1;
@@ -424,12 +487,21 @@ body::before {
   font-variant-numeric: tabular-nums;
 }
 
+/* Tinta, no acento. Iba en --gold, que suena bien mientras el acento es el
+   oro claro de la casa, pero el acento lo elige el usuario en /ajustes y
+   puede ser oscuro —un carmesí, un vino, un azul marino—. A 9.5px y sobre un
+   plano oscuro, un acento así simplemente no se lee: el texto desaparece.
+
+   Un texto no puede depender de un color arbitrario para ser legible, así
+   que estas etiquetas van en la tinta del tema, que sí está calculada contra
+   el fondo. El acento sigue marcando la sección en la línea que las
+   acompaña (.subhead-line), donde ser tenue no cuesta nada. */
 .overline {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 9.5px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--gold);
+  color: var(--text-secondary);
 }
 
 /* ============================================================================
@@ -492,180 +564,163 @@ body::before {
 }
 
 /* --- Chasis: el riel del menú y la barra superior ---
-   Ambos ya eran translúcidos con las utilidades de Tailwind (`bg-surface/80
+   Antes eran translúcidos con utilidades de Tailwind (`bg-surface/80
    backdrop-blur-md`). Se pasan a clase propia porque con vidrio el valor
    correcto depende del tema —en claro hay que SUMAR blanco y en oscuro
    restarlo— y eso no se puede escribir con un modificador de opacidad fijo.
 
-   Van sin radio: son el marco de la ventana, no tarjetas. Lo que las separa
-   del contenido es una sola línea, no una sombra. */
-.glass-rail,
-.glass-bar {
+   El riel FLOTA: es una lámina despegada de los tres bordes de la ventana, no
+   una columna pegada al canto. Por eso lleva borde y radio en las cuatro
+   caras y su propia sombra; la separación del contenido la hace el aire que
+   queda alrededor, no una línea divisoria.
+
+   Ojo: si el usuario eligió color de menú en /ajustes, sidebarStyle() pinta un
+   `background` en línea que gana sobre este. El riel sigue flotando —radio,
+   sombra y márgenes son de la clase— pero deja de ser translúcido. Es lo
+   correcto: una preferencia explícita manda sobre el material por defecto. */
+.glass-rail {
   background: var(--glass-bg);
   backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-card);
+  box-shadow: var(--glass-shadow), 0 0 0 1px var(--glass-hairline);
 }
 
-.glass-rail {
-  border-right: 1px solid var(--glass-hairline);
-}
+/* Barra superior: transparente de verdad —sin fondo, sin desenfoque y sin
+   línea inferior—, así el plano corre por detrás sin interrupción y el título
+   parece apoyado sobre la página.
 
+   El costo está asumido: <main> scrollea DEBAJO de ella, así que al bajar, el
+   contenido pasa por atrás del título en vez de desaparecer bajo un vidrio.
+   Para recuperar esa separación sin volver a pintar la barra alcanza con
+   devolverle el `backdrop-filter` de arriba: sigue viéndose sin color propio,
+   pero difumina lo que le pasa por detrás. */
 .glass-bar {
-  border-bottom: 1px solid var(--glass-hairline);
+  background: transparent;
 }
 
 /* ============================================================================
-   KPI A COLOR PLENO
-   La tarjeta se pinta ENTERA con el acento (--kpi-c) y lleva el ícono en
-   grande, translúcido, saliéndose por la esquina inferior derecha.
+   KPI DE VIDRIO
+   ----------------------------------------------------------------------------
+   Antes la tarjeta se pintaba ENTERA con el acento y llevaba un ícono enorme
+   translúcido saliéndose por la esquina. Eso obligaba a normalizar la
+   luminosidad del acento con color relativo de OKLCH para decidir si la tinta
+   iba blanca o negra —un bloque de calc() de treinta líneas— porque el acento
+   lo elige el usuario y podía ser un vino casi negro o un amarillo pastel.
 
-   Pintar con el acento tiene un problema: el acento lo elige el usuario y
-   puede ser un vino casi negro o un amarillo pastel, así que ninguna tinta
-   fija sirve para los dos. Se resuelve con color relativo de OKLCH, que
-   permite leer la luminosidad `l` del acento y operar con ella.
+   Ahora la tarjeta es del mismo vidrio que los paneles y la tinta es SIEMPRE
+   la del tema. El acento dejó de ser el fondo y pasó a ser señal en tres
+   puntos chicos: el riel de la izquierda, el lavado de la esquina superior y
+   el cuadro del ícono. Con eso el problema de contraste desaparece de raíz
+   —ningún texto se apoya ya sobre el color elegido— y de paso se fue todo el
+   OKLCH: no queda nada que normalizar.
+   ========================================================================= */
 
-   La pieza de la que cuelga todo es el peso
-
-       W = clamp(0, (0.62 - l) * 1000, 1)
-
-   que vale 1 si el acento es oscuro o medio y 0 si es claro — multiplicar
-   por mil convierte la rampa en un salto, y el clamp lo recorta a los dos
-   extremos. Con W la tarjeta cae en uno de dos regímenes:
-
-   · acento oscuro/medio (W=1) → se hunde a la banda [0.40, 0.52] y lleva
-     tinta blanca. Es el caso del oro claro, del vino y de los teales.
-   · acento claro (W=0) → se sube a la banda [0.74, 0.88] y lleva tinta
-     negra. Es el caso del oro oscuro y de las series pastel.
-
-   Los dos extremos se interpolan con `W * A + (1 - W) * B`, que es la forma
-   de escribir un `if` dentro de calc(). Se hace así, y no clavando toda la
-   luminosidad a una banda media, porque comprimir un oro pastel a tono medio
-   lo vuelve verde oliva: el matiz sobrevive, la identidad no.
-
-   La tinta sale del mismo W (`oklch(... W 0 0)` = blanco o negro puro) y
-   todo lo demás —ícono, píldora, punto de "en vivo"— se pinta con
-   `currentColor`, así que la decisión se toma UNA vez.
-
-   El brillo especular sí es blanco siempre: es luz, no tinta, y sobre un
-   acento claro simplemente desaparece.
-
-   La declaración plana de `background` que va primero es el respaldo para
-   navegadores sin color relativo (Firefox < 128): mezcla contra un azul casi
-   negro para garantizar la tinta blanca del respaldo. Va afuera del
-   @supports para que la versión buena no la tumbe al no parsearse. */
-/* Estas NO son de vidrio a propósito: son el contrapunto opaco que le da
-   escala al resto. Si todo es translúcido, nada se lee como translúcido. */
-.kpi-solid {
+.kpi-glass {
   position: relative;
   overflow: hidden;
   border-radius: var(--r-card);
-  border: 1px solid transparent;
-  color: #fff;
-  background: color-mix(in srgb, var(--kpi-c, var(--gold)) 74%, #0b0f16);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.16) inset,
-    0 18px 34px -26px color-mix(in srgb, var(--kpi-c, var(--gold)) 75%, transparent);
-  transition: transform 0.18s, box-shadow 0.18s;
+  color: var(--text-primary);
+  background:
+    linear-gradient(90deg, transparent, var(--glass-hi) 20%, var(--glass-hi) 60%, transparent) top left / 100% 1px
+      no-repeat,
+    radial-gradient(
+      125% 115% at 100% 0%,
+      color-mix(in srgb, var(--kpi-c, var(--gold)) 20%, transparent),
+      transparent 58%
+    ),
+    var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), 0 0 0 1px var(--glass-hairline);
+  transition: transform 0.18s, box-shadow 0.18s, border-color 0.18s;
 }
 
-@supports (color: oklch(from red l c h)) {
-  .kpi-solid {
-    color: oklch(from var(--kpi-c, var(--gold)) clamp(0, (0.62 - l) * 1000, 1) 0 0);
-    background:
-      radial-gradient(115% 130% at 92% 4%, rgba(255, 255, 255, 0.14), transparent 62%),
-      linear-gradient(
-        146deg,
-        oklch(
-            from var(--kpi-c, var(--gold))
-              calc(
-                clamp(0, (0.62 - l) * 1000, 1) * clamp(0.4, l, 0.52) + (1 - clamp(0, (0.62 - l) * 1000, 1)) *
-                  clamp(0.74, l, 0.88)
-              )
-              c h
-          )
-          0%,
-        oklch(
-            from var(--kpi-c, var(--gold))
-              calc(
-                clamp(0, (0.62 - l) * 1000, 1) * clamp(0.4, l, 0.52) + (1 - clamp(0, (0.62 - l) * 1000, 1)) *
-                  clamp(0.74, l, 0.88) - 0.06
-              )
-              c h
-          )
-          100%
-      );
-  }
-}
-
-/* Ícono de fondo: grande, en la tinta al 16% y recortado por la esquina. El
-   trazo fino es a propósito — con el grosor normal a 86px se lee como una
-   mancha. */
-.kpi-glyph {
-  position: absolute;
-  right: -8px;
-  bottom: -12px;
-  width: 86px;
-  height: 86px;
-  opacity: 0.16;
-  pointer-events: none;
-}
-
-/* Halo detrás del ícono, para que la esquina no quede plana. */
-.kpi-solid::after {
+/* El riel: la firma de la tarjeta y lo único que lleva el acento a plena
+   saturación. Va pegado al canto izquierdo, por fuera del padding del
+   contenido, así que nunca pisa texto. */
+.kpi-glass::before {
   content: "";
   position: absolute;
-  right: -46px;
-  bottom: -58px;
-  width: 160px;
-  height: 160px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.15), transparent 62%);
+  left: 0;
+  top: 16px;
+  bottom: 16px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--kpi-c, var(--gold));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--kpi-c, var(--gold)) 55%, transparent);
+}
+
+/* El ícono pasó de textura de fondo a insignia: chico, nítido y en un cuadro
+   tintado arriba a la derecha. Antes iba a 86px y al 16% de opacidad, que a
+   ese tamaño se lee como una mancha; acá el dibujo se reconoce. */
+.kpi-glyph {
+  position: absolute;
+  right: 13px;
+  top: 13px;
+  box-sizing: border-box;
+  width: 30px;
+  height: 30px;
+  padding: 6px;
+  border-radius: 10px;
+  color: var(--kpi-c, var(--gold));
+  background: color-mix(in srgb, var(--kpi-c, var(--gold)) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--kpi-c, var(--gold)) 32%, transparent);
   pointer-events: none;
 }
 
 .kpi-label {
   position: relative;
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  /* Reserva el ancho de la insignia para que la etiqueta no se meta debajo. */
+  padding-right: 38px;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 9px;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  opacity: 0.88;
+  color: var(--text-muted);
 }
 
 .kpi-number {
   position: relative;
-  font-family: var(--font-inter), ui-sans-serif, sans-serif;
+  font-family: var(--font-jakarta), ui-sans-serif, sans-serif;
   font-size: 30px;
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
 }
 
-/* Delta sobre color: el verde y el rojo de siempre se pierden encima del
-   acento, así que el signo lo carga la flecha y el fondo solo separa —
-   translúcido para lo que sube, más marcado para lo que baja. */
+/* El delta recupera el verde y el rojo de verdad. Sobre la tarjeta pintada no
+   se podían usar —se perdían encima del acento— y el signo lo tenía que
+   cargar la flecha sola; sobre vidrio vuelven a leerse, así que el color
+   carga el dato y la flecha solo lo confirma. */
 .kpi-delta {
   position: relative;
   display: inline-block;
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 10px;
   font-weight: 600;
   padding: 2px 7px;
-  border-radius: 4px;
+  border-radius: 5px;
   white-space: nowrap;
-  background: color-mix(in srgb, currentColor 18%, transparent);
+  color: var(--status-good);
+  background: color-mix(in srgb, var(--status-good) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--status-good) 30%, transparent);
 }
 
 .kpi-delta.is-down {
-  background: color-mix(in srgb, currentColor 32%, transparent);
+  color: var(--status-critical);
+  background: color-mix(in srgb, var(--status-critical) 14%, transparent);
+  border-color: color-mix(in srgb, var(--status-critical) 30%, transparent);
 }
 
 .kpi-lift:hover {
   transform: translateY(-2px);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.24) inset,
-    0 26px 46px -24px color-mix(in srgb, var(--kpi-c, var(--gold)) 85%, transparent);
+  border-color: var(--border-hi);
+  box-shadow: var(--glass-shadow), 0 0 0 1px var(--glass-hairline), 0 30px 60px -28px rgba(0, 0, 0, 0.55);
 }
 
 /* Encabezado de panel: ícono + título + tag a la izquierda, acciones a la
@@ -679,7 +734,7 @@ body::before {
 }
 
 .panel-title {
-  font-family: var(--font-inter), sans-serif;
+  font-family: var(--font-jakarta), sans-serif;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.01em;
@@ -690,7 +745,7 @@ body::before {
 }
 
 .panel-tag {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 8.5px;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -779,11 +834,14 @@ body::before {
   scroll-margin-top: 80px;
 }
 
+/* Tinta y no acento, por lo mismo que .overline: a 9.5px un acento oscuro
+   elegido por el usuario deja de leerse sobre el plano. El color de sección
+   lo sigue dando la línea de al lado. */
 .subhead .subhead-label {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 9.5px;
   letter-spacing: 0.2em;
-  color: var(--gold);
+  color: var(--text-secondary);
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -799,7 +857,7 @@ body::before {
    ========================================================================= */
 
 .pill-mono {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 10px;
   font-weight: 600;
   padding: 2px 7px;
@@ -827,7 +885,7 @@ body::before {
 
 /* Sello de clasificación de la topbar ("USO INTERNO"). */
 .classchip {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 8.5px;
   letter-spacing: 0.12em;
   color: var(--amber);
@@ -843,7 +901,7 @@ body::before {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 9px;
   letter-spacing: 0.1em;
   color: var(--ok);
@@ -870,7 +928,7 @@ body::before {
 
 /* Botón fantasma de la topbar: el borde se pone oro al pasar el mouse. */
 .tbtn {
-  font-family: var(--font-inter), sans-serif;
+  font-family: var(--font-jakarta), sans-serif;
   font-weight: 600;
   font-size: 12px;
   color: var(--text-primary);
@@ -892,7 +950,7 @@ body::before {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-family: var(--font-inter), sans-serif;
+  font-family: var(--font-jakarta), sans-serif;
   font-weight: 600;
   font-size: 12px;
   background: var(--glass-bg-2);
@@ -1176,7 +1234,7 @@ body::before {
 }
 
 .splash-name {
-  font-family: var(--font-fraunces), Georgia, serif;
+  font-family: var(--font-grotesk), ui-sans-serif, system-ui, sans-serif;
   font-size: 56px;
   font-weight: 700;
   letter-spacing: -0.025em;
@@ -1185,7 +1243,7 @@ body::before {
 }
 
 .splash-tag {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 12px;
   letter-spacing: 0.24em;
   text-transform: uppercase;
@@ -1193,7 +1251,7 @@ body::before {
 }
 
 .splash-lead {
-  font-family: var(--font-fraunces), Georgia, serif;
+  font-family: var(--font-grotesk), ui-sans-serif, system-ui, sans-serif;
   font-size: 18px;
   font-style: italic;
   color: var(--text-secondary);
@@ -1243,7 +1301,7 @@ body::before {
    ========================================================================= */
 
 .hero-h1 {
-  font-family: var(--font-fraunces), Georgia, serif;
+  font-family: var(--font-grotesk), ui-sans-serif, system-ui, sans-serif;
   font-size: 42px;
   font-weight: 600;
   margin: 10px 0 6px;
@@ -1253,7 +1311,7 @@ body::before {
 }
 
 .hero-p {
-  font-family: var(--font-inter), sans-serif;
+  font-family: var(--font-jakarta), sans-serif;
   font-size: 14.5px;
   color: var(--text-secondary);
   max-width: 620px;

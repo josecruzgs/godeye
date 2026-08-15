@@ -22,12 +22,13 @@ const ACCENT_VALUES: Record<StatAccent, string> = {
 };
 
 /**
- * Cifra de cabecera del panel: la tarjeta se pinta entera con el acento, con
- * el ícono en grande y translúcido saliéndose por la esquina, etiqueta mono
- * en versalitas y número tabular que cuenta al montarse.
+ * Cifra de cabecera del panel: lámina de vidrio con un riel de acento a la
+ * izquierda, el ícono en una insignia arriba a la derecha, etiqueta mono en
+ * versalitas y número tabular que cuenta al montarse.
  *
- * La legibilidad de la tinta blanca no se resuelve acá sino en `.kpi-solid`
- * (globals.css), que normaliza la luminosidad del acento antes de pintarlo.
+ * El acento ya no pinta la tarjeta entera, así que ningún texto se apoya
+ * sobre el color que el usuario eligió y no hay contraste que normalizar
+ * (ver el bloque KPI DE VIDRIO en globals.css).
  */
 export default function StatCard({
   label,
@@ -50,15 +51,17 @@ export default function StatCard({
   col?: PanelCol;
 }) {
   const c = ACCENT_VALUES[accent];
-  const className = `kpi-solid c${col} relative flex min-h-26 flex-col px-4.5 py-4 ${href ? "kpi-lift" : ""}`;
+  const className = `kpi-glass c${col} relative flex min-h-26 flex-col px-4.5 py-4 ${href ? "kpi-lift" : ""}`;
 
   const content = (
     <>
-      {/* Trazo fino y tamaño grande: el ícono es textura de fondo, no dato. */}
-      {Icon && <Icon aria-hidden className="kpi-glyph" strokeWidth={1.25} />}
+      {/* Insignia: chica y nítida, así que el trazo vuelve al grosor normal. */}
+      {Icon && <Icon aria-hidden className="kpi-glyph" strokeWidth={1.75} />}
       <div className="kpi-label flex items-center gap-1.5">
         <span className="truncate">{label}</span>
-        {live && <span className="dot-live shrink-0" style={{ background: "currentColor" }} />}
+        {/* El punto de "en vivo" va en el acento y no en currentColor: la
+            etiqueta pasó a tinta apagada y un punto gris no se lee como vivo. */}
+        {live && <span className="dot-live shrink-0" style={{ background: "var(--kpi-c)" }} />}
       </div>
       <div className="mt-2.5 flex flex-wrap items-baseline gap-2">
         <span className="kpi-number">
