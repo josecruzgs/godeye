@@ -5,12 +5,13 @@
  * proceso de larga duración que hace polling a Mongo, y el servidor web solo
  * existe mientras atiende peticiones.
  *
- * En el VPS se levantan `godeye-web` y `godeye-listening`. La automatización
- * (`godeye-tasks`) NO se levanta ahí: necesita AdsPower de escritorio corriendo
- * en la misma máquina, así que va en la Windows, con este mismo archivo:
+ * Los tres corren en el VPS: `pm2 start ecosystem.config.cjs`, sin `--only`.
  *
- *   VPS      → pm2 start ecosystem.config.cjs --only godeye-web,godeye-listening
- *   Windows  → pm2 start ecosystem.config.cjs --only godeye-tasks
+ * `godeye-tasks` vivía aparte en la Windows mientras AdsPower era una app de
+ * escritorio que solo escuchaba en el localhost de esa máquina. Desde que
+ * AdsPower está instalado en el propio VPS contra una pantalla virtual (sección
+ * 6 de DEPLOY.md), la PC dejó de formar parte del sistema. Levantarlo en los dos
+ * lados a la vez sí sería un problema: dos workers tomando las mismas tareas.
  *
  * Los tres van en `exec_mode: "fork"` y sin `instances`. Declarar `instances`
  * —aunque sea 1— hace que PM2 pase a modo cluster, que arranca el script con el

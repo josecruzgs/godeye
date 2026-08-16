@@ -171,7 +171,10 @@ export const adsPower = {
         name: input.name,
         group_id: input.groupId,
         remark: input.remark,
-        proxy_config: input.proxyConfig ?? { proxy_soft: "no_proxy" },
+        // `user_proxy_config`, no `proxy_config`: con el nombre equivocado la
+        // API rechaza el alta entera con "user_proxy_config or proxy_id error".
+        // Es el mismo nombre que devuelve `user/list` para cada perfil.
+        user_proxy_config: input.proxyConfig ?? { proxy_soft: "no_proxy" },
         fingerprint_config: input.fingerprintConfig ?? {},
       },
     });

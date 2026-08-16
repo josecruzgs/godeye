@@ -166,13 +166,22 @@ panel: alta, baja, rol y a qué grupos de AdsPower accede cada uno.
 ## 4. Los procesos
 
 ```bash
-pm2 start ecosystem.config.cjs --only godeye-web,godeye-listening
+pm2 start ecosystem.config.cjs
 pm2 save
 pm2 startup          # imprime un comando con sudo — copialo y ejecutalo
 ```
 
-Ese último paso es el que hace que todo vuelva solo después de un reinicio del
-VPS. Sin él, un reboot deja el sistema caído sin avisar.
+Los tres procesos van acá, `godeye-tasks` incluido: AdsPower corre en el propio
+VPS (sección 6). Sin `--only`, el archivo levanta los tres.
+
+`pm2 startup` **no engancha nada por sí solo**: imprime una línea que empieza con
+`sudo env PATH=...` y hay que copiarla y ejecutarla aparte. Ese es el paso que
+hace que todo vuelva solo después de un reinicio del VPS. Sin él, un reboot deja
+el sistema caído sin avisar, y el síntoma es un **502 Bad Gateway** de nginx con
+`pm2 status` mostrando la tabla vacía —no un proceso `errored`, sino ninguno—
+porque el daemon de PM2 tampoco sobrevivió. AdsPower sí vuelve solo: son
+servicios de systemd. Se recupera con `pm2 resurrect`, o repitiendo el bloque de
+arriba si no quedó dump.
 
 ```bash
 pm2 status
