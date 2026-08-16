@@ -838,6 +838,35 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
           }
 
           const pointerBlocked = /ninguno recibe el puntero|intercepts pointer events/i.test(message);
+
+          // La caja de comentario visible pero cubierta. Alcanza con enfocarla:
+          // el paso `type` que viene después escribe con el teclado, que no
+          // necesita el puntero, y su propio click ya va con catch. Se enfoca
+          // en vez de mandar Enter como en el like — acá Enter enviaría un
+          // comentario vacío.
+          //
+          // Antes de rendirse se reintenta destapar: al abrir el panel de
+          // comentarios Facebook a veces encima una capa nueva, distinta de la
+          // que se cerró para llegar hasta acá.
+          if (ctx.taskType === "comment" && pointerBlocked && isFacebookCommentBoxSelector(step.selector)) {
+            if (await dismissFacebookOverlays(page, ctx)) {
+              const reintento = await firstClickableLocator(page, selector, 3000).catch(() => null);
+              if (reintento) {
+                await reintento.locator.click({ position: reintento.position, timeout: timeoutMs });
+                return;
+              }
+            }
+
+            await log(
+              ctx.taskId,
+              "warn",
+              "La caja de comentario está visible pero cubierta por otra capa; se la enfoca con teclado y se escribe igual.",
+            );
+            const fallback = await firstVisibleLocator(page, selector, Math.min(3000, timeoutMs));
+            await fallback.focus({ timeout: 3000 });
+            return;
+          }
+
           if (ctx.taskType !== "like" || !pointerBlocked) throw err;
 
           await log(
