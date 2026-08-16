@@ -52,16 +52,24 @@ const FACEBOOK_COMMENT_BOX_SELECTOR = [
   'form div[role="textbox"][contenteditable="true"]',
 ].join(", ");
 
-const FACEBOOK_COMMENT_OPEN_SELECTOR = [
-  '[role="button"][aria-label="Comment"]',
-  '[role="button"][aria-label="Comentar"]',
-  '[aria-label="Comment"]',
-  '[aria-label="Comentar"]',
-  'div[role="button"]:has(svg[aria-label="Comment"])',
-  'div[role="button"]:has(svg[aria-label="Comentar"])',
-  'svg[aria-label="Comment"]',
-  'svg[aria-label="Comentar"]',
-].join(", ");
+/**
+ * Cómo se llama el botón que abre los comentarios.
+ *
+ * Va por coincidencia parcial (`*=`) y no exacta a propósito. En un post normal
+ * el botón se llama "Comentar" a secas, pero en el visor de Reels —donde el
+ * panel arranca cerrado y hay que abrirlo sí o sí— el rótulo trae el conteo o
+ * el contexto ("398 comentarios", "Comentar en el reel"). Con `=` no matcheaba
+ * ninguno, el panel nunca se abría, y el fallo aparecía un paso más tarde: como
+ * un timeout de la caja de texto, que efectivamente no existía todavía.
+ */
+const FACEBOOK_COMMENT_OPEN_LABELS = ["Comentario", "Comentar", "Comment"];
+
+const FACEBOOK_COMMENT_OPEN_SELECTOR = FACEBOOK_COMMENT_OPEN_LABELS.flatMap((label) => [
+  `[role="button"][aria-label*="${label}"]`,
+  `[aria-label*="${label}"]`,
+  `div[role="button"]:has(svg[aria-label*="${label}"])`,
+  `svg[aria-label*="${label}"]`,
+]).join(", ");
 
 /**
  * Cómo se llama el botón de reaccionar, por idioma de la interfaz.
@@ -252,6 +260,32 @@ async function hasVisibleLocator(page: Page, selector: string) {
   return false;
 }
 
+/**
+ * Los rótulos de los botones visibles de la página.
+ *
+ * Es puro diagnóstico. Cuando un selector no matchea, el log dice "0 match(es)"
+ * y no hay forma de saber si el botón no está o si se llama distinto — averiguarlo
+ * costaba bajarse la captura de fallo del servidor y mirarla a ojo. Con esto el
+ * propio log trae los nombres reales y el arreglo es agregar el que falte.
+ */
+async function describeVisibleButtons(page: Page) {
+  await defineEsbuildNameHelper(page);
+  const labels = await page
+    .evaluate(() => {
+      const vistos = new Set<string>();
+      for (const el of Array.from(document.querySelectorAll('[role="button"], button, svg[aria-label]'))) {
+        const rect = el.getBoundingClientRect();
+        if (rect.width < 1 || rect.height < 1) continue;
+        const label = (el.getAttribute("aria-label") ?? el.textContent ?? "").replace(/\s+/g, " ").trim();
+        if (label) vistos.add(label.slice(0, 40));
+      }
+      return Array.from(vistos).slice(0, 40);
+    })
+    .catch(() => [] as string[]);
+
+  return labels.length ? labels.map((l) => `"${l}"`).join(", ") : "(ninguno)";
+}
+
 async function prepareSelectorTarget(page: Page, rawSelector: string, ctx: StepContext) {
   if (ctx.taskType !== "comment" || !isFacebookCommentBoxSelector(rawSelector)) return;
   if (await hasVisibleLocator(page, FACEBOOK_COMMENT_BOX_SELECTOR)) return;
@@ -263,7 +297,16 @@ async function prepareSelectorTarget(page: Page, rawSelector: string, ctx: StepC
     const message = err instanceof Error ? err.message : String(err);
     if (message.startsWith("Facebook detuvo este perfil")) throw err;
   }
-  if (!target) return;
+  if (!target) {
+    // Salir en silencio dejaba el fallo apareciendo dos pasos después, como un
+    // timeout de la caja de texto — que era una consecuencia, no la causa.
+    await log(
+      ctx.taskId,
+      "warn",
+      `No se encontró el botón para abrir los comentarios. Botones visibles en la página: ${await describeVisibleButtons(page)}`,
+    );
+    return;
+  }
 
   await log(ctx.taskId, "info", "Abriendo panel/caja de comentarios de Facebook.");
   await target.locator.click({ position: target.position, timeout: 2500 }).catch(() => {});
