@@ -71,6 +71,29 @@ const FACEBOOK_COMMENT_OPEN_SELECTOR = FACEBOOK_COMMENT_OPEN_LABELS.flatMap((lab
   `svg[aria-label*="${label}"]`,
 ]).join(", ");
 
+/** Igual, pero solo lo enfocable: para el intento por teclado hace falta un botón real, no el <svg> de adentro. */
+const FACEBOOK_COMMENT_OPEN_FOCUSABLE_SELECTOR = FACEBOOK_COMMENT_OPEN_LABELS.map(
+  (label) => `[role="button"][aria-label*="${label}"]`,
+).join(", ");
+
+/**
+ * La X de las capas que Facebook encima sobre la publicación.
+ *
+ * En el visor de Reels aparece un "cuadro de sugerencias" que cubre la columna
+ * de acciones: el botón "Comentar" queda visible pero deja de recibir el
+ * puntero, así que el click nunca llega y el panel no abre.
+ *
+ * Se apunta al rótulo específico y NUNCA a un "Cerrar" pelado: ese es el de la
+ * X del propio visor de Reels, y clickearlo cerraría la publicación entera,
+ * dejando a la tarea escribiendo en cualquier lado. La `i` del final hace la
+ * comparación insensible a mayúsculas.
+ */
+const FACEBOOK_OVERLAY_DISMISS_SELECTOR = [
+  '[aria-label*="cuadro de sugerencias" i]',
+  '[aria-label*="suggestions box" i]',
+  '[aria-label*="suggestion box" i]',
+].join(", ");
+
 /**
  * Cómo se llama el botón de reaccionar, por idioma de la interfaz.
  *
@@ -286,9 +309,63 @@ async function describeVisibleButtons(page: Page) {
   return labels.length ? labels.map((l) => `"${l}"`).join(", ") : "(ninguno)";
 }
 
+/** Cierra la capa de sugerencias, si la hay. Devuelve si cerró alguna. */
+async function dismissFacebookOverlays(page: Page, ctx: StepContext) {
+  const locator = page.locator(FACEBOOK_OVERLAY_DISMISS_SELECTOR);
+  const count = await locator.count().catch(() => 0);
+
+  for (let i = 0; i < count; i += 1) {
+    const candidate = locator.nth(i);
+    if (!(await candidate.isVisible().catch(() => false))) continue;
+
+    await candidate.click({ timeout: 2000 }).catch(() => {});
+    await log(ctx.taskId, "info", "Se cerró una capa de sugerencias que tapaba la publicación.");
+    await page.waitForTimeout(800);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Abre los comentarios con el teclado en vez del mouse.
+ *
+ * Último recurso para cuando el botón está pero algo lo tapa: enfocarlo y
+ * mandarle Enter no depende de que reciba el puntero. Es el mismo truco que ya
+ * usa el paso de "like" cuando detecta que el botón está cubierto.
+ */
+async function openCommentsWithKeyboard(page: Page, ctx: StepContext) {
+  const locator = page.locator(FACEBOOK_COMMENT_OPEN_FOCUSABLE_SELECTOR);
+  const count = await locator.count().catch(() => 0);
+
+  for (let i = 0; i < count; i += 1) {
+    const candidate = locator.nth(i);
+    if (!(await candidate.isVisible().catch(() => false))) continue;
+
+    try {
+      await candidate.focus({ timeout: 2000 });
+      await page.keyboard.press("Enter");
+      await page.waitForTimeout(1000);
+    } catch {
+      continue;
+    }
+
+    if (await hasVisibleLocator(page, FACEBOOK_COMMENT_BOX_SELECTOR)) {
+      await log(ctx.taskId, "info", "Se abrieron los comentarios con el teclado (el botón estaba cubierto).");
+      return true;
+    }
+  }
+  return false;
+}
+
 async function prepareSelectorTarget(page: Page, rawSelector: string, ctx: StepContext) {
   if (ctx.taskType !== "comment" || !isFacebookCommentBoxSelector(rawSelector)) return;
   if (await hasVisibleLocator(page, FACEBOOK_COMMENT_BOX_SELECTOR)) return;
+
+  // Primero destapar: en los reels el botón de comentar está visible pero
+  // debajo del cuadro de sugerencias, y así el click nunca le llega.
+  if (await dismissFacebookOverlays(page, ctx)) {
+    if (await hasVisibleLocator(page, FACEBOOK_COMMENT_BOX_SELECTOR)) return;
+  }
 
   let target: ClickableTarget | null = null;
   try {
@@ -297,20 +374,25 @@ async function prepareSelectorTarget(page: Page, rawSelector: string, ctx: StepC
     const message = err instanceof Error ? err.message : String(err);
     if (message.startsWith("Facebook detuvo este perfil")) throw err;
   }
-  if (!target) {
-    // Salir en silencio dejaba el fallo apareciendo dos pasos después, como un
-    // timeout de la caja de texto — que era una consecuencia, no la causa.
-    await log(
-      ctx.taskId,
-      "warn",
-      `No se encontró el botón para abrir los comentarios. Botones visibles en la página: ${await describeVisibleButtons(page)}`,
-    );
+
+  if (target) {
+    await log(ctx.taskId, "info", "Abriendo panel/caja de comentarios de Facebook.");
+    await target.locator.click({ position: target.position, timeout: 2500 }).catch(() => {});
+    await page.waitForTimeout(1000);
     return;
   }
 
-  await log(ctx.taskId, "info", "Abriendo panel/caja de comentarios de Facebook.");
-  await target.locator.click({ position: target.position, timeout: 2500 }).catch(() => {});
-  await page.waitForTimeout(1000);
+  // El botón puede seguir tapado por una capa que no sabemos cerrar; el
+  // teclado no necesita que reciba el puntero.
+  if (await openCommentsWithKeyboard(page, ctx)) return;
+
+  // Salir en silencio dejaba el fallo apareciendo dos pasos después, como un
+  // timeout de la caja de texto — que era una consecuencia, no la causa.
+  await log(
+    ctx.taskId,
+    "warn",
+    `No se pudo abrir los comentarios. Botones visibles en la página: ${await describeVisibleButtons(page)}`,
+  );
 }
 
 function isNavigationTimeout(err: unknown) {
