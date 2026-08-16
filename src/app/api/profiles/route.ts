@@ -8,6 +8,10 @@ import { assertGroupAllowed } from "@/lib/auth/profiles";
 import { escapeRegex } from "@/lib/regex";
 import { parseRemark } from "@/lib/remark";
 
+// Etiqueta de AdsPower que marca un perfil como listo. Los que la tienen van
+// primero en la tabla, sin que haga falta filtrar por ella.
+const ETIQUETA_DESTACADA = "✅";
+
 // Lee perfiles desde Mongo (rápido, no depende de que AdsPower esté vivo).
 // Usa POST /api/profiles/sync para refrescar desde AdsPower.
 //
@@ -53,11 +57,26 @@ export const GET = withAuth(async (user, req: NextRequest) => {
     return NextResponse.json({ profiles });
   }
 
+  // Orden por defecto de la tabla: primero los que tienen ETIQUETA_DESTACADA,
+  // después el resto, y dentro de cada bloque por nombre.
+  //
+  // Va por agregación y no por `.find().sort()` porque el criterio no es un
+  // campo guardado sino algo que hay que calcular por documento, y la
+  // paginación es del lado del servidor: ordenar en el cliente solo
+  // reacomodaría los 20 de la página que ya llegó.
+  //
+  // Es orden, no filtro: los perfiles sin la etiqueta siguen estando, más
+  // abajo. El `$ifNull` cubre los documentos viejos, anteriores a que `tags`
+  // tuviera default — sin él, `$in` revienta cuando el campo no existe.
   const [profiles, total] = await Promise.all([
-    ProfileModel.find(filter)
-      .sort({ name: 1 })
-      .skip((page - 1) * pageSize)
-      .limit(pageSize),
+    ProfileModel.aggregate([
+      { $match: filter },
+      { $addFields: { _destacado: { $cond: [{ $in: [ETIQUETA_DESTACADA, { $ifNull: ["$tags.name", []] }] }, 0, 1] } } },
+      { $sort: { _destacado: 1, name: 1 } },
+      { $skip: (page - 1) * pageSize },
+      { $limit: pageSize },
+      { $project: { _destacado: 0 } },
+    ]),
     ProfileModel.countDocuments(filter),
   ]);
 

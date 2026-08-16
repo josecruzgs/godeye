@@ -31,6 +31,12 @@ type DeleteProfileResponse = {
 
 const PAGE_SIZE = 20;
 
+// El alta de perfiles está oculta a pedido: los perfiles se crean en AdsPower
+// y entran acá por sincronización. El formulario y `createProfile` siguen
+// enteros y funcionando —igual que las páginas que se sacaron del menú en
+// components/Sidebar.tsx—; poner esto en `true` los devuelve a la pantalla.
+const MOSTRAR_ALTA_DE_PERFIL: boolean = false;
+
 async function requestProfileDelete(id: string, localOnly = false) {
   const path = `/api/profiles/${id}${localOnly ? "?localOnly=true" : ""}`;
   const res = await fetch(path, {
@@ -464,6 +470,7 @@ export default function ProfilesPage() {
         <p className="rounded-xl bg-success/10 p-3 text-sm text-success">{syncNotice}</p>
       )}
 
+      {MOSTRAR_ALTA_DE_PERFIL && (
       <Card className="p-4">
         <form onSubmit={createProfile} className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
@@ -517,6 +524,7 @@ export default function ProfilesPage() {
           )}
         </form>
       </Card>
+      )}
 
       <Card className="flex flex-wrap items-center gap-2 p-3">
         <div className="relative min-w-50 flex-1">
