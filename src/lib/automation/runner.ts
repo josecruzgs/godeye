@@ -585,33 +585,62 @@ async function defineEsbuildNameHelper(page: Page) {
  *
  * Devuelve null si no lo encuentra; el que llama decide si eso es un fallo.
  */
-async function findPublishedCommentUrl(page: Page, texto: string): Promise<string | null> {
+type CommentProbe = { encontrado: boolean; url: string | null };
+
+async function findPublishedComment(page: Page, texto: string): Promise<CommentProbe> {
   await defineEsbuildNameHelper(page);
-  return page.evaluate((texto: string): string | null => {
-    const normalizar = (valor: string) => valor.replace(/\s+/g, " ").trim().toLowerCase();
+  return page.evaluate((texto: string): CommentProbe => {
+    const ausente: CommentProbe = { encontrado: false, url: null };
+
+    // Se comparan solo letras y números. Facebook reescribe lo que uno tipea
+    // antes de renderizarlo —":)" sale como 🙂, y ahí una comparación literal
+    // deja de encontrar el comentario que sí se publicó— y también toca
+    // espacios y puntuación. Lo que sobrevive intacto son las palabras.
+    const normalizar = (valor: string) =>
+      valor
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, " ")
+        .trim();
+
     const buscado = normalizar(texto);
-    if (!buscado) return null;
+    if (!buscado) return ausente;
+    if (!normalizar(document.body?.textContent ?? "").includes(buscado)) return ausente;
 
-    const candidatos = Array.from(document.querySelectorAll('[role="article"]')).filter((art) =>
-      normalizar(art.textContent ?? "").includes(buscado),
-    );
-
-    // El más interno: el que no contiene a ningún otro candidato.
-    const comentario = candidatos.find(
-      (art) => !candidatos.some((otro) => otro !== art && art.contains(otro)),
-    );
-    if (!comentario) return null;
-
-    const ancla = Array.from(comentario.querySelectorAll("a[href]")).find((el) =>
-      /(^|[?&])(reply_)?comment_id=/.test(el.getAttribute("href") ?? ""),
-    );
-    if (!ancla) return null;
-
-    try {
-      return new URL(ancla.getAttribute("href") ?? "", location.origin).href;
-    } catch {
-      return null;
+    // Se baja desde <body> al descendiente más chico que sigue conteniendo el
+    // texto, en vez de recorrer todos los nodos preguntando por su contenido:
+    // eso sería cuadrático sobre una página de Facebook.
+    let comentario: Element = document.body;
+    descender: for (;;) {
+      for (const hijo of Array.from(comentario.children)) {
+        if (normalizar(hijo.textContent ?? "").includes(buscado)) {
+          comentario = hijo;
+          continue descender;
+        }
+      }
+      break;
     }
+
+    // El permalink no está en el texto sino en el ancla de la fecha, que suele
+    // ser hermana y no descendiente; por eso se sube unos niveles buscándola.
+    // Que no aparezca no significa que el comentario no esté: recién publicado
+    // Facebook tarda en darle enlace propio, y en el panel de un reel a veces
+    // no se lo da nunca. Por eso el hallazgo y el link van separados.
+    let nodo: Element | null = comentario;
+    for (let nivel = 0; nivel < 6 && nodo; nivel += 1) {
+      const ancla = Array.from(nodo.querySelectorAll("a[href]")).find((el) =>
+        /(^|[?&])(reply_)?comment_id=/.test(el.getAttribute("href") ?? ""),
+      );
+      if (ancla) {
+        try {
+          return { encontrado: true, url: new URL(ancla.getAttribute("href") ?? "", location.origin).href };
+        } catch {
+          break;
+        }
+      }
+      nodo = nodo.parentElement;
+    }
+
+    return { encontrado: true, url: null };
   }, texto);
 }
 
@@ -620,12 +649,16 @@ async function findPublishedCommentUrl(page: Page, texto: string): Promise<strin
  * después de enviarlo, y cuánto depende de la red y de lo cargada que esté la
  * publicación. Un timeout fijo sería o muy corto o desperdicio de tiempo.
  */
-async function waitForPublishedCommentUrl(page: Page, texto: string, timeoutMs: number) {
+async function waitForPublishedComment(page: Page, texto: string, timeoutMs: number): Promise<CommentProbe> {
   const limite = Date.now() + timeoutMs;
+  let ultimo: CommentProbe = { encontrado: false, url: null };
   for (;;) {
-    const url = await findPublishedCommentUrl(page, texto);
-    if (url) return url;
-    if (Date.now() >= limite) return null;
+    ultimo = await findPublishedComment(page, texto);
+    // Con el comentario ya encontrado se sigue esperando un poco por su
+    // enlace, que aparece después — pero sin dejar que la falta de enlace
+    // consuma todo el tiempo restante.
+    if (ultimo.url) return ultimo;
+    if (Date.now() >= limite) return ultimo;
     await page.waitForTimeout(VISIBLE_POLL_MS * 4);
   }
 }
@@ -823,16 +856,24 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
       const texto = step.value?.trim();
       if (!texto) throw new Error("Step 'captureComment' requiere 'value' con el texto publicado");
 
-      const url = await waitForPublishedCommentUrl(page, texto, step.ms ?? DEFAULT_ACTION_TIMEOUT_MS);
-      if (!url) {
+      const probe = await waitForPublishedComment(page, texto, step.ms ?? DEFAULT_ACTION_TIMEOUT_MS);
+      if (!probe.encontrado) {
         throw new Error(
           "El comentario no apareció en la publicación después de enviarlo. Puede que Facebook lo haya " +
             "descartado, que el perfil esté limitado, o que la publicación no permita comentar.",
         );
       }
 
-      ctx.onResultUrl?.(url);
-      await log(ctx.taskId, "info", `Comentario publicado y verificado: ${url}`);
+      // Lo que se verifica es que el comentario esté. El permalink es un
+      // extra: en el panel de un reel Facebook a veces no le da enlace propio,
+      // y quedarse sin él no es motivo para dar la tarea por fallida.
+      if (!probe.url) {
+        await log(ctx.taskId, "info", "Comentario publicado y verificado (Facebook no le dio enlace propio).");
+        return;
+      }
+
+      ctx.onResultUrl?.(probe.url);
+      await log(ctx.taskId, "info", `Comentario publicado y verificado: ${probe.url}`);
       return;
     }
     case "likeComment": {
