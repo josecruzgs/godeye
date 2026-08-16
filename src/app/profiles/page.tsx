@@ -340,14 +340,20 @@ export default function ProfilesPage() {
       // grupos existen para asignar permisos— y devuelve 403 a los demás. El
       // operador se la saltea en vez de comerse el error: lo que necesita
       // refrescar son sus perfiles, y esa sí la puede correr.
+      let removedGroups = 0;
       if (session?.role === "admin") {
-        await apiFetch<{ groups: Group[] }>("/api/groups/sync", { method: "POST" });
+        ({ removed: removedGroups = 0 } = await apiFetch<{ removed?: number }>("/api/groups/sync", {
+          method: "POST",
+        }));
       }
       const { removed } = await apiFetch<{ removed?: number }>("/api/profiles/sync", { method: "POST" });
       await loadGroups();
       await loadTags();
       await loadProfiles();
-      if (removed) setSyncNotice(`Se quitaron ${removed} perfil(es) que ya no existen en AdsPower.`);
+      const notices: string[] = [];
+      if (removed) notices.push(`Se quitaron ${removed} perfil(es) que ya no existen en AdsPower.`);
+      if (removedGroups) notices.push(`Se quitaron ${removedGroups} grupo(s) que la cuenta de AdsPower ya no ve.`);
+      if (notices.length) setSyncNotice(notices.join(" "));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
