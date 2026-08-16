@@ -13,6 +13,7 @@ import {
   Search,
   OctagonX,
   FolderKanban,
+  ExternalLink,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
@@ -27,7 +28,27 @@ type Task = {
   profileId: { _id: string; name: string } | null;
   scheduledAt: string;
   createdAt: string;
+  steps?: { action: string; url?: string }[];
+  resultUrl?: string;
 };
+
+/**
+ * A dónde lleva el botón de comprobar, y con qué etiqueta.
+ *
+ * Se prefiere `resultUrl` —el permalink del comentario, que el runner captura
+ * al publicarlo— porque cae justo en el comentario. Cuando no está (tareas de
+ * like, o comentarios anteriores a que se capturara) se cae al `goto` del
+ * primer paso, que es la publicación: menos preciso, pero siempre disponible
+ * sin agregar un campo ni volver a preguntarle nada a Facebook.
+ *
+ * Devuelve `undefined` en las tareas que no navegan a ningún lado (una hecha
+ * a mano, por ejemplo); ahí no se dibuja el enlace en vez de dejar uno muerto.
+ */
+function comprobacionDeLaTarea(task: Task): { url: string; label: string } | undefined {
+  if (task.resultUrl) return { url: task.resultUrl, label: "Ver comentario" };
+  const goto = task.steps?.find((s) => s.action === "goto" && s.url)?.url;
+  return goto ? { url: goto, label: "Ver publicación" } : undefined;
+}
 
 type Profile = { _id: string; name: string };
 
@@ -302,7 +323,9 @@ function TasksContent() {
                   <td colSpan={6} className="px-4 py-10 text-center text-ink-muted">Sin tareas que coincidan.</td>
                 </tr>
               ) : (
-                tasks.map((t) => (
+                tasks.map((t) => {
+                  const comprobacion = comprobacionDeLaTarea(t);
+                  return (
                   <tr key={t._id} className="border-t border-hairline transition-colors hover:bg-page/60">
                     <td className="px-4 py-3 font-medium text-ink">
                       <Link href={`/tasks/${t._id}`} className="hover:text-primary hover:underline">
@@ -315,6 +338,20 @@ function TasksContent() {
                     <td className="px-4 py-3 text-ink-secondary">{new Date(t.scheduledAt).toLocaleString()}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">
+                        {comprobacion && (
+                          // rel="noreferrer" además de noopener: es un sitio
+                          // externo y no tiene por qué saber de dónde viene.
+                          <a
+                            href={comprobacion.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={comprobacion.url}
+                            className="inline-flex items-center gap-1 rounded-lg border border-hairline px-2.5 py-1 text-xs font-medium transition-colors hover:bg-page"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            {comprobacion.label}
+                          </a>
+                        )}
                         <button
                           disabled={busyId === t._id || t.status === "running" || t.status === "queued"}
                           onClick={() => runTask(t._id)}
@@ -332,7 +369,8 @@ function TasksContent() {
                       </div>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>

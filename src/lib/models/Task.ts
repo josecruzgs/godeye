@@ -19,6 +19,7 @@ const StepSchema = new Schema(
         "scroll",
         "uploadFile",
         "likeComment",
+        "captureComment",
       ],
       required: true,
     },
@@ -72,6 +73,11 @@ const TaskSchema = new Schema(
     startedAt: { type: Date },
     finishedAt: { type: Date },
     error: { type: String },
+    // Permalink de lo que la tarea produjo, cuando se pudo capturar: para las
+    // de comentario es el link al comentario publicado. Lo llena el step
+    // "captureComment" (ver runner.ts) y sirve para ir a comprobarlo sin
+    // tener que buscarlo a mano dentro del post.
+    resultUrl: { type: String },
   },
   { timestamps: true },
 );
@@ -93,6 +99,7 @@ function isStaleTaskModel() {
   if (!schema) return false;
   if (!schema.path("campaignId")) return true;
   if (!schema.path("ownerId")) return true;
+  if (!schema.path("resultUrl")) return true;
   const types = (schema.path("type") as { enumValues?: string[] }).enumValues ?? [];
   return !types.includes("likecomment");
 }

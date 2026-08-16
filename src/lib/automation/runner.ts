@@ -19,7 +19,8 @@ type Step = {
     | "screenshot"
     | "scroll"
     | "uploadFile"
-    | "likeComment";
+    | "likeComment"
+    | "captureComment";
   selector?: string;
   value?: string;
   url?: string;
@@ -184,7 +185,13 @@ type ClickableTarget = {
   position: { x: number; y: number };
 };
 
-type StepContext = { taskId: string; profileName: string; taskType: string };
+type StepContext = {
+  taskId: string;
+  profileName: string;
+  taskType: string;
+  /** Lo llama "captureComment" con el permalink de lo que se publicó. */
+  onResultUrl?: (url: string) => void;
+};
 
 function normalizePageText(value: string) {
   return value
@@ -432,6 +439,72 @@ async function defineEsbuildNameHelper(page: Page) {
   await page.evaluate("void (globalThis.__name = globalThis.__name || ((fn) => fn))");
 }
 
+/**
+ * Busca en la página el comentario que contiene un texto y devuelve su
+ * permalink.
+ *
+ * Se usa para comprobar que un comentario recién publicado existe de verdad.
+ * Antes de esto la tarea se daba por exitosa apenas terminaba de teclear: si
+ * Facebook lo descartaba en silencio —cosa que hace— quedaba como "EXITOSA"
+ * igual.
+ *
+ * Corre entero dentro del navegador porque necesita `closest()` y comparar el
+ * texto renderizado. Dos detalles del DOM de Facebook:
+ *
+ * - El post entero también es un `role="article"` y contiene el texto de todos
+ *   sus comentarios, así que matchea igual que el comentario buscado. Por eso
+ *   se descarta cualquier candidato que contenga a otro: el bueno es el más
+ *   adentro.
+ * - El `comment_id` no está en el comentario sino en el href del ancla de la
+ *   fecha ("hace 2 h"), el mismo del que se cuelga markFacebookCommentLike.
+ *
+ * Devuelve null si no lo encuentra; el que llama decide si eso es un fallo.
+ */
+async function findPublishedCommentUrl(page: Page, texto: string): Promise<string | null> {
+  await defineEsbuildNameHelper(page);
+  return page.evaluate((texto: string): string | null => {
+    const normalizar = (valor: string) => valor.replace(/\s+/g, " ").trim().toLowerCase();
+    const buscado = normalizar(texto);
+    if (!buscado) return null;
+
+    const candidatos = Array.from(document.querySelectorAll('[role="article"]')).filter((art) =>
+      normalizar(art.textContent ?? "").includes(buscado),
+    );
+
+    // El más interno: el que no contiene a ningún otro candidato.
+    const comentario = candidatos.find(
+      (art) => !candidatos.some((otro) => otro !== art && art.contains(otro)),
+    );
+    if (!comentario) return null;
+
+    const ancla = Array.from(comentario.querySelectorAll("a[href]")).find((el) =>
+      /(^|[?&])(reply_)?comment_id=/.test(el.getAttribute("href") ?? ""),
+    );
+    if (!ancla) return null;
+
+    try {
+      return new URL(ancla.getAttribute("href") ?? "", location.origin).href;
+    } catch {
+      return null;
+    }
+  }, texto);
+}
+
+/**
+ * Lo mismo, pero reintentando: el comentario tarda en aparecer en el DOM
+ * después de enviarlo, y cuánto depende de la red y de lo cargada que esté la
+ * publicación. Un timeout fijo sería o muy corto o desperdicio de tiempo.
+ */
+async function waitForPublishedCommentUrl(page: Page, texto: string, timeoutMs: number) {
+  const limite = Date.now() + timeoutMs;
+  for (;;) {
+    const url = await findPublishedCommentUrl(page, texto);
+    if (url) return url;
+    if (Date.now() >= limite) return null;
+    await page.waitForTimeout(VISIBLE_POLL_MS * 4);
+  }
+}
+
 async function markFacebookCommentLike(page: Page, commentId: string): Promise<CommentLikeProbe> {
   await defineEsbuildNameHelper(page);
   return page.evaluate(
@@ -621,6 +694,22 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
         }
       }
       return;
+    case "captureComment": {
+      const texto = step.value?.trim();
+      if (!texto) throw new Error("Step 'captureComment' requiere 'value' con el texto publicado");
+
+      const url = await waitForPublishedCommentUrl(page, texto, step.ms ?? DEFAULT_ACTION_TIMEOUT_MS);
+      if (!url) {
+        throw new Error(
+          "El comentario no apareció en la publicación después de enviarlo. Puede que Facebook lo haya " +
+            "descartado, que el perfil esté limitado, o que la publicación no permita comentar.",
+        );
+      }
+
+      ctx.onResultUrl?.(url);
+      await log(ctx.taskId, "info", `Comentario publicado y verificado: ${url}`);
+      return;
+    }
     case "likeComment": {
       const commentId = step.commentId?.trim();
       if (!commentId) throw new Error("Step 'likeComment' requiere 'commentId'");
@@ -784,7 +873,14 @@ export async function runTask(taskId: string) {
       const s = step as Step;
       await log(taskId, "info", `Step ${i + 1}/${task.steps.length}: ${s.action}${s.optional ? " (opcional)" : ""}`);
       try {
-        await runStep(page, s, { taskId, profileName: profile.name, taskType: task.type });
+        await runStep(page, s, {
+          taskId,
+          profileName: profile.name,
+          taskType: task.type,
+          onResultUrl: (url) => {
+            task.resultUrl = url;
+          },
+        });
       } catch (err) {
         if (!s.optional) throw err;
         const message = err instanceof Error ? err.message : String(err);

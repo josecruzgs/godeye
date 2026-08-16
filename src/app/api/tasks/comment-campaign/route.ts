@@ -77,6 +77,15 @@ export const POST = withAuth(async (user, req: NextRequest) => {
       { action: "waitForTimeout" as const, ms: 800 },
       submitStep,
       { action: "waitForTimeout" as const, ms: 1500 },
+      // Comprueba que el comentario quedó publicado y guarda su permalink en
+      // la tarea. Sin esto la tarea terminaba en "exitosa" apenas terminaba de
+      // teclear, aunque Facebook lo hubiera descartado en silencio.
+      //
+      // Que no sea `optional` es a propósito: un comentario que no aparece es
+      // un fallo, no un detalle. Si en algún momento resulta demasiado
+      // estricto, agregarle `optional: true` lo degrada a advertencia y la
+      // tarea sigue su curso.
+      { action: "captureComment" as const, value: pool[i].text },
     ],
     status: autoRun ? ("queued" as const) : ("pending" as const),
     scheduledAt: new Date(now + i * staggerSeconds * 1000),
