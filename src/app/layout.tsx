@@ -5,6 +5,7 @@ import AppShell from "@/components/AppShell";
 import { currentUser } from "@/lib/auth/dal";
 import { SessionProvider, type ClientSession } from "@/lib/session";
 import { accentStyle } from "@/lib/theme";
+import { BRAND_NAME } from "@/lib/brand";
 import "./globals.css";
 
 // Tres familias con roles fijos, como la sala de inteligencia: Fraunces
@@ -32,7 +33,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Julieta Ramirez · Yo con Julieta",
+  title: BRAND_NAME,
   description: "Panel para automatizar cuentas de redes sociales",
   // Apunta directo a public/media/*.png en vez de mantener una copia en
   // src/app/icon.png: así el favicon nunca se puede desincronizar del logo

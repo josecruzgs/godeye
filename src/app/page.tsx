@@ -20,6 +20,7 @@ import Panel from "@/components/ui/Panel";
 import SubHead from "@/components/ui/SubHead";
 import ElementIcon from "@/components/ui/ElementIcon";
 import { ELEMENT_ORDER, ELEMENT_COLOR, ELEMENT_META } from "@/lib/elements";
+import { BRAND_NAME } from "@/lib/brand";
 
 // Se conecta a Mongo en cada request; evitamos que Next intente
 // pre-renderizar esta página en build time (no hay Mongo disponible ahí).
@@ -192,7 +193,7 @@ export default async function Home() {
     <>
       {/* Portada editorial. */}
       <section className="animate-fade-in-up py-6">
-        <p className="overline">Julieta Ramirez · Yo con Julieta · USO INTERNO</p>
+        <p className="overline">{BRAND_NAME} · USO INTERNO</p>
         <h1 className="hero-h1">Esto es lo que se mueve hoy</h1>
         <p className="hero-p">
           Cuatro elementos, un vistazo: qué está corriendo, qué se acumuló en la cola y qué tanto está saliendo

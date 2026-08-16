@@ -9,6 +9,7 @@ import ElementIcon from "./ui/ElementIcon";
 import { getElementForPath, ELEMENT_META } from "@/lib/elements";
 import { useSession } from "@/lib/session";
 import { findCity } from "@/lib/timezones";
+import { BRAND_NAME } from "@/lib/brand";
 
 type RoleStatus = { online: boolean; host?: string | null };
 type Status = { online: boolean; roles?: { tasks: RoleStatus; listening: RoleStatus } } | null;
@@ -79,7 +80,7 @@ export default function Topbar() {
   const session = useSession();
   const city = findCity(session?.preferences.city);
   const clock = useClock(city.timeZone);
-  const brandTitle = session?.preferences.brandTitle?.trim() || "Julieta Ramirez · Yo con Julieta";
+  const brandTitle = session?.preferences.brandTitle?.trim() || BRAND_NAME;
   const avatar = session?.preferences.avatar || "";
 
   async function logout() {

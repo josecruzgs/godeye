@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import ElementIcon, { type IconName } from "./ElementIcon";
+import { BRAND_NAME, BRAND_SUBTITLE } from "@/lib/brand";
 
 // La animación de salida del CSS (.splash) arranca a 1.7s y dura 0.55s; el
 // nodo se desmonta apenas después para no dejar un overlay invisible
@@ -14,9 +15,9 @@ const UNMOUNT_MS = 2350;
  * pestaña —la marca vive en sessionStorage— y se puede saltar con un clic.
  */
 export default function Splash({
-  name = "Julieta Ramirez",
+  name = BRAND_NAME,
   tag = "Sala de Inteligencia",
-  lead = "Yo con Julieta",
+  lead = BRAND_SUBTITLE,
   icon = "eye",
   color = "var(--gold)",
   storageKey = "splash-seen",
@@ -82,7 +83,7 @@ export default function Splash({
         <div className="splash-tag" style={{ color }}>
           {tag}
         </div>
-        <div className="splash-lead">{lead}</div>
+        {lead && <div className="splash-lead">{lead}</div>}
         <div className="label-mono-sm mt-6 tracking-[0.1em]">toca para entrar</div>
       </div>
     </div>

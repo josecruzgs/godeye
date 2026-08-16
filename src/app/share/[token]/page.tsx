@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { dbConnect } from "@/lib/mongodb";
 import DashboardModel from "@/lib/models/Dashboard";
 import { getCampaignSummariesByIds } from "@/lib/campaigns";
+import { BRAND_NAME } from "@/lib/brand";
 import PublicDashboardView, { type PublicCampaign } from "./PublicDashboardView";
 
 // Se conecta a Mongo en cada request; evitamos que Next intente
@@ -16,7 +17,7 @@ export async function generateMetadata({
   const { token } = await params;
   await dbConnect();
   const dashboard = await DashboardModel.findOne({ token }).select("name").lean();
-  return { title: dashboard ? `${dashboard.name} — Julieta Ramirez · Yo con Julieta` : "Dashboard no encontrado" };
+  return { title: dashboard ? `${dashboard.name} — ${BRAND_NAME}` : "Dashboard no encontrado" };
 }
 
 async function getDashboard(token: string) {

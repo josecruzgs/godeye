@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { useSession } from "@/lib/session";
 import { normalizeHex, sidebarStyle } from "@/lib/theme";
+import { BRAND_NAME, BRAND_SUBTITLE } from "@/lib/brand";
 
 // `adminOnly` solo esconde el enlace: quien lo adivine igual choca contra el
 // 403 de withAdmin en la API. La seguridad está allá, esto es prolijidad.
@@ -106,8 +107,8 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-const BRAND_TITLE = "Julieta Ramirez";
-const BRAND_SUBTITLE = "Yo con Julieta";
+// La marca vive en lib/brand.ts; acá solo se le da preferencia a lo que el
+// usuario haya puesto en /ajustes.
 
 // El label solo aparece luego de que el ancho terminó de animar (~200ms):
 // mostrarlo de inmediato al expandir hace que el texto se monte a su ancho
@@ -200,7 +201,7 @@ export default function Sidebar() {
 
   const prefs = session?.preferences;
   const hasCustomSidebar = Boolean(normalizeHex(prefs?.sidebarColor));
-  const title = prefs?.brandTitle?.trim() || BRAND_TITLE;
+  const title = prefs?.brandTitle?.trim() || BRAND_NAME;
   const subtitle = prefs?.brandSubtitle?.trim() || BRAND_SUBTITLE;
   const avatar = prefs?.avatar || "";
 
@@ -239,7 +240,7 @@ export default function Sidebar() {
         {showLabels && (
           <div className="animate-fade-in-up min-w-0 flex-1 overflow-hidden">
             <p className="font-display truncate text-[17px] font-semibold leading-none text-ink">{title}</p>
-            <p className="label-mono-sm mt-1 truncate">{subtitle}</p>
+            {subtitle && <p className="label-mono-sm mt-1 truncate">{subtitle}</p>}
           </div>
         )}
         <button

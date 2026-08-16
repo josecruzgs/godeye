@@ -7,9 +7,10 @@ import { apiFetch } from "@/lib/api";
 import Card from "@/components/Card";
 import { useSession } from "@/lib/session";
 import { CITIES, findCity } from "@/lib/timezones";
+import { BRAND_NAME } from "@/lib/brand";
 
 const HOUSE_ACCENT = "#8a6a28";
-const HOUSE_TITLE = "Julieta Ramirez · Yo con Julieta";
+const HOUSE_TITLE = BRAND_NAME;
 
 const AVATAR_SIZE = 256;
 
@@ -235,7 +236,7 @@ export default function AjustesPage() {
               value={brandSubtitle}
               onChange={(e) => setBrandSubtitle(e.target.value)}
               maxLength={60}
-              placeholder="Yo con Julieta"
+              placeholder="(sin subtítulo)"
               className="w-72 rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none focus:border-primary"
             />
           </div>
