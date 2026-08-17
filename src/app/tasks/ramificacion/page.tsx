@@ -40,6 +40,12 @@ export default function RamificacionCampaignPage() {
   const [result, setResult] = useState<Resultado | null>(null);
   const [poolCount, setPoolCount] = useState<number | null>(null);
 
+  // Los textos se escriben acá. Vacíos, el servidor los toma del banco; el
+  // botón "Traer del banco" los trae para poder editarlos antes de mandar.
+  const [parentText, setParentText] = useState("");
+  const [childTexts, setChildTexts] = useState<Record<string, string>>({});
+  const [trayendo, setTrayendo] = useState(false);
+
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -66,7 +72,31 @@ export default function RamificacionCampaignPage() {
   // la selección apenas se lo elige, en vez de rechazarlo al enviar.
   const hijos = [...selected].filter((id) => id !== parentProfileId);
   const necesarios = hijos.length + 1;
-  const alcanzan = poolCount === null || poolCount >= necesarios;
+
+  // Con todos los textos escritos el banco no se toca; sin ninguno, el servidor
+  // los saca de ahí. A medio llenar no se puede crear: sería adivinar de dónde
+  // sale cada uno.
+  const escritos = Boolean(parentText.trim()) && hijos.length > 0 && hijos.every((id) => childTexts[id]?.trim());
+  const vacios = !parentText.trim() && hijos.every((id) => !childTexts[id]?.trim());
+  const alcanzan = escritos || (vacios && (poolCount === null || poolCount >= necesarios));
+
+  async function traerDelBanco() {
+    setTrayendo(true);
+    setError(null);
+    try {
+      const { comments } = await apiFetch<{ comments: { _id: string; text: string }[] }>(
+        `/api/comments?pageSize=${necesarios}`,
+      );
+      const libres = comments.map((c) => c.text);
+      if (!libres.length) throw new Error("El banco no tiene comentarios disponibles.");
+      setParentText(libres[0] ?? "");
+      setChildTexts(Object.fromEntries(hijos.map((id, i) => [id, libres[i + 1] ?? ""])));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setTrayendo(false);
+    }
+  }
 
   async function crear(e: React.FormEvent) {
     e.preventDefault();
@@ -80,6 +110,9 @@ export default function RamificacionCampaignPage() {
           url,
           parentProfileId,
           childProfileIds: hijos,
+          // Vacíos, el servidor los toma del banco.
+          parentText: parentText.trim() || undefined,
+          childTexts: escritos ? hijos.map((id) => childTexts[id].trim()) : undefined,
           staggerSeconds,
           autoRun,
           namePrefix,
@@ -138,15 +171,22 @@ export default function RamificacionCampaignPage() {
 
           <div className="flex flex-col gap-1">
             <label className="text-xs text-ink-muted">Perfil del comentario padre</label>
+            {/* Los colores van explícitos en el <select> y en cada <option>:
+                el desplegable nativo los pinta con lo que herede, y sobre el
+                tema oscuro quedaba texto negro sobre fondo negro — la lista se
+                veía vacía aunque tuviera los 131 perfiles. */}
             <select
               required
               value={parentProfileId}
               onChange={(e) => setParentProfileId(e.target.value)}
-              className="w-72 rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none focus:border-primary"
+              className="w-96 rounded-lg border border-hairline bg-page px-3 py-2 text-sm text-ink outline-none focus:border-primary"
             >
-              <option value="">Elegí un perfil...</option>
+              <option value="" className="bg-page text-ink">Elegí un perfil...</option>
               {profiles.map((p) => (
-                <option key={p._id} value={p._id}>{p.name}</option>
+                <option key={p._id} value={p._id} className="bg-page text-ink">
+                  {p.name}
+                  {p.groupId ? ` — ${groups.find((g) => g.adsPowerGroupId === p.groupId)?.name ?? p.groupId}` : ""}
+                </option>
               ))}
             </select>
           </div>
@@ -201,7 +241,9 @@ export default function RamificacionCampaignPage() {
           )}
           {!alcanzan && (
             <p className="rounded-lg bg-critical/10 p-2 text-xs text-critical">
-              No alcanzan los comentarios del banco: hacen falta {necesarios} y hay {poolCount}.
+              {vacios
+                ? `No alcanzan los comentarios del banco: hacen falta ${necesarios} y hay ${poolCount}. Escribilos arriba a mano.`
+                : "Faltan textos por completar: llenalos todos arriba, o vaciálos todos para tomarlos del banco."}
             </p>
           )}
           <ProfilePicker
@@ -211,6 +253,58 @@ export default function RamificacionCampaignPage() {
             selected={selected}
             onChange={setSelected}
           />
+        </Card>
+
+        <Card className="flex flex-col gap-4 p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-sm font-semibold text-ink">Textos</h2>
+            <div className="flex items-center gap-3">
+              <p className="label-mono-sm">
+                {escritos ? "escritos a mano · no consume el banco" : vacios ? "se toman del banco al crear" : "faltan textos por completar"}
+              </p>
+              <button
+                type="button"
+                onClick={traerDelBanco}
+                disabled={trayendo || hijos.length === 0}
+                className="rounded-lg border border-hairline px-2.5 py-1 text-xs font-medium transition-colors hover:bg-page disabled:opacity-40"
+              >
+                {trayendo ? "Trayendo..." : "Traer del banco"}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-ink-muted">
+              Comentario padre {perfilPadre ? `· ${perfilPadre.name}` : ""}
+            </label>
+            <textarea
+              rows={2}
+              value={parentText}
+              onChange={(e) => setParentText(e.target.value)}
+              placeholder="Dejalo vacío para tomarlo del banco"
+              className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm text-ink outline-none focus:border-primary"
+            />
+          </div>
+
+          {hijos.length === 0 ? (
+            <p className="text-xs text-ink-muted">Elegí perfiles hijos abajo para escribir sus respuestas.</p>
+          ) : (
+            hijos.map((id) => {
+              const perfil = profiles.find((p) => p._id === id);
+              return (
+                <div key={id} className="flex flex-col gap-1">
+                  <label className="text-xs text-ink-muted">Respuesta · {perfil?.name ?? id}</label>
+                  <textarea
+                    rows={2}
+                    value={childTexts[id] ?? ""}
+                    onChange={(e) => setChildTexts((prev) => ({ ...prev, [id]: e.target.value }))}
+                    placeholder="Dejalo vacío para tomarlo del banco"
+                    className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm text-ink outline-none focus:border-primary"
+                  />
+                </div>
+              );
+            })
+          )}
         </Card>
 
         <div>

@@ -54,16 +54,34 @@ export const POST = withAuth(async (user, req: NextRequest) => {
     return NextResponse.json({ error: "No se encontraron los perfiles hijos seleccionados" }, { status: 404 });
   }
 
-  // Uno para el padre y uno por cada hijo. Se reservan todos antes de crear
-  // nada: una ramificación a la que le falten respuestas no sirve.
+  // Los textos pueden venir escritos desde el formulario o salir del banco.
+  //
+  // Se admiten los dos caminos porque una ramificación se arma alrededor de un
+  // comentario padre concreto —el que se quiere apoyar— y elegirlo a mano es lo
+  // normal; además el banco puede estar vacío, y sin esta salida la función no
+  // se podría usar hasta importar comentarios.
+  const parentText = typeof body.parentText === "string" ? body.parentText.trim() : "";
+  const childTextsRaw: unknown[] = Array.isArray(body.childTexts) ? body.childTexts : [];
+  const childTexts = childTextsRaw.map((t) => (typeof t === "string" ? t.trim() : ""));
+
+  const textosPropios =
+    Boolean(parentText) && childTexts.length === childProfiles.length && childTexts.every(Boolean);
+
   const necesarios = childProfiles.length + 1;
-  const pool = await CommentModel.find({ ownerId: user.objectId, used: false })
-    .sort({ createdAt: 1 })
-    .limit(necesarios);
-  if (pool.length < necesarios) {
+
+  // Solo se toca el banco cuando los textos no vinieron escritos: escribirlos a
+  // mano no debería consumir el stock reservado para otras campañas.
+  const pool = textosPropios
+    ? []
+    : await CommentModel.find({ ownerId: user.objectId, used: false }).sort({ createdAt: 1 }).limit(necesarios);
+
+  if (!textosPropios && pool.length < necesarios) {
     return NextResponse.json(
       {
-        error: `Hacen falta ${necesarios} comentarios del banco (1 padre + ${childProfiles.length} respuestas) y solo hay ${pool.length}. Importa más comentarios o elige menos perfiles.`,
+        error:
+          childTexts.length || parentText
+            ? `Faltan textos: hacen falta 1 para el padre y ${childProfiles.length} para las ramas. Completalos todos o dejalos vacíos para tomarlos del banco (hay ${pool.length} disponibles).`
+            : `Hacen falta ${necesarios} comentarios del banco (1 padre + ${childProfiles.length} respuestas) y solo hay ${pool.length}. Escribilos a mano en el formulario, importa más comentarios, o elegí menos perfiles.`,
       },
       { status: 409 },
     );
@@ -76,7 +94,8 @@ export const POST = withAuth(async (user, req: NextRequest) => {
     typeof body.namePrefix === "string" && body.namePrefix.trim() ? body.namePrefix.trim() : "rama";
   const campaignName = readCampaignName(body, "ramificacion", namePrefix);
 
-  const [textoPadre, ...textosHijos] = pool.map((c) => c.text);
+  const textoPadre = textosPropios ? parentText : pool[0].text;
+  const textosHijos = textosPropios ? childTexts : pool.slice(1).map((c) => c.text);
   const claimedIds = pool.map((c) => c._id);
 
   const padreDoc = {
@@ -145,9 +164,10 @@ export const POST = withAuth(async (user, req: NextRequest) => {
   }
 
   // Recién con todas las tareas creadas se marcan usados los comentarios: si
-  // algo falla antes, el banco queda intacto para reintentar.
+  // algo falla antes, el banco queda intacto para reintentar. Con textos
+  // escritos a mano no hay nada que marcar.
   await Promise.all(
-    [padre, ...resultado.tasks].map((t, i) =>
+    [padre, ...resultado.tasks].slice(0, claimedIds.length).map((t, i) =>
       CommentModel.updateOne(
         { _id: claimedIds[i] },
         { $set: { used: true, usedAt: new Date(), usedByTaskId: t._id } },
