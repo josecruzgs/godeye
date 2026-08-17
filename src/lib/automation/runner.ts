@@ -480,6 +480,50 @@ async function openCommentsWithKeyboard(page: Page, ctx: StepContext) {
 const ABRIR_COMENTARIOS_INTENTOS = 3;
 
 /**
+ * Escribe en una caja de comentario y comprueba que quedó completo.
+ *
+ * `type()` manda tecla por tecla, y el editor de Facebook se re-renderiza
+ * mientras tanto —al expandirse la caja, al aparecer el autocompletado de
+ * menciones o el de emojis— y se come caracteres del medio. Se vio publicado
+ * "Excelente, aestaremos!" donde debía decir "Excelente, ahi estaremos!".
+ *
+ * `insertText` mete el texto entero de una sola vez, así que no hay ventana
+ * para perder nada. Y aun así se relee la caja antes de enviar: publicar un
+ * comentario mutilado no se puede deshacer, y el intento anterior terminaba
+ * además culpando a Facebook de haberlo descartado.
+ */
+async function escribirEnCaja(page: Page, caja: Locator, texto: string, ctx: StepContext) {
+  const normalizar = (valor: string) =>
+    valor
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim();
+  const esperado = normalizar(texto);
+
+  for (let intento = 1; intento <= 2; intento += 1) {
+    await caja.click({ timeout: 5000 }).catch(() => {});
+    await caja.focus({ timeout: 5000 }).catch(() => {});
+    await page.keyboard.insertText(texto);
+    await page.waitForTimeout(600);
+
+    const escrito = normalizar(await caja.innerText().catch(() => ""));
+    if (escrito.includes(esperado)) return;
+
+    if (intento === 2) {
+      throw new Error(
+        `La caja quedó con "${escrito}" en vez de "${esperado}". No se envía para no publicar un comentario ` +
+          `incompleto; suele pasar cuando el editor de Facebook se re-renderiza mientras se escribe.`,
+      );
+    }
+
+    await log(ctx.taskId, "warn", `El texto quedó incompleto en la caja ("${escrito}"); se limpia y se reintenta.`);
+    await page.keyboard.press("Control+A").catch(() => {});
+    await page.keyboard.press("Delete").catch(() => {});
+    await page.waitForTimeout(400);
+  }
+}
+
+/**
  * Si la tarea publica un comentario en una publicación.
  *
  * El padre de una ramificación hace exactamente eso —lo único distinto es que
@@ -1245,9 +1289,8 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
       // pasa cuando la caja está tapada por alguna capa.
       const caja = await firstVisibleLocator(page, FACEBOOK_REPLY_BOX_SELECTOR, 12000).catch(() => null);
       if (caja) {
-        await caja.click({ timeout: 5000 }).catch(() => {});
-        await caja.type(texto, { delay: 60, timeout: timeoutMs });
-        await page.waitForTimeout(800);
+        await escribirEnCaja(page, caja, texto, ctx);
+        await page.waitForTimeout(500);
         await caja.press("Enter", { timeout: timeoutMs });
       } else {
         const enfocada = await page
@@ -1265,7 +1308,7 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
         }
 
         await log(ctx.taskId, "warn", "La caja de respuesta no matcheó ningún selector; se escribe sobre el foco actual.");
-        await page.keyboard.type(texto, { delay: 60 });
+        await page.keyboard.insertText(texto);
         await page.waitForTimeout(800);
         await page.keyboard.press("Enter");
       }
@@ -1404,8 +1447,17 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
         const selector = selectorForStep(step.selector, ctx);
         await prepareSelectorTarget(page, step.selector, ctx);
         const target = await firstVisibleLocator(page, selector, step.ms ?? DEFAULT_ACTION_TIMEOUT_MS);
-        await target.click({ timeout: 5000 }).catch(() => {});
-        await target.type(step.value ?? "", { delay: 60, timeout: step.ms ?? DEFAULT_ACTION_TIMEOUT_MS });
+
+        // Solo la caja de comentario pasa por la escritura verificada: es la
+        // que se re-renderiza mientras uno tipea. En un formulario común
+        // conviene seguir mandando teclas de verdad, que es lo que esperan sus
+        // validaciones al vuelo.
+        if (esTareaDeComentario(ctx.taskType) && isFacebookCommentBoxSelector(step.selector)) {
+          await escribirEnCaja(page, target, step.value ?? "", ctx);
+        } else {
+          await target.click({ timeout: 5000 }).catch(() => {});
+          await target.type(step.value ?? "", { delay: 60, timeout: step.ms ?? DEFAULT_ACTION_TIMEOUT_MS });
+        }
       }
       return;
     case "press":
