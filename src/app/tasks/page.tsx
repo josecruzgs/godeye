@@ -30,24 +30,30 @@ type Task = {
   createdAt: string;
   steps?: { action: string; url?: string }[];
   resultUrl?: string;
+  resultProfileUrl?: string;
 };
 
 /**
- * A dónde lleva el botón de comprobar, y con qué etiqueta.
+ * Los enlaces externos de una tarea, en orden de utilidad.
  *
- * Se prefiere `resultUrl` —el permalink del comentario, que el runner captura
- * al publicarlo— porque cae justo en el comentario. Cuando no está (tareas de
- * like, o comentarios anteriores a que se capturara) se cae al `goto` del
- * primer paso, que es la publicación: menos preciso, pero siempre disponible
- * sin agregar un campo ni volver a preguntarle nada a Facebook.
+ * Son hasta tres destinos distintos y cada uno responde una pregunta:
+ * "Ver comentario" lleva al comentario publicado, "Perfil" a la cuenta que lo
+ * puso, y "Ver publicación" al posteo — este último solo cuando no hay nada
+ * más preciso (tareas de like, o comentarios anteriores a que se capturaran
+ * los otros dos).
  *
- * Devuelve `undefined` en las tareas que no navegan a ningún lado (una hecha
- * a mano, por ejemplo); ahí no se dibuja el enlace en vez de dejar uno muerto.
+ * Devuelve una lista vacía en las tareas que no navegan a ningún lado (una
+ * hecha a mano, por ejemplo); ahí no se dibuja ningún enlace muerto.
  */
-function comprobacionDeLaTarea(task: Task): { url: string; label: string } | undefined {
-  if (task.resultUrl) return { url: task.resultUrl, label: "Ver comentario" };
+function enlacesDeLaTarea(task: Task): { url: string; label: string }[] {
+  const enlaces: { url: string; label: string }[] = [];
+
+  if (task.resultUrl) enlaces.push({ url: task.resultUrl, label: "Ver comentario" });
+  if (task.resultProfileUrl) enlaces.push({ url: task.resultProfileUrl, label: "Perfil" });
+  if (enlaces.length) return enlaces;
+
   const goto = task.steps?.find((s) => s.action === "goto" && s.url)?.url;
-  return goto ? { url: goto, label: "Ver publicación" } : undefined;
+  return goto ? [{ url: goto, label: "Ver publicación" }] : [];
 }
 
 type Profile = { _id: string; name: string };
@@ -324,7 +330,7 @@ function TasksContent() {
                 </tr>
               ) : (
                 tasks.map((t) => {
-                  const comprobacion = comprobacionDeLaTarea(t);
+                  const enlaces = enlacesDeLaTarea(t);
                   return (
                   <tr key={t._id} className="border-t border-hairline transition-colors hover:bg-page/60">
                     <td className="px-4 py-3 font-medium text-ink">
@@ -338,20 +344,21 @@ function TasksContent() {
                     <td className="px-4 py-3 text-ink-secondary">{new Date(t.scheduledAt).toLocaleString()}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">
-                        {comprobacion && (
+                        {enlaces.map((enlace) => (
                           // rel="noreferrer" además de noopener: es un sitio
                           // externo y no tiene por qué saber de dónde viene.
                           <a
-                            href={comprobacion.url}
+                            key={enlace.label}
+                            href={enlace.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            title={comprobacion.url}
+                            title={enlace.url}
                             className="inline-flex items-center gap-1 rounded-lg border border-hairline px-2.5 py-1 text-xs font-medium transition-colors hover:bg-page"
                           >
                             <ExternalLink className="h-3 w-3" />
-                            {comprobacion.label}
+                            {enlace.label}
                           </a>
-                        )}
+                        ))}
                         <button
                           disabled={busyId === t._id || t.status === "running" || t.status === "queued"}
                           onClick={() => runTask(t._id)}

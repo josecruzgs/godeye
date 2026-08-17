@@ -220,8 +220,8 @@ type StepContext = {
   taskId: string;
   profileName: string;
   taskType: string;
-  /** Lo llama "captureComment" con el permalink de lo que se publicó. */
-  onResultUrl?: (url: string) => void;
+  /** Lo llama "captureComment" con el permalink del comentario y el perfil del autor. */
+  onResult?: (r: { url: string | null; perfilUrl: string | null }) => void;
   /** La publicación a la que la tarea navegó al arrancar. Ver ensureOnTargetUrl. */
   targetUrl?: string;
 };
@@ -636,12 +636,12 @@ async function defineEsbuildNameHelper(page: Page) {
  *
  * Devuelve null si no lo encuentra; el que llama decide si eso es un fallo.
  */
-type CommentProbe = { encontrado: boolean; url: string | null };
+type CommentProbe = { encontrado: boolean; url: string | null; perfilUrl: string | null };
 
 async function findPublishedComment(page: Page, texto: string): Promise<CommentProbe> {
   await defineEsbuildNameHelper(page);
   return page.evaluate((texto: string): CommentProbe => {
-    const ausente: CommentProbe = { encontrado: false, url: null };
+    const ausente: CommentProbe = { encontrado: false, url: null, perfilUrl: null };
 
     // Se comparan solo letras y números. Facebook reescribe lo que uno tipea
     // antes de renderizarlo —":)" sale como 🙂, y ahí una comparación literal
@@ -671,27 +671,65 @@ async function findPublishedComment(page: Page, texto: string): Promise<CommentP
       break;
     }
 
-    // El permalink no está en el texto sino en el ancla de la fecha, que suele
-    // ser hermana y no descendiente; por eso se sube unos niveles buscándola.
-    // Que no aparezca no significa que el comentario no esté: recién publicado
-    // Facebook tarda en darle enlace propio, y en el panel de un reel a veces
-    // no se lo da nunca. Por eso el hallazgo y el link van separados.
-    let nodo: Element | null = comentario;
-    for (let nivel = 0; nivel < 6 && nodo; nivel += 1) {
-      const ancla = Array.from(nodo.querySelectorAll("a[href]")).find((el) =>
-        /(^|[?&])(reply_)?comment_id=/.test(el.getAttribute("href") ?? ""),
-      );
-      if (ancla) {
-        try {
-          return { encontrado: true, url: new URL(ancla.getAttribute("href") ?? "", location.origin).href };
-        } catch {
-          break;
-        }
+    // Los enlaces del comentario están fuera del texto (son hermanos, no
+    // descendientes), así que se sube hasta el primer contenedor que tenga
+    // alguno con `comment_id`.
+    let contenedor: Element | null = comentario;
+    let anclas: HTMLAnchorElement[] = [];
+    for (let nivel = 0; nivel < 6 && contenedor; nivel += 1) {
+      const encontradas = Array.from(contenedor.querySelectorAll("a[href]")) as HTMLAnchorElement[];
+      if (encontradas.some((el) => /(^|[?&])(reply_)?comment_id=/.test(el.getAttribute("href") ?? ""))) {
+        anclas = encontradas;
+        break;
       }
-      nodo = nodo.parentElement;
+      contenedor = contenedor.parentElement;
     }
 
-    return { encontrado: true, url: null };
+    const absoluta = (el: HTMLAnchorElement) => {
+      try {
+        return new URL(el.getAttribute("href") ?? "", location.origin).href;
+      } catch {
+        return null;
+      }
+    };
+
+    // Dentro de un comentario hay al menos dos enlaces y los DOS llevan
+    // `comment_id`: el del nombre del autor y el de la hora. Solo el de la hora
+    // es el permalink; el del nombre abre el perfil. Se distinguen por el
+    // texto: la hora es corta y relativa ("2 min", "18 h", "Ahora").
+    // Exige un número (o "ahora"). Sin eso, "Responder" —que también es un
+    // enlace dentro del comentario— pasaba por hora.
+    const esHora = (valor: string) =>
+      valor.length <= 14 && /^(ahora|(hace\s+)?\d+\s*[a-záéíóú]{0,10})$/i.test(valor);
+
+    const conComentario = anclas.filter((el) => /(^|[?&])(reply_)?comment_id=/.test(el.getAttribute("href") ?? ""));
+    const permalink =
+      conComentario.find((el) => esHora((el.textContent ?? "").trim())) ?? conComentario[conComentario.length - 1];
+
+    // El perfil del que comentó: el enlace del nombre. Se le sacan los
+    // parámetros, que traen el comment_id y basura de seguimiento.
+    const autor = anclas.find((el) => {
+      const texto = (el.textContent ?? "").trim();
+      return texto.length > 0 && !esHora(texto);
+    });
+
+    let perfilUrl: string | null = null;
+    if (autor) {
+      const cruda = absoluta(autor);
+      if (cruda) {
+        try {
+          const u = new URL(cruda);
+          perfilUrl = `${u.origin}${u.pathname}`;
+        } catch {
+          perfilUrl = cruda;
+        }
+      }
+    }
+
+    // Que no haya permalink no significa que el comentario no esté: recién
+    // publicado Facebook tarda en darle enlace propio, y en el panel de un reel
+    // a veces no se lo da nunca. Por eso el hallazgo y el link van separados.
+    return { encontrado: true, url: permalink ? absoluta(permalink) : null, perfilUrl };
   }, texto);
 }
 
@@ -702,7 +740,7 @@ async function findPublishedComment(page: Page, texto: string): Promise<CommentP
  */
 async function waitForPublishedComment(page: Page, texto: string, timeoutMs: number): Promise<CommentProbe> {
   const limite = Date.now() + timeoutMs;
-  let ultimo: CommentProbe = { encontrado: false, url: null };
+  let ultimo: CommentProbe = { encontrado: false, url: null, perfilUrl: null };
   for (;;) {
     ultimo = await findPublishedComment(page, texto);
     // Con el comentario ya encontrado se sigue esperando un poco por su
@@ -944,16 +982,18 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
         );
       }
 
+      ctx.onResult?.({ url: probe.url, perfilUrl: probe.perfilUrl });
+
       // Lo que se verifica es que el comentario esté. El permalink es un
       // extra: en el panel de un reel Facebook a veces no le da enlace propio,
       // y quedarse sin él no es motivo para dar la tarea por fallida.
-      if (!probe.url) {
-        await log(ctx.taskId, "info", "Comentario publicado y verificado (Facebook no le dio enlace propio).");
-        return;
-      }
-
-      ctx.onResultUrl?.(probe.url);
-      await log(ctx.taskId, "info", `Comentario publicado y verificado: ${probe.url}`);
+      await log(
+        ctx.taskId,
+        "info",
+        probe.url
+          ? `Comentario publicado y verificado: ${probe.url}`
+          : "Comentario publicado y verificado (Facebook no le dio enlace propio).",
+      );
       return;
     }
     case "likeComment": {
@@ -1128,8 +1168,9 @@ export async function runTask(taskId: string) {
           profileName: profile.name,
           taskType: task.type,
           targetUrl,
-          onResultUrl: (url) => {
-            task.resultUrl = url;
+          onResult: ({ url, perfilUrl }) => {
+            if (url) task.resultUrl = url;
+            if (perfilUrl) task.resultProfileUrl = perfilUrl;
           },
         });
       } catch (err) {

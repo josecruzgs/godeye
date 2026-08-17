@@ -78,6 +78,11 @@ const TaskSchema = new Schema(
     // "captureComment" (ver runner.ts) y sirve para ir a comprobarlo sin
     // tener que buscarlo a mano dentro del post.
     resultUrl: { type: String },
+    // El perfil de Facebook del que comentó, sacado del enlace del nombre
+    // dentro del propio comentario. Va aparte de resultUrl porque son dos
+    // destinos distintos y los dos sirven: uno para leer el comentario, otro
+    // para ver la cuenta que lo puso.
+    resultProfileUrl: { type: String },
   },
   { timestamps: true },
 );
@@ -100,6 +105,7 @@ function isStaleTaskModel() {
   if (!schema.path("campaignId")) return true;
   if (!schema.path("ownerId")) return true;
   if (!schema.path("resultUrl")) return true;
+  if (!schema.path("resultProfileUrl")) return true;
   const types = (schema.path("type") as { enumValues?: string[] }).enumValues ?? [];
   return !types.includes("likecomment");
 }
