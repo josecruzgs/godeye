@@ -326,6 +326,30 @@ async function describeVisibleButtons(page: Page) {
  * Se comparan solo los pathname: el visor le agrega y le saca parámetros a la
  * URL sin cambiar de publicación.
  */
+/**
+ * Frena el autoavance del visor de Reels.
+ *
+ * El visor pasa al siguiente video cuando el actual termina, y un reel dura
+ * segundos: entre abrir la página, cerrar capas, abrir comentarios y escribir,
+ * la tarea se quedaba comentando en otra publicación. Volver desde ahí ya
+ * costaba perder el texto escrito.
+ *
+ * Se toca el elemento <video> directo en vez de buscar un botón de pausa: no
+ * depende de rótulos ni de idioma, y `loop` evita el evento "ended", que es el
+ * que dispara el salto. Es idempotente y hay que repetirlo, porque Facebook
+ * monta elementos nuevos a medida que uno navega el visor.
+ */
+async function freezeReelPlayback(page: Page) {
+  await page
+    .evaluate(() => {
+      for (const video of Array.from(document.querySelectorAll("video"))) {
+        video.loop = true;
+        video.pause();
+      }
+    })
+    .catch(() => {});
+}
+
 function rutaDePublicacion(valor: string) {
   try {
     return new URL(valor).pathname.replace(/\/+$/, "");
@@ -364,6 +388,7 @@ async function ensureOnTargetUrl(page: Page, ctx: StepContext) {
   await log(ctx.taskId, "warn", `El visor se movió a otra publicación (${actual}); se vuelve a la de la tarea.`);
   await gotoPage(page, objetivo, DEFAULT_GOTO_TIMEOUT_MS, ctx);
   await page.waitForTimeout(2500);
+  await freezeReelPlayback(page);
 }
 
 /** Cierra la capa de sugerencias, si la hay. Devuelve si cerró alguna. */
@@ -425,6 +450,10 @@ async function prepareSelectorTarget(page: Page, rawSelector: string, ctx: StepC
   // la función salía por acá contenta y se terminaba comentando en la
   // publicación equivocada.
   await ensureOnTargetUrl(page, ctx);
+
+  // Congelar el video antes de tocar nada: si sigue corriendo, cualquier
+  // espera de las que vienen es una oportunidad para que el visor derive.
+  await freezeReelPlayback(page);
 
   if (await hasVisibleLocator(page, FACEBOOK_COMMENT_BOX_SELECTOR)) return;
 
