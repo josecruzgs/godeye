@@ -326,20 +326,40 @@ async function describeVisibleButtons(page: Page) {
  * Se comparan solo los pathname: el visor le agrega y le saca parámetros a la
  * URL sin cambiar de publicación.
  */
+function rutaDePublicacion(valor: string) {
+  try {
+    return new URL(valor).pathname.replace(/\/+$/, "");
+  } catch {
+    return valor;
+  }
+}
+
+/**
+ * Corta la tarea si el navegador ya no está en la publicación pedida.
+ *
+ * Se usa donde volver ya no sirve porque el daño sería irreversible: una vez
+ * escrito el comentario, renavegar lo pierde, y enviarlo lo publica en la
+ * publicación equivocada. Fallar es el único desenlace honesto.
+ */
+async function assertOnTargetUrl(page: Page, ctx: StepContext) {
+  const objetivo = ctx.targetUrl;
+  if (!objetivo) return;
+
+  const actual = page.url();
+  if (rutaDePublicacion(actual) === rutaDePublicacion(objetivo)) return;
+
+  throw new Error(
+    `El visor se movió a otra publicación (${actual}) con el comentario ya escrito. Se aborta para no ` +
+      `publicarlo donde no corresponde. Suele pasar en reels, que se pasan solos al siguiente video.`,
+  );
+}
+
 async function ensureOnTargetUrl(page: Page, ctx: StepContext) {
   const objetivo = ctx.targetUrl;
   if (!objetivo) return;
 
-  const rutaDe = (valor: string) => {
-    try {
-      return new URL(valor).pathname.replace(/\/+$/, "");
-    } catch {
-      return valor;
-    }
-  };
-
   const actual = page.url();
-  if (rutaDe(actual) === rutaDe(objetivo)) return;
+  if (rutaDePublicacion(actual) === rutaDePublicacion(objetivo)) return;
 
   await log(ctx.taskId, "warn", `El visor se movió a otra publicación (${actual}); se vuelve a la de la tarea.`);
   await gotoPage(page, objetivo, DEFAULT_GOTO_TIMEOUT_MS, ctx);
@@ -398,6 +418,14 @@ const ABRIR_COMENTARIOS_INTENTOS = 3;
 
 async function prepareSelectorTarget(page: Page, rawSelector: string, ctx: StepContext) {
   if (ctx.taskType !== "comment" || !isFacebookCommentBoxSelector(rawSelector)) return;
+
+  // La comprobación de publicación va ANTES de darse por satisfecho con la
+  // caja visible. Al revés —que es como estaba— el visor podía haberse pasado
+  // a otro reel, y como ese otro reel también muestra su caja de comentarios,
+  // la función salía por acá contenta y se terminaba comentando en la
+  // publicación equivocada.
+  await ensureOnTargetUrl(page, ctx);
+
   if (await hasVisibleLocator(page, FACEBOOK_COMMENT_BOX_SELECTOR)) return;
 
   // Se reintenta porque en el visor de Reels esto no es determinista: los
@@ -719,7 +747,13 @@ async function findPublishedComment(page: Page, texto: string): Promise<CommentP
       if (cruda) {
         try {
           const u = new URL(cruda);
-          perfilUrl = `${u.origin}${u.pathname}`;
+          // Se conserva `id` y se descarta todo lo demás. Los perfiles sin
+          // nombre de usuario son `/profile.php?id=100058…`: ahí el
+          // identificador está en la query, y limpiarla entera deja un
+          // `profile.php` pelado que abre el perfil de quien esté logueado.
+          // El resto de los parámetros son el comment_id y seguimiento.
+          const id = u.searchParams.get("id");
+          perfilUrl = id ? `${u.origin}${u.pathname}?id=${encodeURIComponent(id)}` : `${u.origin}${u.pathname}`;
         } catch {
           perfilUrl = cruda;
         }
@@ -982,6 +1016,17 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
         );
       }
 
+      // Encontrar el comentario no alcanza: hay que confirmar que quedó en la
+      // publicación pedida. Sin esto, un comentario publicado en el reel al que
+      // el visor derivó daba la tarea por EXITOSA — el error más caro posible,
+      // porque no deja rastro de que algo salió mal.
+      if (ctx.targetUrl && probe.url && rutaDePublicacion(probe.url) !== rutaDePublicacion(ctx.targetUrl)) {
+        throw new Error(
+          `El comentario se publicó en otra publicación (${probe.url}) en vez de la pedida. El visor se movió ` +
+            `durante la tarea. Hay que borrarlo a mano.`,
+        );
+      }
+
       ctx.onResult?.({ url: probe.url, perfilUrl: probe.perfilUrl });
 
       // Lo que se verifica es que el comentario esté. El permalink es un
@@ -1077,6 +1122,10 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
       return;
     case "press":
       if (!step.key) throw new Error("Step 'press' requiere 'key'");
+      // Enviar es el punto de no retorno: si el visor derivó mientras se
+      // escribía, el texto está en la caja de otra publicación y presionar
+      // Enter lo publica ahí.
+      if (ctx.taskType === "comment") await assertOnTargetUrl(page, ctx);
       if (step.selector) {
         const selector = selectorForStep(step.selector, ctx);
         await prepareSelectorTarget(page, step.selector, ctx);
