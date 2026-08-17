@@ -758,11 +758,39 @@ async function findPublishedComment(page: Page, texto: string): Promise<CommentP
     // Exige un número (o "ahora"). Sin eso, "Responder" —que también es un
     // enlace dentro del comentario— pasaba por hora.
     const esHora = (valor: string) =>
-      valor.length <= 14 && /^(ahora|(hace\s+)?\d+\s*[a-záéíóú]{0,10})$/i.test(valor);
+      valor.length <= 14 && /^(ahora|just now|now|(hace\s+)?\d+\s*[a-záéíóú]{0,10})$/i.test(valor);
 
-    const conComentario = anclas.filter((el) => /(^|[?&])(reply_)?comment_id=/.test(el.getAttribute("href") ?? ""));
+    // Al enviar, Facebook pinta el comentario al instante con un id provisorio
+    // del navegador (`comment_id=client:4fc59b57-…`) y recién después lo
+    // reemplaza por el definitivo que asigna el servidor. Guardar el provisorio
+    // deja un enlace que no le sirve a nadie, así que se descarta y se sigue
+    // esperando al de verdad.
+    const esProvisorio = (href: string) => /(^|[?&])(reply_)?comment_id=client(%3A|:)/i.test(href);
+
+    const conComentario = anclas.filter((el) => {
+      const href = el.getAttribute("href") ?? "";
+      return /(^|[?&])(reply_)?comment_id=/.test(href) && !esProvisorio(href);
+    });
+
+    // El permalink apunta a la publicación; el link del nombre, al perfil del
+    // autor. Comparar la ruta es lo que mejor los separa —no depende del idioma
+    // ni de que la hora ya se haya renderizado— y es justo lo que faltaba
+    // cuando se guardó un `profile.php` como si fuera el comentario.
+    const rutaActual = location.pathname.replace(/\/+$/, "");
+    const mismaRuta = (el: HTMLAnchorElement) => {
+      try {
+        return new URL(el.getAttribute("href") ?? "", location.origin).pathname.replace(/\/+$/, "") === rutaActual;
+      } catch {
+        return false;
+      }
+    };
+
+    // Sin candidato bueno se prefiere no devolver nada: un permalink
+    // equivocado es peor que ninguno, porque el resto del sistema lo cree.
     const permalink =
-      conComentario.find((el) => esHora((el.textContent ?? "").trim())) ?? conComentario[conComentario.length - 1];
+      conComentario.find((el) => mismaRuta(el) && esHora((el.textContent ?? "").trim())) ??
+      conComentario.find((el) => mismaRuta(el)) ??
+      null;
 
     // El perfil del que comentó: el enlace del nombre. Se le sacan los
     // parámetros, que traen el comment_id y basura de seguimiento.

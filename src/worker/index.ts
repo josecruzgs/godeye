@@ -146,11 +146,27 @@ async function main() {
     `[worker] ${HOST} · roles: ${ROLES.join(" + ")} · poll cada ${POLL_INTERVAL_MS}ms`,
   );
 
-  while (!stopping) {
-    await heartbeat();
-    if (ROLES.includes("tasks")) await tick();
-    if (ROLES.includes("listening")) await listeningTick();
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+  // El latido va en su propio temporizador, no dentro del bucle de trabajo.
+  //
+  // Latir una vez por vuelta parecía suficiente, pero `tick()` ejecuta una
+  // tarea entera —abrir el navegador en AdsPower, navegar, publicar, cerrar—,
+  // y eso tarda bastante más que los tres intervalos que la web usa para dar
+  // el worker por vivo. Resultado: el chip de la barra superior pasaba a "SOLO
+  // ESCUCHA" cada vez que había una tarea corriendo, es decir, justo cuando el
+  // worker estaba más ocupado, y volvía a "EN VIVO" al terminar.
+  await heartbeat();
+  const latido = setInterval(() => {
+    heartbeat().catch((err) => console.error("[worker] latido falló:", err));
+  }, POLL_INTERVAL_MS);
+
+  try {
+    while (!stopping) {
+      if (ROLES.includes("tasks")) await tick();
+      if (ROLES.includes("listening")) await listeningTick();
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+    }
+  } finally {
+    clearInterval(latido);
   }
 
   console.log("[worker] detenido");
