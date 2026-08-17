@@ -5,6 +5,7 @@ import TaskModel from "@/lib/models/Task";
 import TaskLogModel from "@/lib/models/TaskLog";
 import ProfileModel from "@/lib/models/Profile";
 import { connectToProfile, disconnectProfile } from "./browser";
+import { parseFacebookCommentTarget } from "@/lib/commentLinks";
 
 type Step = {
   action:
@@ -20,15 +21,22 @@ type Step = {
     | "scroll"
     | "uploadFile"
     | "likeComment"
-    | "captureComment";
+    | "captureComment"
+    | "replyComment";
   selector?: string;
   value?: string;
   url?: string;
   key?: string;
   ms?: number;
-  // Solo para "likeComment".
+  // Para "likeComment" y "replyComment".
   commentId?: string;
   reactionSelector?: string;
+  /**
+   * El `commentId` —y la `url` del goto— salen del comentario que publicó la
+   * tarea padre, no se saben al crear la campaña. Los resuelve runTask antes
+   * de ejecutar. Ver Ramificaciones.
+   */
+  fromParent?: boolean;
   // Si el step falla (ej. un selector que no siempre aparece, como un
   // interstitial de "una sola vez"), se loguea como advertencia y la tarea
   // sigue en vez de terminar en "failed".
@@ -164,6 +172,35 @@ const FACEBOOK_ALREADY_LIKED_SELECTOR = labelSelectors(FACEBOOK_UNLIKE_LABELS);
  * y capas encima.
  */
 const FACEBOOK_COMMENT_LIKE_MARK = "data-godeye-comment-like";
+
+/** Cómo se rotula el botón de responder, por idioma de la interfaz. */
+const FACEBOOK_REPLY_LABELS = [
+  "Responder",
+  "Reply",
+  "Répondre",
+  "Rispondi",
+  "Antworten",
+  "Responder a",
+];
+
+/** El mismo truco del marcado, para el botón de responder. Ver FACEBOOK_COMMENT_LIKE_MARK. */
+const FACEBOOK_COMMENT_REPLY_MARK = "data-godeye-comment-reply";
+
+/**
+ * La caja de una respuesta, que NO es la del post.
+ *
+ * Al abrir "Responder" aparece un segundo `textbox` rotulado con "respuesta"
+ * en vez de "comentario". Reutilizar el selector del comentario escribía en la
+ * caja del post —o sea, un comentario suelto en vez de una respuesta al hilo—,
+ * que es justo lo que Ramificaciones no quiere.
+ */
+const FACEBOOK_REPLY_BOX_SELECTOR = [
+  'div[role="textbox"][contenteditable="true"][aria-label*="respuesta" i]',
+  'div[role="textbox"][contenteditable="true"][aria-label*="reply" i]',
+  'div[role="textbox"][contenteditable="true"][aria-placeholder*="respuesta" i]',
+  'div[role="textbox"][contenteditable="true"][aria-placeholder*="reply" i]',
+  'div[role="textbox"][contenteditable="true"][aria-label*="responde" i]',
+].join(", ");
 
 /** Botones de "ver más comentarios/respuestas" que pueden estar escondiendo el comentario. */
 const FACEBOOK_MORE_COMMENTS_SELECTOR = [
@@ -442,8 +479,20 @@ async function openCommentsWithKeyboard(page: Page, ctx: StepContext) {
 
 const ABRIR_COMENTARIOS_INTENTOS = 3;
 
+/**
+ * Si la tarea publica un comentario en una publicación.
+ *
+ * El padre de una ramificación hace exactamente eso —lo único distinto es que
+ * después se le cuelgan hijos—, así que necesita el mismo trato que una tarea
+ * de comentario: abrir el panel, escribir con la caja tapada, y las guardias
+ * que evitan publicar en la publicación equivocada.
+ */
+function esTareaDeComentario(taskType: string) {
+  return taskType === "comment" || taskType === "ramificacion";
+}
+
 async function prepareSelectorTarget(page: Page, rawSelector: string, ctx: StepContext) {
-  if (ctx.taskType !== "comment" || !isFacebookCommentBoxSelector(rawSelector)) return;
+  if (!esTareaDeComentario(ctx.taskType) || !isFacebookCommentBoxSelector(rawSelector)) return;
 
   // La comprobación de publicación va ANTES de darse por satisfecho con la
   // caja visible. Al revés —que es como estaba— el visor podía haberse pasado
@@ -974,6 +1023,117 @@ async function resolveFacebookCommentLike(
   return probe;
 }
 
+/**
+ * Igual que markFacebookCommentLike pero marcando el botón de responder.
+ *
+ * Comparte con aquella la parte difícil —ubicar el comentario por su
+ * `comment_id`, que puede venir escapado o en base64, y subir a su contenedor—
+ * porque es exactamente el mismo problema. Lo que cambia es a qué botón se
+ * baja después.
+ */
+async function markFacebookCommentReply(page: Page, commentId: string): Promise<CommentLikeProbe> {
+  await defineEsbuildNameHelper(page);
+  return page.evaluate(
+    ({ commentId, mark, replyLabels }): CommentLikeProbe => {
+      const sameLabel = (value: string, label: string) =>
+        value.trim().localeCompare(label, undefined, { sensitivity: "base" }) === 0;
+      const matchesAny = (value: string, labels: string[]) =>
+        Boolean(value.trim()) && labels.some((label) => sameLabel(value, label));
+
+      for (const marked of Array.from(document.querySelectorAll(`[${mark}]`))) {
+        marked.removeAttribute(mark);
+      }
+
+      const wantedIds = [commentId];
+      const encoded = encodeURIComponent(commentId);
+      if (encoded !== commentId) wantedIds.push(encoded);
+
+      const patterns = wantedIds.map(
+        (id) => new RegExp(`(^|[?&])(reply_)?comment_id=${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(&|#|$)`),
+      );
+
+      const hrefMatches = (href: string) => {
+        const variants = [href];
+        try {
+          const decoded = decodeURIComponent(href);
+          if (decoded !== href) variants.push(decoded);
+        } catch {
+          // href con escapes inválidos: basta con la forma cruda
+        }
+        return variants.some((variant) => patterns.some((pattern) => pattern.test(variant)));
+      };
+
+      const anchors = Array.from(document.querySelectorAll("a[href]")).filter((a) =>
+        hrefMatches(a.getAttribute("href") ?? ""),
+      );
+      if (!anchors.length) {
+        const articles = document.querySelectorAll('[role="article"]').length;
+        return { status: "not_found", detail: `${articles} comentario(s) renderizado(s) en la página` };
+      }
+
+      const article = anchors.map((a) => a.closest('[role="article"]')).find(Boolean);
+      if (!article) {
+        return {
+          status: "no_article",
+          detail: `${anchors.length} link(s) con ese id, ninguno dentro de un contenedor de comentario`,
+        };
+      }
+
+      // Solo los botones de este comentario, no los de sus respuestas anidadas:
+      // responderle a una respuesta cuelga la rama del lugar equivocado.
+      const buttons = Array.from(article.querySelectorAll('[role="button"]')).filter(
+        (button) => button.closest('[role="article"]') === article,
+      );
+
+      const labelOf = (el: Element) => el.getAttribute("aria-label") ?? "";
+      const textOf = (el: Element) => (el as HTMLElement).innerText || el.textContent || "";
+      const replyButton = buttons.find(
+        (el) => matchesAny(labelOf(el), replyLabels) || matchesAny(textOf(el), replyLabels),
+      );
+
+      if (!replyButton) {
+        return {
+          status: "no_button",
+          detail: `${buttons.length} botón(es) en el comentario, ninguno rotulado como "Responder"`,
+        };
+      }
+
+      replyButton.setAttribute(mark, "1");
+      article.scrollIntoView({ block: "center" });
+      return { status: "ready", detail: "" };
+    },
+    { commentId, mark: FACEBOOK_COMMENT_REPLY_MARK, replyLabels: FACEBOOK_REPLY_LABELS },
+  );
+}
+
+/** Reintenta abriendo "ver más comentarios", igual que para los likes. */
+async function resolveFacebookCommentReply(
+  page: Page,
+  commentId: string,
+  timeoutMs: number,
+  ctx: StepContext,
+): Promise<CommentLikeProbe> {
+  const deadline = Date.now() + timeoutMs;
+  let probe = await markFacebookCommentReply(page, commentId);
+  let expansions = 0;
+
+  while (probe.status === "not_found" && Date.now() < deadline) {
+    await assertNoKnownBlocker(page);
+
+    if (expansions < FACEBOOK_MAX_COMMENT_EXPANSIONS && (await hasVisibleLocator(page, FACEBOOK_MORE_COMMENTS_SELECTOR))) {
+      expansions += 1;
+      await log(ctx.taskId, "info", `El comentario aún no está cargado; abriendo más comentarios (intento ${expansions}).`);
+      const target = await firstClickableLocator(page, FACEBOOK_MORE_COMMENTS_SELECTOR, 3000).catch(() => null);
+      if (target) await target.locator.click({ position: target.position, timeout: 3000 }).catch(() => {});
+    }
+
+    await page.waitForTimeout(1000);
+    probe = await markFacebookCommentReply(page, commentId);
+  }
+
+  return probe;
+}
+
 function commentProbeError(probe: CommentLikeProbe, commentId: string) {
   const suffix = probe.detail ? ` (${probe.detail})` : "";
   switch (probe.status) {
@@ -1029,7 +1189,7 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
           // Antes de rendirse se reintenta destapar: al abrir el panel de
           // comentarios Facebook a veces encima una capa nueva, distinta de la
           // que se cerró para llegar hasta acá.
-          if (ctx.taskType === "comment" && pointerBlocked && isFacebookCommentBoxSelector(step.selector)) {
+          if (esTareaDeComentario(ctx.taskType) && pointerBlocked && isFacebookCommentBoxSelector(step.selector)) {
             if (await dismissFacebookOverlays(page, ctx)) {
               const reintento = await firstClickableLocator(page, selector, 3000).catch(() => null);
               if (reintento) {
@@ -1062,6 +1222,76 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
         }
       }
       return;
+    case "replyComment": {
+      const commentId = step.commentId?.trim();
+      const texto = step.value?.trim();
+      if (!commentId) throw new Error("Step 'replyComment' requiere 'commentId'");
+      if (!texto) throw new Error("Step 'replyComment' requiere 'value' con el texto de la respuesta");
+
+      const timeoutMs = step.ms ?? DEFAULT_ACTION_TIMEOUT_MS;
+      const probe = await resolveFacebookCommentReply(page, commentId, timeoutMs, ctx);
+      if (probe.status !== "ready") {
+        throw new Error(commentProbeError(probe, commentId).replace('"Me gusta"', '"Responder"'));
+      }
+
+      const marcado = `[${FACEBOOK_COMMENT_REPLY_MARK}]`;
+      const boton = await firstClickableLocator(page, marcado, DEFAULT_CLICK_TIMEOUT_MS);
+      await boton.locator.click({ position: boton.position, timeout: DEFAULT_CLICK_TIMEOUT_MS });
+      await page.waitForTimeout(1200);
+
+      // Facebook suele dejar el cursor dentro de la caja de respuesta apenas se
+      // abre. Se prefiere igual el selector —es más explícito y deja el error
+      // claro si algo cambió— y solo se cae al teclado cuando no aparece, que
+      // pasa cuando la caja está tapada por alguna capa.
+      const caja = await firstVisibleLocator(page, FACEBOOK_REPLY_BOX_SELECTOR, 12000).catch(() => null);
+      if (caja) {
+        await caja.click({ timeout: 5000 }).catch(() => {});
+        await caja.type(texto, { delay: 60, timeout: timeoutMs });
+        await page.waitForTimeout(800);
+        await caja.press("Enter", { timeout: timeoutMs });
+      } else {
+        const enfocada = await page
+          .evaluate(() => {
+            const el = document.activeElement as HTMLElement | null;
+            return Boolean(el && (el.isContentEditable || el.getAttribute("role") === "textbox"));
+          })
+          .catch(() => false);
+
+        if (!enfocada) {
+          throw new Error(
+            `Se abrió "Responder" en el comentario ${commentId} pero no apareció la caja de respuesta. ` +
+              `Botones visibles: ${await describeVisibleButtons(page)}`,
+          );
+        }
+
+        await log(ctx.taskId, "warn", "La caja de respuesta no matcheó ningún selector; se escribe sobre el foco actual.");
+        await page.keyboard.type(texto, { delay: 60 });
+        await page.waitForTimeout(800);
+        await page.keyboard.press("Enter");
+      }
+
+      await page.waitForTimeout(1500);
+
+      // Misma verificación que para un comentario suelto: sin esto la respuesta
+      // se daría por puesta apenas se termina de teclear.
+      const publicada = await waitForPublishedComment(page, texto, timeoutMs);
+      if (!publicada.encontrado) {
+        throw new Error(
+          "La respuesta no apareció en el hilo después de enviarla. Puede que Facebook la haya descartado, " +
+            "que el perfil esté limitado, o que el comentario ya no acepte respuestas.",
+        );
+      }
+
+      ctx.onResult?.({ url: publicada.url, perfilUrl: publicada.perfilUrl });
+      await log(
+        ctx.taskId,
+        "info",
+        publicada.url
+          ? `Respuesta publicada y verificada: ${publicada.url}`
+          : "Respuesta publicada y verificada (Facebook no le dio enlace propio).",
+      );
+      return;
+    }
     case "captureComment": {
       const texto = step.value?.trim();
       if (!texto) throw new Error("Step 'captureComment' requiere 'value' con el texto publicado");
@@ -1183,7 +1413,7 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
       // Enviar es el punto de no retorno: si el visor derivó mientras se
       // escribía, el texto está en la caja de otra publicación y presionar
       // Enter lo publica ahí.
-      if (ctx.taskType === "comment") await assertOnTargetUrl(page, ctx);
+      if (esTareaDeComentario(ctx.taskType)) await assertOnTargetUrl(page, ctx);
       if (step.selector) {
         const selector = selectorForStep(step.selector, ctx);
         await prepareSelectorTarget(page, step.selector, ctx);
@@ -1242,6 +1472,85 @@ async function captureFailureScreenshot(page: Page | undefined, taskId: string, 
  * corre cada step contra la página y cierra el navegador al terminar
  * (éxito o error).
  */
+/**
+ * Rellena en los steps del hijo el comentario que publicó su padre.
+ *
+ * Devuelve `null` si quedó todo resuelto, o el motivo por el que la rama no se
+ * puede colgar. Ese motivo cancela la tarea en vez de dejarla fallar: no es que
+ * la automatización se haya roto, es que no hay comentario al que responder.
+ *
+ * El caso más común de cancelación no es que el padre falle sino que Facebook
+ * no le dé enlace propio a su comentario — pasa seguido en los reels. Sin
+ * `comment_id` no hay a qué apuntar, y adivinar sería responderle al comentario
+ * de otro.
+ */
+async function resolverPasosDelHijo(task: InstanceType<typeof TaskModel>): Promise<string | null> {
+  const padre = await TaskModel.findById(task.parentTaskId);
+  if (!padre) return "La tarea del comentario padre ya no existe.";
+  if (padre.status !== "success") {
+    return `El comentario padre no se publicó (quedó en "${padre.status}"), así que no hay a qué responder.`;
+  }
+  if (!padre.resultUrl) {
+    return (
+      "El comentario padre se publicó pero Facebook no le dio un enlace propio, así que no se puede " +
+      "identificar para responderle. Suele pasar en reels."
+    );
+  }
+
+  const target = parseFacebookCommentTarget(padre.resultUrl);
+  if (!target) return `El enlace del comentario padre no trae comment_id (${padre.resultUrl}).`;
+
+  for (const step of task.steps as Step[]) {
+    if (!step.fromParent) continue;
+    if (step.action === "goto") step.url = padre.resultUrl;
+    else step.commentId = target.commentId;
+  }
+  task.markModified("steps");
+
+  return null;
+}
+
+/**
+ * Abre o cierra las ramas que dependen de esta tarea.
+ *
+ * Los hijos nacen en "pending" justamente para que nadie los tome antes de
+ * tiempo: la cola solo mira "queued". Al terminar el padre pasan a la cola, o
+ * se cancelan con el motivo si no hay comentario al que colgarse.
+ */
+async function resolverRamasDe(task: InstanceType<typeof TaskModel>) {
+  const pendientes = await TaskModel.find({ parentTaskId: task._id, status: "pending" }).sort({ scheduledAt: 1 });
+  const hijos = pendientes.length;
+  if (!hijos) return;
+
+  if (task.status === "success" && task.resultUrl) {
+    // Se reprograman desde ahora conservando la separación original entre
+    // ramas. Sus horarios se fijaron al crear la campaña, contando que el
+    // padre tardaría poco; si tardó más que eso —y publicar un comentario
+    // puede llevar minutos— ya habrían vencido todos y las ramas saldrían una
+    // atrás de otra, que es justo lo que el escalonado viene a evitar.
+    const base = pendientes[0].scheduledAt?.getTime() ?? Date.now();
+    const ahora = Date.now();
+    for (const hijo of pendientes) {
+      hijo.status = "queued";
+      hijo.scheduledAt = new Date(ahora + ((hijo.scheduledAt?.getTime() ?? base) - base));
+      await hijo.save();
+    }
+    await log(String(task._id), "info", `Comentario padre listo: ${hijos} rama(s) hija(s) pasan a la cola.`);
+    return;
+  }
+
+  const motivo =
+    task.status === "success"
+      ? "El comentario padre se publicó pero sin enlace propio, así que no se le pueden colgar ramas."
+      : `El comentario padre terminó en "${task.status}".`;
+
+  await TaskModel.updateMany(
+    { parentTaskId: task._id, status: "pending" },
+    { $set: { status: "cancelled", error: motivo, finishedAt: new Date() } },
+  );
+  await log(String(task._id), "warn", `${hijos} rama(s) hija(s) cancelada(s): ${motivo}`);
+}
+
 export async function runTask(taskId: string) {
   await dbConnect();
   const task = await TaskModel.findById(taskId);
@@ -1249,6 +1558,21 @@ export async function runTask(taskId: string) {
 
   const profile = await ProfileModel.findById(task.profileId);
   if (!profile) throw new Error(`Profile ${task.profileId} no encontrado`);
+
+  // Ramificaciones: los steps de un hijo apuntan al comentario que publicó su
+  // padre, que al crear la campaña todavía no existía. Se resuelve acá, contra
+  // el permalink que el padre guardó al verificarse.
+  if (task.parentTaskId) {
+    const motivo = await resolverPasosDelHijo(task);
+    if (motivo) {
+      task.status = "cancelled";
+      task.error = motivo;
+      task.finishedAt = new Date();
+      await task.save();
+      await log(taskId, "error", motivo);
+      return task;
+    }
+  }
 
   task.status = "running";
   task.startedAt = new Date();
@@ -1314,6 +1638,11 @@ export async function runTask(taskId: string) {
   } finally {
     task.finishedAt = new Date();
     await task.save();
+    // Después de guardar el estado definitivo: las ramas se abren o se cierran
+    // según cómo haya terminado el padre.
+    await resolverRamasDe(task).catch((err) =>
+      log(taskId, "warn", `No se pudieron resolver las ramas hijas: ${err instanceof Error ? err.message : String(err)}`),
+    );
     if (browser) await disconnectProfile(browser, profile.adsPowerProfileId);
   }
 

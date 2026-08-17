@@ -28,7 +28,12 @@ export type Campaign = InferSchemaType<typeof CampaignSchema>;
 // crear la campaña.
 const cachedCampaignSchema = models.Campaign?.schema;
 const cachedTypes = (cachedCampaignSchema?.path("type") as { enumValues?: string[] } | undefined)?.enumValues;
-if (models.Campaign && (!cachedTypes?.includes("likecomment") || !cachedCampaignSchema?.path("ownerId"))) {
+if (
+  models.Campaign &&
+  (!cachedTypes?.includes("likecomment") ||
+    !cachedTypes?.includes("ramificacion") ||
+    !cachedCampaignSchema?.path("ownerId"))
+) {
   mongoose.deleteModel("Campaign");
 }
 

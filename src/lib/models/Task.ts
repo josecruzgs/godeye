@@ -20,6 +20,7 @@ const StepSchema = new Schema(
         "uploadFile",
         "likeComment",
         "captureComment",
+        "replyComment",
       ],
       required: true,
     },
@@ -34,6 +35,9 @@ const StepSchema = new Schema(
     // "me gusta", el selector de la reacción dentro del picker de Facebook.
     commentId: { type: String },
     reactionSelector: { type: String },
+    // Ramificaciones: el commentId (y la url del goto) salen del comentario que
+    // publicó la tarea padre, que al crear la campaña todavía no existe.
+    fromParent: { type: Boolean },
   },
   { _id: false },
 );
@@ -46,6 +50,7 @@ export const TASK_TYPES = [
   "like",
   "likecomment",
   "comment",
+  "ramificacion",
   "custom",
 ] as const;
 
@@ -54,6 +59,10 @@ const TaskSchema = new Schema(
     ownerId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     name: { type: String, required: true },
     campaignId: { type: Schema.Types.ObjectId, ref: "Campaign" },
+    // Ramificaciones: la tarea que publica el comentario padre. Los hijos
+    // nacen en "pending" y solo pasan a la cola cuando el padre termina bien —
+    // antes de eso no tienen a qué comentario apuntar. Ver runTask.
+    parentTaskId: { type: Schema.Types.ObjectId, ref: "Task", index: true },
     profileId: { type: Schema.Types.ObjectId, ref: "Profile", required: true },
     type: {
       type: String,
@@ -106,8 +115,9 @@ function isStaleTaskModel() {
   if (!schema.path("ownerId")) return true;
   if (!schema.path("resultUrl")) return true;
   if (!schema.path("resultProfileUrl")) return true;
+  if (!schema.path("parentTaskId")) return true;
   const types = (schema.path("type") as { enumValues?: string[] }).enumValues ?? [];
-  return !types.includes("likecomment");
+  return !types.includes("likecomment") || !types.includes("ramificacion");
 }
 
 if (isStaleTaskModel()) {
