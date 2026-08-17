@@ -373,8 +373,9 @@ async function assertOnTargetUrl(page: Page, ctx: StepContext) {
   if (rutaDePublicacion(actual) === rutaDePublicacion(objetivo)) return;
 
   throw new Error(
-    `El visor se movió a otra publicación (${actual}) con el comentario ya escrito. Se aborta para no ` +
-      `publicarlo donde no corresponde. Suele pasar en reels, que se pasan solos al siguiente video.`,
+    `El navegador quedó en otra publicación (${actual}) en vez de la de la tarea (${objetivo}) con el ` +
+      `comentario ya escrito. Se aborta para no publicarlo donde no corresponde. Suele pasar en reels, que ` +
+      `se pasan solos al siguiente video.`,
   );
 }
 
@@ -1226,9 +1227,11 @@ export async function runTask(taskId: string) {
   await task.save();
   await log(taskId, "info", `Iniciando tarea "${task.name}" en perfil ${profile.name}`);
 
-  // La publicación de la tarea: a dónde volver si el visor de Reels se pasa
-  // solo a otro video mientras la tarea trabaja.
-  const targetUrl = (task.steps as Step[]).find((s) => s.action === "goto" && s.url)?.url;
+  // La publicación de la tarea: a dónde volver si el navegador se va a otra
+  // mientras la tarea trabaja. Arranca siendo la que pidió la campaña y se
+  // reemplaza por la que quedó de verdad apenas se navega — ver el bucle de
+  // steps.
+  let targetUrl = (task.steps as Step[]).find((s) => s.action === "goto" && s.url)?.url;
 
   let browser;
   let page: Page | undefined;
@@ -1251,6 +1254,13 @@ export async function runTask(taskId: string) {
             if (perfilUrl) task.resultProfileUrl = perfilUrl;
           },
         });
+
+        // Después de navegar manda la URL que quedó, no la que se pidió.
+        // Facebook reescribe los enlaces —los de "compartir" a la forma
+        // canónica del post, y le agrega un `?rdid=` al redirigir—, y comparar
+        // contra la pedida daba por deriva lo que era la misma publicación de
+        // siempre: la tarea se abortaba con el comentario ya escrito.
+        if (s.action === "goto") targetUrl = page.url();
       } catch (err) {
         if (!s.optional) throw err;
         const message = err instanceof Error ? err.message : String(err);
