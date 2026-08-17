@@ -34,13 +34,25 @@ type Task = {
 };
 
 /**
+ * Cómo se llama el enlace al comentario, según dónde caiga.
+ *
+ * En una publicación normal el `?comment_id=` funciona y el navegador queda
+ * parado en el comentario. En el visor de Reels no: Facebook descarta el
+ * parámetro al cargar y deja al usuario en el reel, a buscarlo a mano en el
+ * panel. El enlace es el mismo que genera Facebook —no hay forma de mejorarlo
+ * por URL—, así que lo que se ajusta es la promesa del rótulo.
+ */
+function etiquetaDelComentario(url: string) {
+  return /\/reel\//.test(url) ? "Ver en el reel" : "Ver comentario";
+}
+
+/**
  * Los enlaces externos de una tarea, en orden de utilidad.
  *
- * Son hasta tres destinos distintos y cada uno responde una pregunta:
- * "Ver comentario" lleva al comentario publicado, "Perfil" a la cuenta que lo
- * puso, y "Ver publicación" al posteo — este último solo cuando no hay nada
- * más preciso (tareas de like, o comentarios anteriores a que se capturaran
- * los otros dos).
+ * Son hasta tres destinos distintos y cada uno responde una pregunta: el
+ * comentario publicado, la cuenta que lo puso ("Perfil") y el posteo ("Ver
+ * publicación") — este último solo cuando no hay nada más preciso (tareas de
+ * like, o comentarios anteriores a que se capturaran los otros dos).
  *
  * Devuelve una lista vacía en las tareas que no navegan a ningún lado (una
  * hecha a mano, por ejemplo); ahí no se dibuja ningún enlace muerto.
@@ -48,7 +60,7 @@ type Task = {
 function enlacesDeLaTarea(task: Task): { url: string; label: string }[] {
   const enlaces: { url: string; label: string }[] = [];
 
-  if (task.resultUrl) enlaces.push({ url: task.resultUrl, label: "Ver comentario" });
+  if (task.resultUrl) enlaces.push({ url: task.resultUrl, label: etiquetaDelComentario(task.resultUrl) });
   if (task.resultProfileUrl) enlaces.push({ url: task.resultProfileUrl, label: "Perfil" });
   if (enlaces.length) return enlaces;
 
