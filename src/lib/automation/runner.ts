@@ -222,6 +222,8 @@ type StepContext = {
   taskType: string;
   /** Lo llama "captureComment" con el permalink de lo que se publicó. */
   onResultUrl?: (url: string) => void;
+  /** La publicación a la que la tarea navegó al arrancar. Ver ensureOnTargetUrl. */
+  targetUrl?: string;
 };
 
 function normalizePageText(value: string) {
@@ -309,6 +311,41 @@ async function describeVisibleButtons(page: Page) {
   return labels.length ? labels.map((l) => `"${l}"`).join(", ") : "(ninguno)";
 }
 
+/**
+ * Vuelve a la publicación de la tarea si el navegador se fue a otra.
+ *
+ * El visor de Reels se pasa solo al siguiente video cuando termina el actual, y
+ * los reels duran segundos. Entre que la tarea abre la página, espera, cierra
+ * capas e intenta comentar, es normal que ya esté parada en otro reel: se vio
+ * en el log a un perfil buscando el botón de comentar sobre una publicación de
+ * otra cuenta.
+ *
+ * Sin esto, el mejor caso es que falle; el peor, que comente en la publicación
+ * equivocada — un error silencioso y mucho más caro que un timeout.
+ *
+ * Se comparan solo los pathname: el visor le agrega y le saca parámetros a la
+ * URL sin cambiar de publicación.
+ */
+async function ensureOnTargetUrl(page: Page, ctx: StepContext) {
+  const objetivo = ctx.targetUrl;
+  if (!objetivo) return;
+
+  const rutaDe = (valor: string) => {
+    try {
+      return new URL(valor).pathname.replace(/\/+$/, "");
+    } catch {
+      return valor;
+    }
+  };
+
+  const actual = page.url();
+  if (rutaDe(actual) === rutaDe(objetivo)) return;
+
+  await log(ctx.taskId, "warn", `El visor se movió a otra publicación (${actual}); se vuelve a la de la tarea.`);
+  await gotoPage(page, objetivo, DEFAULT_GOTO_TIMEOUT_MS, ctx);
+  await page.waitForTimeout(2500);
+}
+
 /** Cierra la capa de sugerencias, si la hay. Devuelve si cerró alguna. */
 async function dismissFacebookOverlays(page: Page, ctx: StepContext) {
   const locator = page.locator(FACEBOOK_OVERLAY_DISMISS_SELECTOR);
@@ -357,34 +394,48 @@ async function openCommentsWithKeyboard(page: Page, ctx: StepContext) {
   return false;
 }
 
+const ABRIR_COMENTARIOS_INTENTOS = 3;
+
 async function prepareSelectorTarget(page: Page, rawSelector: string, ctx: StepContext) {
   if (ctx.taskType !== "comment" || !isFacebookCommentBoxSelector(rawSelector)) return;
   if (await hasVisibleLocator(page, FACEBOOK_COMMENT_BOX_SELECTOR)) return;
 
-  // Primero destapar: en los reels el botón de comentar está visible pero
-  // debajo del cuadro de sugerencias, y así el click nunca le llega.
-  if (await dismissFacebookOverlays(page, ctx)) {
+  // Se reintenta porque en el visor de Reels esto no es determinista: los
+  // mismos pasos sobre el mismo reel a veces abren el panel y a veces no,
+  // según qué capa haya aparecido, si el video ya se pasó al siguiente, o si
+  // la interfaz todavía estaba animando. Un solo intento fallaba seguido.
+  for (let intento = 1; intento <= ABRIR_COMENTARIOS_INTENTOS; intento += 1) {
+    await ensureOnTargetUrl(page, ctx);
+
+    // Destapar: en los reels el botón de comentar está visible pero debajo del
+    // cuadro de sugerencias, y así el click nunca le llega.
+    await dismissFacebookOverlays(page, ctx);
     if (await hasVisibleLocator(page, FACEBOOK_COMMENT_BOX_SELECTOR)) return;
-  }
 
-  let target: ClickableTarget | null = null;
-  try {
-    target = await firstClickableLocator(page, FACEBOOK_COMMENT_OPEN_SELECTOR, 2500);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.startsWith("Facebook detuvo este perfil")) throw err;
-  }
+    let target: ClickableTarget | null = null;
+    try {
+      target = await firstClickableLocator(page, FACEBOOK_COMMENT_OPEN_SELECTOR, 2500);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.startsWith("Facebook detuvo este perfil")) throw err;
+    }
 
-  if (target) {
-    await log(ctx.taskId, "info", "Abriendo panel/caja de comentarios de Facebook.");
-    await target.locator.click({ position: target.position, timeout: 2500 }).catch(() => {});
-    await page.waitForTimeout(1000);
-    return;
-  }
+    if (target) {
+      await log(ctx.taskId, "info", "Abriendo panel/caja de comentarios de Facebook.");
+      await target.locator.click({ position: target.position, timeout: 2500 }).catch(() => {});
+      await page.waitForTimeout(1000);
+      if (await hasVisibleLocator(page, FACEBOOK_COMMENT_BOX_SELECTOR)) return;
+    }
 
-  // El botón puede seguir tapado por una capa que no sabemos cerrar; el
-  // teclado no necesita que reciba el puntero.
-  if (await openCommentsWithKeyboard(page, ctx)) return;
+    // El botón puede seguir tapado por una capa que no sabemos cerrar; el
+    // teclado no necesita que reciba el puntero.
+    if (await openCommentsWithKeyboard(page, ctx)) return;
+
+    if (intento < ABRIR_COMENTARIOS_INTENTOS) {
+      await log(ctx.taskId, "info", `No se abrieron los comentarios; reintento ${intento + 1} de ${ABRIR_COMENTARIOS_INTENTOS}.`);
+      await page.waitForTimeout(1500);
+    }
+  }
 
   // Salir en silencio dejaba el fallo apareciendo dos pasos después, como un
   // timeout de la caja de texto — que era una consecuencia, no la causa.
@@ -1057,6 +1108,10 @@ export async function runTask(taskId: string) {
   await task.save();
   await log(taskId, "info", `Iniciando tarea "${task.name}" en perfil ${profile.name}`);
 
+  // La publicación de la tarea: a dónde volver si el visor de Reels se pasa
+  // solo a otro video mientras la tarea trabaja.
+  const targetUrl = (task.steps as Step[]).find((s) => s.action === "goto" && s.url)?.url;
+
   let browser;
   let page: Page | undefined;
   try {
@@ -1072,6 +1127,7 @@ export async function runTask(taskId: string) {
           taskId,
           profileName: profile.name,
           taskType: task.type,
+          targetUrl,
           onResultUrl: (url) => {
             task.resultUrl = url;
           },
