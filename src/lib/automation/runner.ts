@@ -5,6 +5,11 @@ import TaskModel from "@/lib/models/Task";
 import TaskLogModel from "@/lib/models/TaskLog";
 import ProfileModel from "@/lib/models/Profile";
 import { connectToProfile, disconnectProfile } from "./browser";
+import {
+  INSTAGRAM_COMMENT_BOX_SELECTOR,
+  INSTAGRAM_COMMENT_OPEN_SELECTOR,
+  INSTAGRAM_DISMISS_SELECTOR,
+} from "./socialSelectors";
 import { parseFacebookCommentTarget } from "@/lib/commentLinks";
 
 type Step = {
@@ -299,6 +304,18 @@ function isFacebookCommentBoxSelector(selector: string) {
   return /Write a comment|Escribe un comentario/i.test(selector);
 }
 
+/**
+ * Si el selector guardado en la tarea apunta a la caja de comentario de
+ * Instagram.
+ *
+ * Se reconoce por forma y no por el texto exacto porque hay campañas viejas en
+ * la base con el rótulo literal ("Add a comment…") que fue lo que rompió: así
+ * esas tareas también se benefician del selector ancho sin recrearlas.
+ */
+function isInstagramCommentBoxSelector(selector: string) {
+  return /textarea/i.test(selector) && /comment|comentario/i.test(selector);
+}
+
 function isFacebookLikeSelector(selector: string) {
   return FACEBOOK_LIKE_LABELS.some((label) => selector.includes(`aria-label="${label}"`));
 }
@@ -306,6 +323,9 @@ function isFacebookLikeSelector(selector: string) {
 function selectorForStep(selector: string, ctx: StepContext) {
   if (ctx.taskType === "comment" && isFacebookCommentBoxSelector(selector)) {
     return `${selector}, ${FACEBOOK_COMMENT_BOX_SELECTOR}`;
+  }
+  if (esTareaDeComentario(ctx.taskType) && isInstagramCommentBoxSelector(selector)) {
+    return `${selector}, ${INSTAGRAM_COMMENT_BOX_SELECTOR}`;
   }
   if (ctx.taskType === "like" && isFacebookLikeSelector(selector)) {
     return `${selector}, ${FACEBOOK_LIKE_SELECTOR}`;
@@ -492,6 +512,24 @@ const ABRIR_COMENTARIOS_INTENTOS = 3;
  * comentario mutilado no se puede deshacer, y el intento anterior terminaba
  * además culpando a Facebook de haberlo descartado.
  */
+/**
+ * Lo que la caja tiene escrito ahora mismo.
+ *
+ * Facebook comenta sobre un div contenteditable e Instagram sobre un
+ * <textarea>, y en un textarea `innerText` devuelve el contenido inicial del
+ * HTML —vacío—, no lo que se acaba de tipear. Leyendo siempre con innerText, la
+ * verificación de Instagram fallaba con la caja llena.
+ */
+async function leerCaja(caja: Locator) {
+  return caja
+    .evaluate((el) =>
+      el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement
+        ? el.value
+        : (el as HTMLElement).innerText,
+    )
+    .catch(() => "");
+}
+
 async function escribirEnCaja(page: Page, caja: Locator, texto: string, ctx: StepContext) {
   const normalizar = (valor: string) =>
     valor
@@ -506,13 +544,13 @@ async function escribirEnCaja(page: Page, caja: Locator, texto: string, ctx: Ste
     await page.keyboard.insertText(texto);
     await page.waitForTimeout(600);
 
-    const escrito = normalizar(await caja.innerText().catch(() => ""));
+    const escrito = normalizar(await leerCaja(caja));
     if (escrito.includes(esperado)) return;
 
     if (intento === 2) {
       throw new Error(
         `La caja quedó con "${escrito}" en vez de "${esperado}". No se envía para no publicar un comentario ` +
-          `incompleto; suele pasar cuando el editor de Facebook se re-renderiza mientras se escribe.`,
+          `incompleto; suele pasar cuando el editor de la red se re-renderiza mientras se escribe.`,
       );
     }
 
@@ -535,8 +573,88 @@ function esTareaDeComentario(taskType: string) {
   return taskType === "comment" || taskType === "ramificacion";
 }
 
+/**
+ * Deja a Instagram en condiciones de recibir el comentario.
+ *
+ * El equivalente de lo que ya se hacía con Facebook, con las diferencias de la
+ * casa: en una publicación abierta el composer ya está montado, pero en reels y
+ * videos el panel arranca cerrado, y encima Instagram monta capas propias
+ * ("Activa las notificaciones", el aviso de cookies, el modal de inicio de
+ * sesión) que lo tapan.
+ *
+ * La sesión caída se corta acá con un mensaje propio: sin esto el síntoma era
+ * el timeout de la caja de texto —"0 match(es)"—, que manda a buscar un
+ * selector roto cuando el problema es que la cuenta no está logueada.
+ */
+async function prepareInstagramCommentBox(page: Page, ctx: StepContext) {
+  await ensureOnTargetUrl(page, ctx);
+  await freezeReelPlayback(page);
+
+  if (await hasVisibleLocator(page, INSTAGRAM_COMMENT_BOX_SELECTOR)) return;
+
+  if (page.url().includes("/accounts/login") || (await hasVisibleLocator(page, 'input[name="password"]'))) {
+    throw new Error(
+      "Instagram pidió iniciar sesión con este perfil, así que no hay caja de comentario. Hay que dejar la " +
+        "sesión abierta en el perfil de AdsPower antes de volver a correr la tarea.",
+    );
+  }
+
+  for (let intento = 1; intento <= ABRIR_COMENTARIOS_INTENTOS; intento += 1) {
+    await ensureOnTargetUrl(page, ctx);
+    await dismissInstagramOverlays(page, ctx);
+    if (await hasVisibleLocator(page, INSTAGRAM_COMMENT_BOX_SELECTOR)) return;
+
+    const target = await firstClickableLocator(page, INSTAGRAM_COMMENT_OPEN_SELECTOR, 2500).catch(() => null);
+    if (target) {
+      await log(ctx.taskId, "info", "Abriendo el panel de comentarios de Instagram.");
+      await target.locator.click({ position: target.position, timeout: 2500 }).catch(() => {});
+      await page.waitForTimeout(1000);
+      if (await hasVisibleLocator(page, INSTAGRAM_COMMENT_BOX_SELECTOR)) return;
+    }
+
+    if (intento < ABRIR_COMENTARIOS_INTENTOS) {
+      await log(
+        ctx.taskId,
+        "info",
+        `No apareció la caja de comentario; reintento ${intento + 1} de ${ABRIR_COMENTARIOS_INTENTOS}.`,
+      );
+      await page.waitForTimeout(1500);
+    }
+  }
+
+  await log(
+    ctx.taskId,
+    "warn",
+    `No se encontró la caja de comentario de Instagram. Botones visibles en la página: ${await describeVisibleButtons(page)}`,
+  );
+}
+
+/** Cierra las capas de Instagram que tapan el composer. Devuelve si cerró alguna. */
+async function dismissInstagramOverlays(page: Page, ctx: StepContext) {
+  const locator = page.locator(INSTAGRAM_DISMISS_SELECTOR);
+  const count = await locator.count().catch(() => 0);
+
+  for (let i = 0; i < count; i += 1) {
+    const candidate = locator.nth(i);
+    if (!(await candidate.isVisible().catch(() => false))) continue;
+
+    await candidate.click({ timeout: 2000 }).catch(() => {});
+    await log(ctx.taskId, "info", "Se cerró una capa de Instagram que tapaba la publicación.");
+    await page.waitForTimeout(800);
+    return true;
+  }
+  return false;
+}
+
 async function prepareSelectorTarget(page: Page, rawSelector: string, ctx: StepContext) {
-  if (!esTareaDeComentario(ctx.taskType) || !isFacebookCommentBoxSelector(rawSelector)) return;
+  if (!esTareaDeComentario(ctx.taskType)) return;
+
+  if (isInstagramCommentBoxSelector(rawSelector)) {
+    await prepareInstagramCommentBox(page, ctx);
+    return;
+  }
+
+  if (!isFacebookCommentBoxSelector(rawSelector)) return;
 
   // La comprobación de publicación va ANTES de darse por satisfecho con la
   // caja visible. Al revés —que es como estaba— el visor podía haberse pasado
@@ -1368,7 +1486,7 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
         "info",
         probe.url
           ? `Comentario publicado y verificado: ${probe.url}`
-          : "Comentario publicado y verificado (Facebook no le dio enlace propio).",
+          : "Comentario publicado y verificado (la red no le dio enlace propio).",
       );
       return;
     }
@@ -1452,7 +1570,10 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
         // que se re-renderiza mientras uno tipea. En un formulario común
         // conviene seguir mandando teclas de verdad, que es lo que esperan sus
         // validaciones al vuelo.
-        if (esTareaDeComentario(ctx.taskType) && isFacebookCommentBoxSelector(step.selector)) {
+        if (
+          esTareaDeComentario(ctx.taskType) &&
+          (isFacebookCommentBoxSelector(step.selector) || isInstagramCommentBoxSelector(step.selector))
+        ) {
           await escribirEnCaja(page, target, step.value ?? "", ctx);
         } else {
           await target.click({ timeout: 5000 }).catch(() => {});
