@@ -178,6 +178,39 @@ const FACEBOOK_ALREADY_LIKED_SELECTOR = labelSelectors(FACEBOOK_UNLIKE_LABELS);
  */
 const FACEBOOK_COMMENT_LIKE_MARK = "data-godeye-comment-like";
 
+/**
+ * El mismo truco, para el botón de reaccionar de la publicación.
+ *
+ * Hizo falta porque Facebook tiene builds en los que la barra de acciones del
+ * post no lleva `aria-label`: el botón es un `div[role="button"]` con el texto
+ * "Me gusta" adentro y nada más. Ahí los once idiomas mapeados daban igual —el
+ * selector devolvía "0 match(es)" con el botón en pantalla— y encima la barra
+ * suele quedar por debajo del scroll interno del dialog, sin renderizar todavía.
+ *
+ * Buscarlo por texto suelto sería peligroso: los comentarios también tienen un
+ * "Me gusta". Lo que lo distingue es la compañía —el botón del post vive en la
+ * misma fila que "Comentar" y "Compartir", el de un comentario vive al lado de
+ * "Responder"—, así que la búsqueda exige esa fila.
+ */
+const FACEBOOK_POST_LIKE_MARK = "data-godeye-post-like";
+
+/** El de la publicación que YA tiene la reacción puesta. Ver FACEBOOK_POST_LIKE_MARK. */
+const FACEBOOK_POST_LIKED_MARK = "data-godeye-post-liked";
+
+/** Los vecinos que delatan a la barra de acciones de una publicación. */
+const FACEBOOK_ACTION_ROW_LABELS = [
+  "Comentar",
+  "Comment",
+  "Comentario",
+  "Commenter",
+  "Compartir",
+  "Share",
+  "Partager",
+  "Compartilhar",
+  "Condividi",
+  "Teilen",
+];
+
 /** Cómo se rotula el botón de responder, por idioma de la interfaz. */
 const FACEBOOK_REPLY_LABELS = [
   "Responder",
@@ -328,7 +361,7 @@ function selectorForStep(selector: string, ctx: StepContext) {
     return `${selector}, ${INSTAGRAM_COMMENT_BOX_SELECTOR}`;
   }
   if (ctx.taskType === "like" && isFacebookLikeSelector(selector)) {
-    return `${selector}, ${FACEBOOK_LIKE_SELECTOR}`;
+    return `${selector}, ${FACEBOOK_LIKE_SELECTOR}, [${FACEBOOK_POST_LIKE_MARK}]`;
   }
   return selector;
 }
@@ -696,6 +729,144 @@ async function explicarFalloDeLike(page: Page, message: string) {
   );
 }
 
+function yaReaccionadaSelector() {
+  return `${FACEBOOK_ALREADY_LIKED_SELECTOR}, [${FACEBOOK_POST_LIKED_MARK}]`;
+}
+
+type PostLikeProbe = {
+  status: "ready" | "already_liked" | "not_found";
+  detail: string;
+};
+
+/**
+ * Busca en la página el botón de reaccionar de la publicación y lo deja marcado.
+ *
+ * Corre dentro del navegador porque necesita subir por el árbol (`parentElement`)
+ * para comprobar la fila de acciones, y Playwright no sabe hacer eso desde un
+ * selector. Reconoce el botón por su nombre accesible —`aria-label` si lo tiene,
+ * el texto renderizado si no— y solo acepta el que comparte fila con "Comentar"
+ * o "Compartir".
+ *
+ * El texto se usa únicamente como respaldo, y con una salvaguarda: cuando la
+ * reacción ya está puesta el rótulo sigue diciendo "Me gusta" (en azul), así que
+ * clickearlo la quitaría en vez de ponerla. `aria-pressed="true"` es lo que
+ * separa un caso del otro sobre un botón que ya sabemos cuál es —como pista
+ * para encontrarlo no sirve, porque medio Facebook lo lleva.
+ */
+async function markFacebookPostLike(page: Page): Promise<PostLikeProbe> {
+  await defineEsbuildNameHelper(page);
+  return page.evaluate(
+    ({ likeMark, likedMark, likeLabels, unlikeLabels, rowLabels }): PostLikeProbe => {
+      const sameLabel = (value: string, label: string) =>
+        value.trim().localeCompare(label, undefined, { sensitivity: "base" }) === 0;
+      const matchesAny = (value: string, labels: string[]) =>
+        Boolean(value.trim()) && labels.some((label) => sameLabel(value, label));
+
+      for (const marked of Array.from(document.querySelectorAll(`[${likeMark}], [${likedMark}]`))) {
+        marked.removeAttribute(likeMark);
+        marked.removeAttribute(likedMark);
+      }
+
+      const ariaOf = (el: Element) => (el.getAttribute("aria-label") ?? "").trim();
+      const textOf = (el: Element) => (el.textContent ?? "").replace(/\s+/g, " ").trim();
+
+      // El post abierto en dialog manda: en esa vista la página de atrás sigue
+      // montada con su propio feed, y sus botones son los de otras publicaciones.
+      const root: ParentNode = document.querySelector('div[role="dialog"]') ?? document;
+      const botones = (Array.from(root.querySelectorAll('[role="button"], button')) as HTMLElement[]).filter(
+        (el) => {
+          const rect = el.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        },
+      );
+
+      const enBarraDeAcciones = (el: HTMLElement) => {
+        let nodo: HTMLElement | null = el;
+        for (let i = 0; i < 4; i += 1) {
+          nodo = nodo?.parentElement ?? null;
+          if (!nodo) return false;
+          const vecinos = Array.from(nodo.querySelectorAll('[role="button"], button')) as HTMLElement[];
+          if (vecinos.some((v) => v !== el && (matchesAny(ariaOf(v), rowLabels) || matchesAny(textOf(v), rowLabels)))) {
+            return true;
+          }
+        }
+        return false;
+      };
+
+      const yaPuesto =
+        botones.filter((el) => matchesAny(ariaOf(el), unlikeLabels)).find(enBarraDeAcciones) ?? null;
+      if (yaPuesto) {
+        yaPuesto.setAttribute(likedMark, "1");
+        yaPuesto.scrollIntoView({ block: "center" });
+        return { status: "already_liked", detail: ariaOf(yaPuesto).slice(0, 40) };
+      }
+
+      // Primero los que traen rótulo propio: son inequívocos.
+      const porAria = botones.filter((el) => matchesAny(ariaOf(el), likeLabels)).find(enBarraDeAcciones) ?? null;
+      if (porAria) {
+        porAria.setAttribute(likeMark, "1");
+        porAria.scrollIntoView({ block: "center" });
+        return { status: "ready", detail: `aria-label "${ariaOf(porAria)}"` };
+      }
+
+      const porTexto =
+        botones.filter((el) => !ariaOf(el) && matchesAny(textOf(el), likeLabels)).find(enBarraDeAcciones) ?? null;
+      if (porTexto) {
+        const presionado = porTexto.closest('[aria-pressed="true"]');
+        if (presionado) {
+          porTexto.setAttribute(likedMark, "1");
+          porTexto.scrollIntoView({ block: "center" });
+          return { status: "already_liked", detail: `texto "${textOf(porTexto)}" con aria-pressed` };
+        }
+        porTexto.setAttribute(likeMark, "1");
+        porTexto.scrollIntoView({ block: "center" });
+        return { status: "ready", detail: `texto "${textOf(porTexto)}"` };
+      }
+
+      return { status: "not_found", detail: `${botones.length} boton(es) mirados` };
+    },
+    {
+      likeMark: FACEBOOK_POST_LIKE_MARK,
+      likedMark: FACEBOOK_POST_LIKED_MARK,
+      likeLabels: FACEBOOK_LIKE_LABELS,
+      unlikeLabels: FACEBOOK_UNLIKE_LABELS,
+      rowLabels: FACEBOOK_ACTION_ROW_LABELS,
+    },
+  );
+}
+
+/**
+ * Baja un tramo dentro de la publicación.
+ *
+ * Con el post abierto en dialog, el scroll que importa no es el de la ventana
+ * sino el del contenedor interno: la barra de acciones queda debajo de la
+ * imagen, fuera de la vista y —cuando Facebook la monta tarde— fuera del DOM.
+ * Mover la rueda del mouse no alcanza si el puntero no está encima del dialog.
+ */
+async function scrollFacebookPost(page: Page) {
+  await page
+    .evaluate(() => {
+      const dialog = document.querySelector('div[role="dialog"]');
+      const contenedores = (Array.from((dialog ?? document.body).querySelectorAll("*")) as HTMLElement[]).filter(
+        (el) => {
+          const estilo = getComputedStyle(el);
+          return /(auto|scroll)/.test(estilo.overflowY) && el.scrollHeight > el.clientHeight + 40;
+        },
+      );
+
+      if (!contenedores.length) {
+        window.scrollBy(0, Math.round(window.innerHeight * 0.6));
+        return;
+      }
+
+      const objetivo = contenedores.sort((a, b) => b.clientHeight - a.clientHeight)[0];
+      objetivo.scrollTop = Math.min(objetivo.scrollTop + objetivo.clientHeight * 0.8, objetivo.scrollHeight);
+    })
+    .catch(() => {});
+}
+
+const BUSCAR_LIKE_INTENTOS = 4;
+
 /**
  * Deja la publicación en condiciones de que se pueda reaccionar.
  *
@@ -713,9 +884,31 @@ async function prepareFacebookLike(page: Page, ctx: StepContext) {
   // Ya reaccionada: el botón que existe es el de quitarla, y buscar el de
   // ponerla es esperar por algo que no va a aparecer. No se toca nada —
   // desmarcar sería deshacer el trabajo—; el paso siguiente lo resuelve.
-  if (await hasVisibleLocator(page, FACEBOOK_ALREADY_LIKED_SELECTOR)) return;
+  if (await hasVisibleLocator(page, yaReaccionadaSelector())) return;
 
   await dismissFacebookOverlays(page, ctx);
+  if (await hasVisibleLocator(page, FACEBOOK_LIKE_SELECTOR)) return;
+
+  // Hasta acá se buscó por `aria-label`. Lo que sigue es el sondeo por fila de
+  // acciones, que además baja dentro del post: la barra suele estar debajo de
+  // la imagen, y en el dialog eso es scroll interno.
+  for (let intento = 1; intento <= BUSCAR_LIKE_INTENTOS; intento += 1) {
+    const probe = await markFacebookPostLike(page);
+
+    if (probe.status === "ready") {
+      await log(ctx.taskId, "info", `Botón de reaccionar localizado por ${probe.detail}.`);
+      return;
+    }
+    if (probe.status === "already_liked") {
+      await log(ctx.taskId, "info", `La publicación ya tenía la reacción puesta (${probe.detail}).`);
+      return;
+    }
+
+    if (intento < BUSCAR_LIKE_INTENTOS) {
+      await scrollFacebookPost(page);
+      await page.waitForTimeout(900);
+    }
+  }
 }
 
 async function prepareSelectorTarget(page: Page, rawSelector: string, ctx: StepContext) {
@@ -1411,7 +1604,7 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
           // estaba hecho.
           if (
             ctx.taskType === "like" &&
-            (await hasVisibleLocator(page, FACEBOOK_ALREADY_LIKED_SELECTOR))
+            (await hasVisibleLocator(page, yaReaccionadaSelector()))
           ) {
             await log(ctx.taskId, "info", "La publicación ya tenía la reacción puesta; nada que hacer.");
             return;
@@ -1688,7 +1881,7 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
           // ponerla, así que este paso no puede pasar nunca: lo que hay es el
           // de quitarla. Es la tarea cumplida, no un fallo — se deja seguir y
           // el "click" que viene después lo reconoce igual y sale por éxito.
-          if (await hasVisibleLocator(page, FACEBOOK_ALREADY_LIKED_SELECTOR)) {
+          if (await hasVisibleLocator(page, yaReaccionadaSelector())) {
             await log(ctx.taskId, "info", "La publicación ya tenía la reacción puesta; nada que esperar.");
             return;
           }
