@@ -646,7 +646,84 @@ async function dismissInstagramOverlays(page: Page, ctx: StepContext) {
   return false;
 }
 
+/**
+ * Frases con las que Facebook responde cuando la publicación ya no se puede
+ * ver: borrada, con la privacidad cambiada, o de una cuenta que bloqueó al
+ * perfil. La página carga bien y sin bloqueo de seguridad, pero no trae ningún
+ * botón de reaccionar — y el fallo salía como un timeout de selector, que hace
+ * pensar en un selector roto cuando lo que no hay es publicación.
+ */
+const FACEBOOK_UNAVAILABLE_TEXT = [
+  "este contenido no esta disponible",
+  "contenido no disponible",
+  "this content isn't available",
+  "this content isnt available",
+  "esta pagina no esta disponible",
+  "this page isn't available",
+  "this page isnt available",
+];
+
+async function facebookContentUnavailable(page: Page) {
+  const texto = await page
+    .locator("body")
+    .innerText({ timeout: 1000 })
+    .then(normalizePageText)
+    .catch(() => "");
+  return FACEBOOK_UNAVAILABLE_TEXT.some((frase) => texto.includes(frase));
+}
+
+/**
+ * Por qué no apareció el botón de reaccionar.
+ *
+ * El timeout pelado dice "0 match(es)" y ahí se corta: no distingue entre la
+ * publicación que ya no existe, el perfil con la interfaz en un idioma sin
+ * mapear y el botón que Facebook movió de lugar. Las tres se arreglan distinto,
+ * y averiguar cuál era costaba bajarse la captura del VPS. Ahora el propio
+ * error lo dice, y en el caso del idioma trae los rótulos reales de la página
+ * para agregar el que falte a FACEBOOK_LIKE_LABELS.
+ */
+async function explicarFalloDeLike(page: Page, message: string) {
+  if (await facebookContentUnavailable(page)) {
+    return new Error(
+      "La publicación no está disponible para este perfil (borrada, con la privacidad cambiada, o la cuenta " +
+        `bloqueó al perfil). No hay botón de reaccionar que buscar. Detalle: ${message}`,
+    );
+  }
+
+  return new Error(
+    `${message}. Botones visibles en la página: ${await describeVisibleButtons(page)}. Si alguno es el de ` +
+      "reaccionar con otro nombre, hay que agregar ese rótulo a FACEBOOK_LIKE_LABELS en runner.ts.",
+  );
+}
+
+/**
+ * Deja la publicación en condiciones de que se pueda reaccionar.
+ *
+ * Es el equivalente, para el like, de lo que prepareSelectorTarget ya hacía
+ * para la caja de comentario: el visor de reels se pasa solo al siguiente video
+ * y el cuadro de sugerencias tapa la columna de acciones. Sin esto, el paso
+ * esperaba quince segundos un botón que estaba en otra publicación o debajo de
+ * una capa.
+ */
+async function prepareFacebookLike(page: Page, ctx: StepContext) {
+  await ensureOnTargetUrl(page, ctx);
+  await freezeReelPlayback(page);
+  if (await hasVisibleLocator(page, FACEBOOK_LIKE_SELECTOR)) return;
+
+  // Ya reaccionada: el botón que existe es el de quitarla, y buscar el de
+  // ponerla es esperar por algo que no va a aparecer. No se toca nada —
+  // desmarcar sería deshacer el trabajo—; el paso siguiente lo resuelve.
+  if (await hasVisibleLocator(page, FACEBOOK_ALREADY_LIKED_SELECTOR)) return;
+
+  await dismissFacebookOverlays(page, ctx);
+}
+
 async function prepareSelectorTarget(page: Page, rawSelector: string, ctx: StepContext) {
+  if (ctx.taskType === "like" && isFacebookLikeSelector(rawSelector)) {
+    await prepareFacebookLike(page, ctx);
+    return;
+  }
+
   if (!esTareaDeComentario(ctx.taskType)) return;
 
   if (isInstagramCommentBoxSelector(rawSelector)) {
@@ -1370,7 +1447,8 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
             return;
           }
 
-          if (ctx.taskType !== "like" || !pointerBlocked) throw err;
+          if (ctx.taskType !== "like") throw err;
+          if (!pointerBlocked) throw await explicarFalloDeLike(page, message);
 
           await log(
             ctx.taskId,
@@ -1601,7 +1679,22 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
       {
         const selector = selectorForStep(step.selector, ctx);
         await prepareSelectorTarget(page, step.selector, ctx);
-        await firstVisibleLocator(page, selector, step.ms ?? DEFAULT_ACTION_TIMEOUT_MS);
+        try {
+          await firstVisibleLocator(page, selector, step.ms ?? DEFAULT_ACTION_TIMEOUT_MS);
+        } catch (err) {
+          if (ctx.taskType !== "like" || !isFacebookLikeSelector(step.selector)) throw err;
+
+          // Una publicación que ya tiene la reacción no muestra el botón de
+          // ponerla, así que este paso no puede pasar nunca: lo que hay es el
+          // de quitarla. Es la tarea cumplida, no un fallo — se deja seguir y
+          // el "click" que viene después lo reconoce igual y sale por éxito.
+          if (await hasVisibleLocator(page, FACEBOOK_ALREADY_LIKED_SELECTOR)) {
+            await log(ctx.taskId, "info", "La publicación ya tenía la reacción puesta; nada que esperar.");
+            return;
+          }
+
+          throw await explicarFalloDeLike(page, err instanceof Error ? err.message : String(err));
+        }
       }
       return;
     case "waitForTimeout":
