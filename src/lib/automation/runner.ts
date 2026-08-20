@@ -197,6 +197,61 @@ const FACEBOOK_POST_LIKE_MARK = "data-godeye-post-like";
 /** El de la publicación que YA tiene la reacción puesta. Ver FACEBOOK_POST_LIKE_MARK. */
 const FACEBOOK_POST_LIKED_MARK = "data-godeye-post-liked";
 
+/**
+ * Cómo se llama el botón de reaccionar cuando Facebook lo rotula con una frase
+ * entera en vez de con una palabra.
+ *
+ * FACEBOOK_LIKE_LABELS —los rótulos sueltos, "Me gusta"/"Like"— sirvió mientras
+ * el botón se llamó así. En el build que está sirviendo ahora el rótulo es
+ * "Reaccionar a la publicación de Dale Poder al Poder": lleva el nombre del
+ * autor adentro, así que no hay lista de rótulos exactos que lo alcance y el
+ * selector devolvía "0 match(es)" con el botón a la vista.
+ *
+ * Van anclados al principio de la frase y no como subcadena suelta a propósito.
+ * "Me gusta" aparece también en "Me gusta: 8 personas" —el contador, que abre
+ * la lista de quién reaccionó— y clickear eso daría la tarea por hecha sin
+ * haber reaccionado a nada. Las anclas son las que separan el botón del
+ * contador.
+ *
+ * Se comparan contra el rótulo normalizado: en minúsculas y sin acentos.
+ */
+const FACEBOOK_LIKE_ARIA_PATTERNS = [
+  "^reaccionar\\b",
+  "^react\\b",
+  "^reagir\\b",
+  "^reagire\\b",
+  "^reagieren\\b",
+  "^indicar que te gusta",
+  "^me gusta$",
+  "^like$",
+  "^j'aime$",
+  "^curtir$",
+  "^mi piace$",
+  "^gefallt mir$",
+];
+
+/**
+ * Y cómo se llama cuando la reacción YA está puesta.
+ *
+ * Se miran antes que los de arriba: "Quitar Me gusta de la publicación de X"
+ * empieza por otra palabra, pero un patrón mal escrito que lo dejara pasar
+ * haría que la tarea quitara la reacción en vez de ponerla — un fallo que se
+ * reporta como éxito.
+ */
+const FACEBOOK_UNLIKE_ARIA_PATTERNS = [
+  "quitar me gusta",
+  "quitar la reaccion",
+  "ya no me gusta",
+  "^unlike",
+  "remove like",
+  "descurtir",
+  "remover curtir",
+  "je n'aime plus",
+  "retirer j'aime",
+  "non mi piace piu",
+  "gefallt mir nicht mehr",
+];
+
 /** Los vecinos que delatan a la barra de acciones de una publicación. */
 const FACEBOOK_ACTION_ROW_LABELS = [
   "Comentar",
@@ -725,7 +780,7 @@ async function explicarFalloDeLike(page: Page, message: string) {
 
   return new Error(
     `${message}. Botones visibles en la página: ${await describeVisibleButtons(page)}. Si alguno es el de ` +
-      "reaccionar con otro nombre, hay que agregar ese rótulo a FACEBOOK_LIKE_LABELS en runner.ts.",
+      "reaccionar con otro nombre, hay que agregar ese rótulo a FACEBOOK_LIKE_ARIA_PATTERNS en runner.ts.",
   );
 }
 
@@ -756,11 +811,26 @@ type PostLikeProbe = {
 async function markFacebookPostLike(page: Page): Promise<PostLikeProbe> {
   await defineEsbuildNameHelper(page);
   return page.evaluate(
-    ({ likeMark, likedMark, likeLabels, unlikeLabels, rowLabels }): PostLikeProbe => {
-      const sameLabel = (value: string, label: string) =>
-        value.trim().localeCompare(label, undefined, { sensitivity: "base" }) === 0;
-      const matchesAny = (value: string, labels: string[]) =>
-        Boolean(value.trim()) && labels.some((label) => sameLabel(value, label));
+    ({ likeMark, likedMark, likePatterns, unlikePatterns, rowLabels }): PostLikeProbe => {
+      // Sin acentos y en minúsculas: "Gefällt mir" y "gefallt mir" son el mismo
+      // botón, y el rótulo no siempre respeta el capitalizado entre layouts.
+      const normalizar = (valor: string) =>
+        valor
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase()
+          .replace(/\s+/g, " ")
+          .trim();
+
+      const coincide = (valor: string, patrones: string[]) => {
+        const limpio = normalizar(valor);
+        return Boolean(limpio) && patrones.some((patron) => new RegExp(patron).test(limpio));
+      };
+
+      const contiene = (valor: string, palabras: string[]) => {
+        const limpio = normalizar(valor);
+        return Boolean(limpio) && palabras.some((palabra) => limpio.includes(normalizar(palabra)));
+      };
 
       for (const marked of Array.from(document.querySelectorAll(`[${likeMark}], [${likedMark}]`))) {
         marked.removeAttribute(likeMark);
@@ -769,6 +839,7 @@ async function markFacebookPostLike(page: Page): Promise<PostLikeProbe> {
 
       const ariaOf = (el: Element) => (el.getAttribute("aria-label") ?? "").trim();
       const textOf = (el: Element) => (el.textContent ?? "").replace(/\s+/g, " ").trim();
+      const nombreDe = (el: Element) => ariaOf(el) || textOf(el);
 
       // El post abierto en dialog manda: en esa vista la página de atrás sigue
       // montada con su propio feed, y sus botones son los de otras publicaciones.
@@ -780,56 +851,53 @@ async function markFacebookPostLike(page: Page): Promise<PostLikeProbe> {
         },
       );
 
+      // La compañía es lo que distingue al botón del post del de un comentario:
+      // el del post comparte fila con "Comentar…" y "Compartir…", el de un
+      // comentario vive al lado de "Responder". Por subcadena porque esos
+      // vecinos también traen la frase larga ("Comentar la publicación de X").
       const enBarraDeAcciones = (el: HTMLElement) => {
         let nodo: HTMLElement | null = el;
         for (let i = 0; i < 4; i += 1) {
           nodo = nodo?.parentElement ?? null;
           if (!nodo) return false;
           const vecinos = Array.from(nodo.querySelectorAll('[role="button"], button')) as HTMLElement[];
-          if (vecinos.some((v) => v !== el && (matchesAny(ariaOf(v), rowLabels) || matchesAny(textOf(v), rowLabels)))) {
-            return true;
-          }
+          if (vecinos.some((v) => v !== el && contiene(nombreDe(v), rowLabels))) return true;
         }
         return false;
       };
 
-      const yaPuesto =
-        botones.filter((el) => matchesAny(ariaOf(el), unlikeLabels)).find(enBarraDeAcciones) ?? null;
+      const yaPuesto = botones.filter((el) => coincide(nombreDe(el), unlikePatterns)).find(enBarraDeAcciones) ?? null;
       if (yaPuesto) {
         yaPuesto.setAttribute(likedMark, "1");
         yaPuesto.scrollIntoView({ block: "center" });
-        return { status: "already_liked", detail: ariaOf(yaPuesto).slice(0, 40) };
+        return { status: "already_liked", detail: nombreDe(yaPuesto).slice(0, 60) };
       }
 
-      // Primero los que traen rótulo propio: son inequívocos.
-      const porAria = botones.filter((el) => matchesAny(ariaOf(el), likeLabels)).find(enBarraDeAcciones) ?? null;
-      if (porAria) {
-        porAria.setAttribute(likeMark, "1");
-        porAria.scrollIntoView({ block: "center" });
-        return { status: "ready", detail: `aria-label "${ariaOf(porAria)}"` };
+      const boton = botones.filter((el) => coincide(nombreDe(el), likePatterns)).find(enBarraDeAcciones) ?? null;
+      if (!boton) {
+        return { status: "not_found", detail: `${botones.length} boton(es) mirados` };
       }
 
-      const porTexto =
-        botones.filter((el) => !ariaOf(el) && matchesAny(textOf(el), likeLabels)).find(enBarraDeAcciones) ?? null;
-      if (porTexto) {
-        const presionado = porTexto.closest('[aria-pressed="true"]');
-        if (presionado) {
-          porTexto.setAttribute(likedMark, "1");
-          porTexto.scrollIntoView({ block: "center" });
-          return { status: "already_liked", detail: `texto "${textOf(porTexto)}" con aria-pressed` };
-        }
-        porTexto.setAttribute(likeMark, "1");
-        porTexto.scrollIntoView({ block: "center" });
-        return { status: "ready", detail: `texto "${textOf(porTexto)}"` };
+      // Hay builds donde el rótulo no cambia al reaccionar: sigue diciendo
+      // "Me gusta", solo que en azul. Clickearlo ahí quitaría la reacción en vez
+      // de ponerla. `aria-pressed` no sirve para encontrar el botón —medio
+      // Facebook lo lleva— pero sobre uno que ya sabemos cuál es dice exactamente
+      // eso: si está presionado o no.
+      if (boton.closest('[aria-pressed="true"]')) {
+        boton.setAttribute(likedMark, "1");
+        boton.scrollIntoView({ block: "center" });
+        return { status: "already_liked", detail: `${nombreDe(boton).slice(0, 60)} (aria-pressed)` };
       }
 
-      return { status: "not_found", detail: `${botones.length} boton(es) mirados` };
+      boton.setAttribute(likeMark, "1");
+      boton.scrollIntoView({ block: "center" });
+      return { status: "ready", detail: `"${nombreDe(boton).slice(0, 60)}"` };
     },
     {
       likeMark: FACEBOOK_POST_LIKE_MARK,
       likedMark: FACEBOOK_POST_LIKED_MARK,
-      likeLabels: FACEBOOK_LIKE_LABELS,
-      unlikeLabels: FACEBOOK_UNLIKE_LABELS,
+      likePatterns: FACEBOOK_LIKE_ARIA_PATTERNS,
+      unlikePatterns: FACEBOOK_UNLIKE_ARIA_PATTERNS,
       rowLabels: FACEBOOK_ACTION_ROW_LABELS,
     },
   );
