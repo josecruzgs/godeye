@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LogOut } from "lucide-react";
+import { LogOut, MonitorPlay } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import ElementIcon from "./ui/ElementIcon";
 import { getElementForPath, ELEMENT_META } from "@/lib/elements";
@@ -151,6 +151,23 @@ export default function Topbar() {
             <i />
             {workerChip(status).label}
           </span>
+        )}
+
+        {/* Ventana al escritorio del VPS. En otra pestaña a propósito: se
+            abre para mirar una tarea que se rompió y hay que poder seguir
+            usando el panel al lado, no perderlo. Solo admin, porque desde ahí
+            se maneja AdsPower entero. */}
+        {session?.role === "admin" && (
+          <a
+            href="/vnc"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Ver la pantalla del VPS donde corre AdsPower · se abre en otra pestaña"
+            aria-label="Abrir la pantalla de AdsPower en otra pestaña"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-hairline bg-surface text-ink-secondary transition-colors hover:text-ink"
+          >
+            <MonitorPlay className="h-4 w-4" />
+          </a>
         )}
 
         <ThemeToggle />

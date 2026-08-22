@@ -16,6 +16,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isPublicRoute = PUBLIC_PREFIXES.some((prefix) => pathname?.startsWith(prefix));
 
+  // /vnc sí exige sesión, pero tampoco lleva el marco del panel: es el
+  // escritorio remoto del VPS a ventana completa, en su propia pestaña, y el
+  // sidebar solo le robaría ancho a lo único que interesa mirar ahí.
+  if (pathname?.startsWith("/vnc")) {
+    return <main className="relative flex h-screen flex-1 flex-col overflow-hidden">{children}</main>;
+  }
+
   if (isPublicRoute) {
     // flex-1 es necesario: <body> es un contenedor flex (fila), así que sin
     // esto <main> se encoge a su contenido en vez de ocupar el ancho

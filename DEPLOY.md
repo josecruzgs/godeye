@@ -298,18 +298,77 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now xvfb adspower
 ```
 
+### Ver la pantalla desde el panel
+
+x11vnc publica la pantalla virtual y websockify la sirve por navegador. Como
+servicios y no a mano con `nohup`: la pantalla hace falta justo cuando algo se
+rompió, que es cuando nadie se acuerda de haberlos levantado.
+
+Los dos quedan atados al loopback. El único que los alcanza es nginx, que exige
+sesión de admin antes de dejar pasar (bloque `/novnc/` de `deploy/nginx.conf`).
+Sin ese filtro esto sería un escritorio con todas las cuentas abiertas, servido
+a internet.
+
+```bash
+sudo tee /etc/systemd/system/x11vnc.service >/dev/null <<'EOF'
+[Unit]
+Description=VNC de la pantalla virtual
+Requires=xvfb.service
+After=xvfb.service
+
+[Service]
+User=godeye
+# -localhost es lo que hace aceptable el -nopw: nadie llega ahí sin pasar por
+# nginx, y la llave es la sesión del panel. -forever y -shared: no se cae al
+# cerrar el visor, y deja mirar desde dos lados a la vez.
+ExecStart=/usr/bin/x11vnc -display :99 -localhost -nopw -forever -shared
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo tee /etc/systemd/system/novnc.service >/dev/null <<'EOF'
+[Unit]
+Description=noVNC (websockify) para la pantalla virtual
+Requires=x11vnc.service
+After=x11vnc.service
+
+[Service]
+User=godeye
+ExecStart=/usr/bin/websockify --web=/usr/share/novnc 127.0.0.1:6080 127.0.0.1:5900
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now x11vnc novnc
+sudo systemctl status xvfb x11vnc novnc --no-pager
+```
+
+Y en nginx, los bloques `/novnc/` y `/api/vnc/auth` de `deploy/nginx.conf`. No
+hay nada nuevo que abrir en el firewall: 6080 sigue en el loopback.
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Si `nginx -t` se queja de que `auth_request` es una directiva desconocida, falta
+el módulo: `sudo apt install nginx-extras`.
+
+Desde ahí, la pantalla se abre con el botón de monitor de la barra superior del
+panel — en otra pestaña, y solo para el rol admin.
+
 ### Iniciar sesión la primera vez
 
 La API local viene apagada y la sesión hay que abrirla desde la ventana de la
-aplicación. Se mira por VNC, atado al loopback y alcanzable solo por el túnel:
-nadie de internet ve esa pantalla.
-
-```bash
-nohup x11vnc -display :99 -localhost -nopw -forever -shared >/tmp/x11vnc.log 2>&1 &
-nohup websockify --web=/usr/share/novnc 6080 localhost:5900 >/tmp/novnc.log 2>&1 &
-```
-
-Desde la máquina de escritorio:
+aplicación. Con lo de arriba montado se entra por el panel. Antes de eso —o
+desde una máquina sin sesión— queda el túnel, que acerca el 6080 del VPS al
+localhost propio:
 
 ```powershell
 ssh -N -L 6080:127.0.0.1:6080 godeye@177.7.53.246
