@@ -350,15 +350,46 @@ sudo systemctl enable --now x11vnc novnc
 sudo systemctl status xvfb x11vnc novnc --no-pager
 ```
 
-Y en nginx, los bloques `/novnc/` y `/api/vnc/auth` de `deploy/nginx.conf`. No
-hay nada nuevo que abrir en el firewall: 6080 sigue en el loopback.
+Falta que nginx la publique. **No copies `deploy/nginx.conf` encima del archivo
+del sitio**: certbot lo reescribió con el bloque 443 y sobreescribirlo te tumba
+el HTTPS. Por eso la pantalla va en dos piezas que se agregan al costado —
+`deploy/novnc-map.conf` y `deploy/novnc-locations.conf`— y una sola línea dentro
+del server block. No hay nada nuevo que abrir en el firewall: 6080 sigue en el
+loopback.
+
+Desde la máquina de escritorio, subir las dos piezas:
+
+```powershell
+scp deploy/novnc-map.conf       godeye@177.7.53.246:/tmp/
+scp deploy/novnc-locations.conf godeye@177.7.53.246:/tmp/
+```
+
+Y en el VPS, ponerlas en su lugar y enchufarlas:
 
 ```bash
+sudo mv /tmp/novnc-map.conf       /etc/nginx/conf.d/godeye-vnc-map.conf
+sudo mv /tmp/novnc-locations.conf /etc/nginx/snippets/godeye-vnc.conf
+
+# El include va en TODOS los server blocks del sitio: certbot dejó dos
+# (el 80 que redirige y el 443 que sirve), y cada uno tiene su server_name.
+sudo sed -i '/server_name .*iagent\.mx/a\    include snippets/godeye-vnc.conf;'   /etc/nginx/sites-available/godeye
+
+grep -n "include snippets/godeye-vnc" /etc/nginx/sites-available/godeye   # debe salir 2 veces
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
 Si `nginx -t` se queja de que `auth_request` es una directiva desconocida, falta
 el módulo: `sudo apt install nginx-extras`.
+
+Comprobación, desde cualquier lado:
+
+```bash
+curl -sI https://yoconjulieta.iagent.mx/novnc/vnc.html | head -1
+```
+
+`302` a `/login` es lo correcto sin sesión — significa que nginx ya lo está
+atendiendo. Si contesta `307` a `/login?next=/novnc/vnc.html`, el include no
+tomó: la petición sigue cayendo en Next, y el iframe va a mostrar un 404.
 
 Desde ahí, la pantalla se abre con el botón de monitor de la barra superior del
 panel — en otra pestaña, y solo para el rol admin.
