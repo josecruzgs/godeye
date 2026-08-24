@@ -17,6 +17,21 @@ import type {
 const DEFAULT_MIN_REQUEST_INTERVAL_MS = 1100;
 const RATE_LIMIT_RETRY_DELAYS_MS = [1200, 2200, 3500];
 
+/**
+ * Ninguna llamada a la Local API puede esperar para siempre.
+ *
+ * `fetch` sin `signal` no tiene tope: si AdsPower acepta la conexión y después
+ * no contesta —el cuelgue del 23/8, con el worker siete horas dentro del mismo
+ * `await`, vivo, al 0% de CPU y sin escribir una línea— el bucle de tareas
+ * queda trancado, y PM2 no lo levanta porque el proceso nunca murió. Un
+ * timeout convierte eso en una tarea fallida, que es recuperable.
+ *
+ * Arrancar un navegador es la operación lenta (AdsPower levanta un Chromium
+ * entero) y por eso tiene su propio tope, mucho más generoso que el resto.
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+const START_BROWSER_TIMEOUT_MS = 120_000;
+
 let requestQueue = Promise.resolve();
 let lastRequestStartedAt = 0;
 
@@ -52,7 +67,17 @@ async function runQueuedRequest<T>(operation: () => Promise<T>) {
 
 async function request<T>(
   path: string,
-  { method = "GET", query, body }: { method?: string; query?: Record<string, string | number | undefined>; body?: unknown } = {},
+  {
+    method = "GET",
+    query,
+    body,
+    timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+  }: {
+    method?: string;
+    query?: Record<string, string | number | undefined>;
+    body?: unknown;
+    timeoutMs?: number;
+  } = {},
 ): Promise<T> {
   // Leídas en cada llamada (no a nivel de módulo): en el worker standalone
   // (src/worker/index.ts) dotenv carga .env.local después de que los imports
@@ -74,18 +99,33 @@ async function request<T>(
 
   return runQueuedRequest(async () => {
     for (let attempt = 0; ; attempt += 1) {
-      const res = await fetch(url, {
-        method,
-        headers,
-        body: body ? JSON.stringify(body) : undefined,
-        cache: "no-store",
-      });
+      // El signal se crea dentro del bucle: cada reintento merece su propio
+      // tope, no lo que sobró del anterior. Y cubre la lectura del cuerpo
+      // además de la conexión, así que el catch envuelve a las dos.
+      let json: AdsPowerListResponse<T>;
+      try {
+        const res = await fetch(url, {
+          method,
+          headers,
+          body: body ? JSON.stringify(body) : undefined,
+          cache: "no-store",
+          signal: AbortSignal.timeout(timeoutMs),
+        });
 
-      if (!res.ok) {
-        throw new Error(`AdsPower API HTTP ${res.status} en ${path}`);
+        if (!res.ok) throw new Error(`AdsPower API HTTP ${res.status} en ${path}`);
+
+        json = (await res.json()) as AdsPowerListResponse<T>;
+      } catch (err) {
+        // El `TimeoutError` pelado dice "The operation was aborted", que en un
+        // log de tarea fallida no ayuda a nadie: sin el nombre del endpoint no
+        // se distingue un AdsPower caído de un perfil que no arranca.
+        const name = err instanceof Error ? err.name : "";
+        if (name === "TimeoutError" || name === "AbortError") {
+          throw new Error(`AdsPower no respondió en ${path} tras ${Math.round(timeoutMs / 1000)}s`);
+        }
+        throw err;
       }
 
-      const json = (await res.json()) as AdsPowerListResponse<T>;
       if (json.code === 0) {
         return json.data;
       }
@@ -190,6 +230,7 @@ export const adsPower = {
   async startBrowser(profileId: string) {
     return request<AdsPowerStartBrowserData>("/api/v1/browser/start", {
       query: { user_id: profileId, headless: 0 },
+      timeoutMs: START_BROWSER_TIMEOUT_MS,
     });
   },
 
