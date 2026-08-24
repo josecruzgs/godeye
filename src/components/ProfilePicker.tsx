@@ -18,7 +18,11 @@ export type PickerProfile = {
   age?: number | null;
   gender?: "hombre" | "mujer" | null;
   tags?: Tag[];
+  /** Tareas acumuladas por el perfil. Lo calcula GET /api/profiles?all=true. */
+  taskCount?: number;
 };
+
+type Orden = "menos-usados" | "nombre";
 
 export default function ProfilePicker({
   profiles,
@@ -40,6 +44,10 @@ export default function ProfilePicker({
   const [tagFilter, setTagFilter] = useState("");
   const [ageMinFilter, setAgeMinFilter] = useState("");
   const [ageMaxFilter, setAgeMaxFilter] = useState("");
+  // Los menos usados primero, por defecto: elegir a ojo de una lista alfabética
+  // termina siempre en los mismos perfiles —los de arriba— y son justo los que
+  // conviene descansar.
+  const [orden, setOrden] = useState<Orden>("menos-usados");
   const [page, setPage] = useState(1);
 
   function groupName(groupId: string) {
@@ -59,7 +67,7 @@ export default function ProfilePicker({
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return profiles.filter((p) => {
+    const lista = profiles.filter((p) => {
       if (q && !p.name.toLowerCase().includes(q)) return false;
       if (groupFilter && p.groupId !== groupFilter) return false;
       if (platformFilter && p.platform !== platformFilter) return false;
@@ -69,11 +77,18 @@ export default function ProfilePicker({
       if (ageMax !== undefined && (p.age == null || p.age > ageMax)) return false;
       return true;
     });
-  }, [profiles, search, groupFilter, platformFilter, genderFilter, tagFilter, ageMin, ageMax]);
+
+    // El desempate por nombre no es decorativo: sin él, los cientos de perfiles
+    // que empatan en cero quedan en un orden que cambia entre cargas, y elegir
+    // "los primeros veinte" dejaría de significar lo mismo dos veces seguidas.
+    return orden === "menos-usados"
+      ? lista.sort((a, b) => (a.taskCount ?? 0) - (b.taskCount ?? 0) || a.name.localeCompare(b.name))
+      : lista.sort((a, b) => a.name.localeCompare(b.name));
+  }, [profiles, search, groupFilter, platformFilter, genderFilter, tagFilter, ageMin, ageMax, orden]);
 
   useEffect(() => {
     setPage(1);
-  }, [search, groupFilter, platformFilter, genderFilter, tagFilter, ageMin, ageMax]);
+  }, [search, groupFilter, platformFilter, genderFilter, tagFilter, ageMin, ageMax, orden]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -194,6 +209,15 @@ export default function ProfilePicker({
             ))}
           </select>
         )}
+        <select
+          value={orden}
+          onChange={(e) => setOrden(e.target.value as Orden)}
+          title="Cómo se ordenan los candidatos de la lista"
+          className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none focus:border-primary"
+        >
+          <option value="menos-usados">Menos usados primero</option>
+          <option value="nombre">Por nombre</option>
+        </select>
         <div className="flex items-center gap-1.5">
           <input
             type="number"
@@ -245,6 +269,9 @@ export default function ProfilePicker({
                     <th className="px-3 py-2 font-medium">Grupo</th>
                     <th className="px-3 py-2 font-medium">Plataforma</th>
                     <th className="px-3 py-2 font-medium">Edad/Género</th>
+                    <th className="px-3 py-2 font-medium" title="Tareas acumuladas por el perfil">
+                      Tareas
+                    </th>
                     <th className="px-3 py-2 font-medium">Estado</th>
                   </tr>
                 </thead>
@@ -287,6 +314,12 @@ export default function ProfilePicker({
                           {p.age || p.gender
                             ? `${p.age ?? "—"}${p.gender ? ` · ${p.gender === "hombre" ? "Hombre" : "Mujer"}` : ""}`
                             : "—"}
+                        </td>
+                        {/* Sin uso se marca en verde en vez de escribir un 0
+                            más entre otros números: es el candidato ideal y la
+                            idea es reconocerlo de un vistazo, sin leer. */}
+                        <td className={`px-3 py-2 ${p.taskCount ? "text-ink-muted" : "font-medium text-success"}`}>
+                          {p.taskCount ?? 0}
                         </td>
                         <td className="px-3 py-2">
                           <StatusBadge status={p.lastStatus} />
