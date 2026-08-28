@@ -260,6 +260,17 @@ export const adsPower = {
    * nombre, dice si abrir la histórica— y `ip_tab: 0` es no abrir la de la IP.
    * Ver https://localapi-doc-en.adspower.com/docs/FFMFMf.
    *
+   * `clear_cache_after_closing: 1` vacía la caché del perfil cuando el navegador
+   * se cierra, y no es una optimización: es lo que evita que el VPS se quede sin
+   * disco. Sin esto, cada tarea deja en `~/.cache/adspower_global` el video del
+   * reel que miró, para un perfil que quizá no se vuelve a usar en un mes. Entre
+   * el 7 y el 28 de agosto de 2026 eso acumuló 79 GB —de 96— y tiró producción:
+   * el `npm ci` del despliegue borró node_modules y ya no tuvo espacio para
+   * reinstalarlo. La contra es que cada tarea vuelve a bajar los assets de
+   * Facebook por el proxy residencial, que se paga por GB; se aceptó porque lo
+   * que se acumula es sobre todo video, y cada tarea mira una publicación
+   * distinta, así que esa caché casi nunca se reutilizaba.
+   *
    * Ojo: esto solo aplica cuando el navegador arranca. Si ya estaba abierto,
    * AdsPower devuelve la instancia que hay: ni estos flags ni los LAUNCH_ARGS
    * corren, y las pestañas viejas siguen ahí. De eso se ocupa connectToProfile.
@@ -271,6 +282,7 @@ export const adsPower = {
         headless: 0,
         open_tabs: 1,
         ip_tab: 0,
+        clear_cache_after_closing: 1,
         // La Local API espera el array serializado como JSON dentro del query.
         launch_args: JSON.stringify(LAUNCH_ARGS),
       },
