@@ -1,0 +1,32 @@
+# → /etc/systemd/system/godeye-webhook.service
+#
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now godeye-webhook
+#   journalctl -u godeye-webhook -f
+#
+# El secreto va en /etc/godeye-webhook.env (root:root, chmod 600), no acá:
+# los archivos de unidad son legibles por cualquiera del sistema.
+#
+#   GODEYE_WEBHOOK_SECRET=...
+#
+[Unit]
+Description=Receptor del webhook de GitHub para desplegar godeye
+After=network.target
+
+[Service]
+Type=simple
+User=godeye
+WorkingDirectory=/home/godeye/godeye
+EnvironmentFile=/etc/godeye-webhook.env
+Environment=GODEYE_REPO_DIR=/home/godeye/godeye
+Environment=GODEYE_DEPLOY_BRANCH=main
+Environment=GODEYE_WEBHOOK_PORT=9099
+# PM2, node y npm los instaló nvm o nodesource; systemd arranca con un PATH
+# mínimo que no los incluye.
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/godeye/.npm-global/bin
+ExecStart=/usr/bin/node /home/godeye/godeye/deploy/webhook.mjs
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -463,6 +463,82 @@ cd ~/godeye && git pull && npm ci && npm run build && pm2 reload all
 `pm2 reload` en vez de `restart`: espera a que terminen las peticiones en vuelo
 en vez de cortarlas.
 
+Lo mismo, hecho script y con los cuidados que a mano se olvidan —candado para
+que no corran dos a la vez, chequeo de disco antes de tocar `node_modules`,
+`npm ci` solo si cambiaron las dependencias y no reiniciar nada si el build
+falla— es `deploy/update.sh`:
+
+```bash
+bash ~/godeye/deploy/update.sh
+```
+
+### Deploy automático con un webhook de GitHub
+
+Con esto, cada push a `main` actualiza el VPS solo. Son tres piezas: un
+receptor que escucha en el localhost (`deploy/webhook.mjs`), nginx que le
+acerca una ruta pública, y el webhook dado de alta en GitHub.
+
+**Qué se despliega y qué no.** Solo los push a `main`; cualquier otra rama se
+contesta con un 200 y no pasa nada. Si llegan tres push seguidos no se
+encolan tres builds: el que está corriendo termina y después se vuelve a mirar
+el remoto una sola vez, con el último commit de los tres.
+
+**El punto a tener presente:** el deploy termina en `pm2 reload all`, y para los
+workers eso es un reinicio —una tarea de automatización en curso se corta y hay
+que recuperarla. Un push a `main` a media campaña ya no es solo un commit. Si
+esto molesta, la alternativa es trabajar en una rama y hacer merge a `main`
+cuando la cola esté vacía.
+
+En el VPS, como `godeye`:
+
+```bash
+# Un secreto largo al azar; se usa dos veces: acá y en el formulario de GitHub.
+openssl rand -hex 32
+```
+
+Como `root`, con ese valor:
+
+```bash
+echo 'GODEYE_WEBHOOK_SECRET=EL_SECRETO_QUE_SALIÓ_ARRIBA' > /etc/godeye-webhook.env
+chmod 600 /etc/godeye-webhook.env
+
+cp /home/godeye/godeye/deploy/godeye-webhook.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now godeye-webhook
+systemctl status godeye-webhook --no-pager
+
+cp /home/godeye/godeye/deploy/webhook-location.conf /etc/nginx/snippets/godeye-webhook.conf
+```
+
+El `include snippets/godeye-webhook.conf;` va dentro del server block de 443,
+al lado del de la pantalla. Después, `nginx -t && systemctl reload nginx`.
+
+Es un servicio de systemd y no una app de PM2 porque el deploy hace
+`pm2 reload all`: dentro de PM2, el receptor se reiniciaría a sí mismo y
+mataría su propio build a la mitad.
+
+En GitHub → Settings → Webhooks → Add webhook:
+
+| Campo | Valor |
+|---|---|
+| Payload URL | `https://yoconjulieta.iagent.mx/_deploy/github` |
+| Content type | `application/json` |
+| Secret | el mismo de `/etc/godeye-webhook.env` |
+| Events | Just the push event |
+
+GitHub manda un `ping` al guardarlo; en Recent Deliveries tiene que figurar con
+un `200 pong`. El resto se sigue así:
+
+```bash
+journalctl -u godeye-webhook -f    # quién llamó y qué se hizo con eso
+tail -f ~/godeye-deploy.log        # la salida del build, igual que a mano
+```
+
+Un `401 firma inválida` en Recent Deliveries es el secreto distinto entre los
+dos lados. Si el build falla, el log lo dice y **no** se reinicia nada: la
+versión anterior sigue en pie y abajo del error queda escrito el comando para
+volver atrás.
+
 ## Mantenimiento
 
 ```bash
