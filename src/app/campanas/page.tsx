@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { ApiError, apiFetch } from "@/lib/api";
+import { useSession } from "@/lib/session";
 import Card from "@/components/Card";
 import ElementIcon from "@/components/ui/ElementIcon";
 import Pagination from "@/components/Pagination";
@@ -152,6 +153,11 @@ function progressFor(campaign: Campaign) {
 
 function CampaignsContent() {
   const searchParams = useSearchParams();
+  const session = useSession();
+  // Eliminar un perfil es definitivo y se lleva puestas tareas de campañas que
+  // el operador no está mirando; queda del lado de quien administra el parque
+  // de perfiles.
+  const esAdmin = session?.role === "admin";
   const campaignIdParam = searchParams.get("campaignId");
 
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -991,7 +997,7 @@ Las tareas que ya se cumplieron quedan como registro.`,
                                     Facebook: un perfil se elimina una vez y no
                                     hay vuelta atrás, así que el botón no se
                                     ofrece al lado de cualquier fallo pasajero. */}
-                                {frenadoPorFacebook(task) && task.profileId && (
+                                {esAdmin && frenadoPorFacebook(task) && task.profileId && (
                                   <button
                                     type="button"
                                     disabled={deletingProfileId === task.profileId._id}
