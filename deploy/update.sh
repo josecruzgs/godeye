@@ -4,6 +4,18 @@
 # webhook. Se puede correr a mano igual: `bash ~/godeye/deploy/update.sh`.
 set -uo pipefail
 
+# Se corre desde una copia porque el `git reset` de más abajo reescribe ESTE
+# archivo: bash lee el script por tramos a medida que avanza, así que a partir
+# de ahí estaría ejecutando una mezcla de las dos versiones. La copia se borra
+# sola al terminar.
+if [ -z "${GODEYE_DEPLOY_COPIA:-}" ]; then
+  copia=$(mktemp) || exit 1
+  cat "$0" > "$copia" || exit 1
+  export GODEYE_DEPLOY_COPIA=1
+  exec bash "$copia" "$@"
+fi
+trap 'rm -f "$0"' EXIT
+
 REPO="${GODEYE_REPO_DIR:-$HOME/godeye}"
 BRANCH="${GODEYE_DEPLOY_BRANCH:-main}"
 # Margen de disco antes de tocar node_modules o .next. La caché de AdsPower
@@ -11,13 +23,29 @@ BRANCH="${GODEYE_DEPLOY_BRANCH:-main}"
 # árbol de dependencias roto, que es mucho peor que no desplegar.
 MIN_FREE_MB="${GODEYE_MIN_FREE_MB:-3000}"
 
+# --force: compila y recarga aunque el repo ya esté en el commit del remoto.
+# Sirve para rehacer un build que quedó a medias, donde la comparación de
+# commits diría "no hay nada que hacer".
+FORCE=0
+[ "${1:-}" = "--force" ] && FORCE=1
+
 cd "$REPO" || exit 1
 
-# Un solo deploy a la vez, aunque el webhook y una mano lo lancen juntos.
-exec 9>"$HOME/.godeye-deploy.lock"
-if ! flock -n 9; then
-  echo "== $(date -Is) ya hay un deploy corriendo; salgo"
-  exit 0
+# Un solo deploy a la vez, aunque el webhook y una mano lo lancen juntos. El
+# candado lleva el nombre del repo: donde conviven dos de estos sistemas bajo el
+# mismo usuario, uno compartido dejaría al segundo deploy creyendo que ya hay
+# uno corriendo y saliendo sin hacer nada.
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$HOME/.$(basename "$REPO")-deploy.lock"
+  if ! flock -n 9; then
+    echo "== $(date -Is) ya hay un deploy corriendo; salgo"
+    exit 0
+  fi
+else
+  # Sin flock no hay forma de tomar el candado, pero tampoco es motivo para no
+  # desplegar: se avisa y se sigue. En Ubuntu viene con util-linux, así que
+  # esto solo pasa corriendo el script fuera del servidor.
+  echo "== $(date -Is) sin flock en esta máquina: se sigue sin candado"
 fi
 
 step() { echo "-- $(date -Is) $*"; }
@@ -31,7 +59,7 @@ step "git fetch"
 git fetch --prune origin "$BRANCH" || fail "fetch falló"
 target=$(git rev-parse "origin/$BRANCH") || fail "no existe origin/$BRANCH"
 
-if [ "$before" = "$target" ]; then
+if [ "$before" = "$target" ] && [ "$FORCE" = "0" ]; then
   echo "== ya estaba en ${target:0:7}, nada que hacer"
   exit 0
 fi
@@ -61,14 +89,23 @@ step "npm run build"
 if ! npm run build; then
   echo "!! el build falló. Los procesos siguen corriendo con el build anterior en memoria,"
   echo "!! pero .next quedó a medias: NO reinicies PM2 hasta arreglarlo."
-  echo "!! Para volver atrás:  cd $REPO && git reset --hard $before && npm run build && pm2 reload all"
+  echo "!! Para volver atrás:  cd $REPO && git reset --hard $before && bash deploy/update.sh --force"
   exit 1
 fi
 
 # reload y no restart: espera a que terminen las peticiones en vuelo. Ojo que
 # para los workers (fork, no cluster) es un reinicio igual: una tarea de
 # automatización en curso se corta.
+#
+# Por el archivo de ecosistema y no `pm2 reload all`: hay VPS con dos de estos
+# sistemas bajo el mismo usuario, y PM2 es por usuario, así que un "all"
+# reiniciaría también la app del vecino. El ecosistema nombra exactamente los
+# procesos de este repo.
 step "pm2 reload"
-pm2 reload all || fail "pm2 reload falló"
+if [ -f ecosystem.config.cjs ]; then
+  pm2 reload ecosystem.config.cjs || fail "pm2 reload falló"
+else
+  pm2 reload all || fail "pm2 reload falló"
+fi
 
 echo "== $(date -Is) listo en ${target:0:7}"

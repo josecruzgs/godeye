@@ -13,14 +13,16 @@ import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 
 const REPO = process.env.GODEYE_REPO_DIR ?? resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BRANCH = process.env.GODEYE_DEPLOY_BRANCH ?? "main";
 const PORT = Number(process.env.GODEYE_WEBHOOK_PORT ?? 9099);
-const LOG = process.env.GODEYE_DEPLOY_LOG ?? join(homedir(), "godeye-deploy.log");
+// Con el nombre de la carpeta del repo y no fijo: hay VPS con dos de estos
+// sistemas bajo el mismo usuario, y un solo archivo mezclaría los dos deploys.
+const LOG = process.env.GODEYE_DEPLOY_LOG ?? join(homedir(), `${basename(REPO)}-deploy.log`);
 const SECRET = process.env.GODEYE_WEBHOOK_SECRET;
 
 if (!SECRET) {

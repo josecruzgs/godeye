@@ -469,8 +469,12 @@ que no corran dos a la vez, chequeo de disco antes de tocar `node_modules`,
 falla— es `deploy/update.sh`:
 
 ```bash
-bash ~/godeye/deploy/update.sh
+bash ~/godeye/deploy/update.sh            # solo si hay commits nuevos
+bash ~/godeye/deploy/update.sh --force    # compila y recarga igual
 ```
+
+El `--force` es para rehacer un build que quedó a medias: sin él, el script
+compara commits, ve que el repo ya está en el del remoto y sale sin hacer nada.
 
 ### Deploy automático con un webhook de GitHub
 
@@ -483,8 +487,8 @@ contesta con un 200 y no pasa nada. Si llegan tres push seguidos no se
 encolan tres builds: el que está corriendo termina y después se vuelve a mirar
 el remoto una sola vez, con el último commit de los tres.
 
-**El punto a tener presente:** el deploy termina en `pm2 reload all`, y para los
-workers eso es un reinicio —una tarea de automatización en curso se corta y hay
+**El punto a tener presente:** el deploy termina recargando los procesos de PM2
+de este repo, y para los workers eso es un reinicio —una tarea de automatización en curso se corta y hay
 que recuperarla. Un push a `main` a media campaña ya no es solo un commit. Si
 esto molesta, la alternativa es trabajar en una rama y hacer merge a `main`
 cuando la cola esté vacía.
@@ -513,9 +517,12 @@ cp /home/godeye/godeye/deploy/webhook-location.conf /etc/nginx/snippets/godeye-w
 El `include snippets/godeye-webhook.conf;` va dentro del server block de 443,
 al lado del de la pantalla. Después, `nginx -t && systemctl reload nginx`.
 
-Es un servicio de systemd y no una app de PM2 porque el deploy hace
-`pm2 reload all`: dentro de PM2, el receptor se reiniciaría a sí mismo y
-mataría su propio build a la mitad.
+Es un servicio de systemd y no una app de PM2 porque el deploy termina
+recargando PM2: dentro de PM2, el receptor se reiniciaría a sí mismo y mataría
+su propio build a la mitad. Como vive afuera, un cambio en `deploy/webhook.mjs`
+no lo levanta el propio deploy: hay que reiniciarlo a mano con
+`sudo systemctl restart godeye-webhook`. Lo de `deploy/update.sh` sí toma
+efecto solo, porque se lee en cada corrida.
 
 En GitHub → Settings → Webhooks → Add webhook:
 
