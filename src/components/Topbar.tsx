@@ -171,12 +171,23 @@ export default function Topbar() {
       <div className="ml-auto flex flex-wrap items-center gap-2.5">
         <span className="classchip">USO INTERNO</span>
 
+        {/* Al cliente solo la hora, sin la ciudad: la etiqueta está para que un
+            operador sepa contra qué reloj mirar la cifra, y él no tiene Ajustes
+            donde elegir su ciudad —vería siempre la de la casa, que no es
+            necesariamente la suya. */}
         {clock && (
           <span
-            title={`Hora en ${city.label}, ${city.state} · se cambia en Ajustes`}
+            title={
+              isClienteRole(session?.role)
+                ? `Hora en ${city.label}, ${city.state}`
+                : `Hora en ${city.label}, ${city.state} · se cambia en Ajustes`
+            }
             className="hidden font-mono text-[11px] tabular-nums text-ink-secondary sm:inline"
           >
-            <span className="text-ink-muted">{city.label.toUpperCase()}</span> {clock}
+            {!isClienteRole(session?.role) && (
+              <span className="text-ink-muted">{city.label.toUpperCase()} </span>
+            )}
+            {clock}
           </span>
         )}
 

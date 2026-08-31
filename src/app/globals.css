@@ -599,6 +599,22 @@ body {
   align-items: start;
 }
 
+/*
+ * Variante donde las tarjetas de una misma fila igualan altura.
+ *
+ * El bento normal alinea al inicio a propósito: en el dashboard las chapas
+ * miden cosas distintas y estirar una lista corta hasta la altura de una
+ * gráfica deja un hueco muerto. Pero cuando la fila son cuatro KPIs del mismo
+ * tipo —o una gráfica al lado de otra—, que uno quede más bajo porque le faltó
+ * la pastilla del delta se lee como un defecto, no como una diferencia.
+ *
+ * Va con dos clases (`.bento.is-stretch`) para ganarle en especificidad al
+ * `align-items: start` de arriba sin depender del orden del archivo.
+ */
+.bento.is-stretch {
+  align-items: stretch;
+}
+
 .c3 {
   grid-column: span 3;
 }

@@ -751,7 +751,9 @@ Las tareas que ya se cumplieron quedan como registro.`,
         // de doce columnas—, así que en una grilla de cuatro cada tarjeta pedía
         // tres cuartos del ancho y terminaban una por renglón. Sobre las doce
         // del bento, `c3` es exactamente un cuarto y los cuatro entran en línea.
-        <div className="bento">
+        // `is-stretch` las iguala en alto: "Tasa de éxito global" no lleva
+        // pastilla de delta y sin eso quedaba más baja que las otras tres.
+        <div className="bento is-stretch">
           <StatCard
             label="Likes completados"
             value={performance.likeSuccess}
@@ -952,9 +954,11 @@ Las tareas que ya se cumplieron quedan como registro.`,
 
       {/* Actividad, solo para el cliente: las mismas chapas del dashboard,
           contadas sobre las campañas que el filtro dejó pasar. `bento` es la
-          rejilla de doce columnas que entienden los `col` de Panel. */}
+          rejilla de doce columnas que entienden los `col` de Panel, y
+          `is-stretch` empareja el alto de la curva y el podio, que van lado a
+          lado y cada uno crecía lo que le pedía su contenido. */}
       {esCliente && charts && (
-        <div className="bento">
+        <div className="bento is-stretch">
           <SubHead>Actividad</SubHead>
 
           <Panel
