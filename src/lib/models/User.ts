@@ -1,9 +1,9 @@
 import { Schema, models, model, type InferSchemaType } from "mongoose";
 import { dropStaleModel } from "./staleModel";
 
-// "cliente" es el rol de mirar: entra, ve el resumen de campañas y la escucha,
-// y no puede escribir nada. Qué páginas y qué endpoints alcanza está en
-// src/lib/auth/roles.ts, que es la lista que usan el proxy, la API y el menú.
+// "cliente" es el rol de mirar: entra al resumen de campañas y no puede
+// escribir nada. Qué alcanza está en src/lib/auth/roles.ts, que es la lista
+// que usan el proxy, la API y el armado de la pantalla.
 export const USER_ROLES = ["admin", "operador", "cliente"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 // Cómo se llama cada rol en pantalla vive en lib/auth/roles.ts, no acá: este

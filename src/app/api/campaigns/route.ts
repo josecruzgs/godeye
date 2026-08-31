@@ -15,6 +15,123 @@ type CountRow = {
 };
 
 /**
+ * Un like a un comentario cuenta como like: para el reporte de campaña es la
+ * misma acción, solo cambia dónde cae. Misma definición que el dashboard.
+ */
+const LIKE_TYPES = ["like", "likecomment"];
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Los cuatro KPIs de rendimiento que ve el cliente. Ver `performanceFor`. */
+export type CampaignPerformance = {
+  likeSuccess: number;
+  likeSuccessRate: number | null;
+  commentSuccess: number;
+  commentSuccessRate: number | null;
+  globalSuccessRate: number | null;
+  last7: number;
+  last7Delta: number;
+};
+
+function rate(success: number, failed: number): number | null {
+  const total = success + failed;
+  return total > 0 ? Math.round((success / total) * 100) : null;
+}
+
+/**
+ * Likes y comentarios completados, tasa de éxito y lo cerrado en siete días.
+ *
+ * Son los mismos cuatro números que el dashboard le muestra al admin, pero
+ * contados sobre las tareas de ESTAS campañas —las que el filtro dejó pasar— y
+ * no sobre todas las tareas del dueño.
+ *
+ * La diferencia importa: el dashboard cuenta también las tareas sueltas, las
+ * que se lanzaron sin campaña, y acá eso rompería la página. "Tareas" ya suma
+ * solo lo que cuelga de una campaña, así que si estos cuatro contaran otra cosa
+ * los números de la misma pantalla no cerrarían entre sí, que es exactamente la
+ * confusión que estos KPIs vienen a evitar.
+ */
+async function performanceFor(campaignIds: Types.ObjectId[]): Promise<CampaignPerformance> {
+  const vacio: CampaignPerformance = {
+    likeSuccess: 0,
+    likeSuccessRate: null,
+    commentSuccess: 0,
+    commentSuccessRate: null,
+    globalSuccessRate: null,
+    last7: 0,
+    last7Delta: 0,
+  };
+  if (campaignIds.length === 0) return vacio;
+
+  const now = Date.now();
+  const d7 = new Date(now - WEEK_MS);
+  const d14 = new Date(now - 2 * WEEK_MS);
+
+  // Un solo recorrido de las tareas para los cuatro números: agrupar por tipo y
+  // estado da likes y comentarios, y las dos ventanas de siete días salen de
+  // contar aparte en la misma pasada.
+  const [rows] = await TaskModel.aggregate<{
+    porTipo: { _id: { type: string; status: string }; count: number }[];
+    semanas: { _id: "last7" | "prev7"; count: number }[];
+  }>([
+    { $match: { campaignId: { $in: campaignIds } } },
+    {
+      $facet: {
+        porTipo: [
+          { $match: { status: { $in: ["success", "failed"] } } },
+          { $group: { _id: { type: "$type", status: "$status" }, count: { $sum: 1 } } },
+        ],
+        semanas: [
+          { $match: { status: "success", finishedAt: { $gte: d14 } } },
+          {
+            $group: {
+              _id: { $cond: [{ $gte: ["$finishedAt", d7] }, "last7", "prev7"] },
+              count: { $sum: 1 },
+            },
+          },
+        ],
+      },
+    },
+  ]);
+
+  let likeSuccess = 0;
+  let likeFailed = 0;
+  let commentSuccess = 0;
+  let commentFailed = 0;
+  let success = 0;
+  let failed = 0;
+
+  for (const row of rows?.porTipo ?? []) {
+    const esExito = row._id.status === "success";
+    if (esExito) success += row.count;
+    else failed += row.count;
+
+    if (LIKE_TYPES.includes(row._id.type)) {
+      if (esExito) likeSuccess += row.count;
+      else likeFailed += row.count;
+    } else if (row._id.type === "comment") {
+      if (esExito) commentSuccess += row.count;
+      else commentFailed += row.count;
+    }
+  }
+
+  const last7 = rows?.semanas.find((s) => s._id === "last7")?.count ?? 0;
+  const prev7 = rows?.semanas.find((s) => s._id === "prev7")?.count ?? 0;
+
+  return {
+    likeSuccess,
+    likeSuccessRate: rate(likeSuccess, likeFailed),
+    commentSuccess,
+    commentSuccessRate: rate(commentSuccess, commentFailed),
+    globalSuccessRate: rate(success, failed),
+    last7,
+    // Sin semana previa no hay con qué comparar: un 100% es más honesto que un
+    // porcentaje inventado sobre cero.
+    last7Delta: prev7 > 0 ? Math.round(((last7 - prev7) / prev7) * 100) : last7 > 0 ? 100 : 0,
+  };
+}
+
+/**
  * Los tipos de campaña que trabajan sobre una publicación concreta. Igual que
  * en la ruta del detalle: en warmup y publicaciones el primer `goto` va al muro
  * o al grupo, así que llamarle "la publicación de la campaña" sería mentir.
@@ -152,5 +269,11 @@ export const GET = withAuth(async (user, req: NextRequest) => {
     { tasks: 0, running: 0, queued: 0, success: 0, failed: 0 },
   );
 
-  return NextResponse.json({ campaigns, total, totals, page, pageSize });
+  // Los cuatro de rendimiento son la pantalla entera del cliente, así que solo
+  // se calculan para él: al resto le sobran, porque tiene el dashboard.
+  const performance = isCliente(user)
+    ? await performanceFor(filtered.map((campaign) => new Types.ObjectId(String(campaign._id))))
+    : null;
+
+  return NextResponse.json({ campaigns, total, totals, performance, page, pageSize });
 });

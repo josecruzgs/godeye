@@ -5,7 +5,6 @@ import MentionModel from "@/lib/models/Mention";
 import ExecutiveBriefModel from "@/lib/models/ExecutiveBrief";
 import ActionPlayModel from "@/lib/models/ActionPlay";
 import { withAuth } from "@/lib/apiHandler";
-import { readOnlyWideFilter } from "@/lib/auth/dal";
 import {
   normalizeEntities,
   assignEntityKeys,
@@ -19,7 +18,7 @@ export const GET = withAuth(async (user, _req: NextRequest, { params }: Params) 
   const { id } = await params;
   await dbConnect();
 
-  const project = await ListeningProjectModel.findOne({ _id: id, ...readOnlyWideFilter(user) }).lean();
+  const project = await ListeningProjectModel.findOne({ _id: id, ownerId: user.objectId }).lean();
   if (!project) return NextResponse.json({ error: "Proyecto no encontrado" }, { status: 404 });
 
   return NextResponse.json({ project });

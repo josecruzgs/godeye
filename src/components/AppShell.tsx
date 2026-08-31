@@ -1,6 +1,8 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { useSession } from "@/lib/session";
+import { isClienteRole } from "@/lib/auth/roles";
 import Sidebar from "@/components/Sidebar";
 import Topbar from "@/components/Topbar";
 import RouteTransitionOverlay from "@/components/RouteTransitionOverlay";
@@ -14,7 +16,14 @@ const PUBLIC_PREFIXES = ["/share/", "/login"];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const session = useSession();
   const isPublicRoute = PUBLIC_PREFIXES.some((prefix) => pathname?.startsWith(prefix));
+
+  // El cliente tiene una sola página y ningún lado a donde ir, así que no lleva
+  // menú: un sidebar con un solo ítem, que además es el que ya está abierto,
+  // solo le come ancho a la tabla y sugiere que hay más panel escondido. Se
+  // queda la barra superior, que es donde vive el botón de cerrar sesión.
+  const sinMenu = isClienteRole(session?.role);
 
   // /vnc sí exige sesión, pero tampoco lleva el marco del panel: es el
   // escritorio remoto del VPS a ventana completa, en su propia pestaña, y el
@@ -37,7 +46,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       <Splash />
-      <Sidebar />
+      {!sinMenu && <Sidebar />}
       <div className="relative flex h-screen flex-1 flex-col overflow-hidden">
         <Topbar />
         <main className="relative flex-1 overflow-y-auto">

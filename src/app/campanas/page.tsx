@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import {
   Activity,
+  CalendarCheck,
   Eye,
   ExternalLink,
   Heart,
@@ -19,6 +20,7 @@ import {
   Search,
   Share2,
   Trash2,
+  TrendingUp,
   UserX,
   X,
 } from "lucide-react";
@@ -27,6 +29,7 @@ import { useSession } from "@/lib/session";
 import Card from "@/components/Card";
 import ElementIcon from "@/components/ui/ElementIcon";
 import Pagination from "@/components/Pagination";
+import StatCard from "@/components/StatCard";
 import StatusBadge, { STATUS_COLORS, STATUS_LABELS } from "@/components/StatusBadge";
 
 type Counts = {
@@ -90,6 +93,20 @@ type Operator = { _id: string; username: string; role: string; active: boolean }
 type CampaignTotals = { tasks: number; running: number; queued: number; success: number; failed: number };
 
 const EMPTY_TOTALS: CampaignTotals = { tasks: 0, running: 0, queued: 0, success: 0, failed: 0 };
+
+/**
+ * Los cuatro de rendimiento. Solo viajan con sesión de cliente: son su pantalla
+ * entera, porque no tiene el dashboard donde el resto los mira.
+ */
+type CampaignPerformance = {
+  likeSuccess: number;
+  likeSuccessRate: number | null;
+  commentSuccess: number;
+  commentSuccessRate: number | null;
+  globalSuccessRate: number | null;
+  last7: number;
+  last7Delta: number;
+};
 
 const PAGE_SIZE = 20;
 const STATUSES = ["pending", "queued", "running", "paused", "success", "failed", "partial", "cancelled", "empty"];
@@ -180,17 +197,19 @@ function CampaignsContent() {
   // de perfiles. El mismo rol es el que ve —y edita— las campañas de todos los
   // operadores: por eso también gobierna la columna "Usuario" y su filtro.
   const esAdmin = session?.role === "admin";
-  // El cliente es de solo lectura: ve el resumen y nada más. No se le muestran
-  // los accesos para crear, ni el detalle de la campaña, ni los conteos de
-  // exitosas y fallidas — lo que le importa es que la campaña corrió y sobre
-  // qué publicación. El servidor ya se lo impide (ver lib/auth/roles.ts); esto
-  // es que la pantalla diga lo mismo que el candado.
+  // El cliente es de solo lectura y esta es su única pantalla: entra acá y no
+  // hay menú ni a dónde ir. No se le muestran los accesos para crear, ni el
+  // detalle de la campaña, ni el desglose de exitosas y fallidas por campaña —
+  // lo que se lleva es cuánto se hizo, qué tan bien salió y sobre qué
+  // publicación. El servidor ya se lo impide (ver lib/auth/roles.ts); esto es
+  // que la pantalla diga lo mismo que el candado.
   const esCliente = session?.role === "cliente";
   const campaignIdParam = searchParams.get("campaignId");
 
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [total, setTotal] = useState(0);
   const [totals, setTotals] = useState<CampaignTotals>(EMPTY_TOTALS);
+  const [performance, setPerformance] = useState<CampaignPerformance | null>(null);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -240,12 +259,16 @@ function CampaignsContent() {
       if (status) params.set("status", status);
       if (type) params.set("type", type);
       if (ownerId) params.set("ownerId", ownerId);
-      const data = await apiFetch<{ campaigns: Campaign[]; total: number; totals?: CampaignTotals }>(
-        `/api/campaigns?${params}`,
-      );
+      const data = await apiFetch<{
+        campaigns: Campaign[];
+        total: number;
+        totals?: CampaignTotals;
+        performance?: CampaignPerformance | null;
+      }>(`/api/campaigns?${params}`);
       setCampaigns(data.campaigns);
       setTotal(data.total);
       setTotals(data.totals ?? EMPTY_TOTALS);
+      setPerformance(data.performance ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -604,6 +627,63 @@ Las tareas que ya se cumplieron quedan como registro.`,
       </div>
 
       {error && <p className="rounded-xl bg-critical/10 p-3 text-sm text-critical">{error}</p>}
+
+      {/* Rendimiento, solo para el cliente: es la lectura que se lleva de la
+          pantalla —cuánto se hizo y qué tan bien salió— y no tiene el
+          dashboard donde el resto la mira. Mismas tarjetas y mismos acentos
+          que allá, para que sea reconocible. */}
+      {esCliente && performance && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            label="Likes completados"
+            value={performance.likeSuccess}
+            icon={Heart}
+            accent="series-3"
+            delta={
+              performance.likeSuccessRate !== null
+                ? {
+                    text: `${performance.likeSuccessRate}% éxito`,
+                    positive: performance.likeSuccessRate >= 50,
+                  }
+                : undefined
+            }
+          />
+          <StatCard
+            label="Comentarios completados"
+            value={performance.commentSuccess}
+            icon={MessageSquare}
+            accent="series-5"
+            delta={
+              performance.commentSuccessRate !== null
+                ? {
+                    text: `${performance.commentSuccessRate}% éxito`,
+                    positive: performance.commentSuccessRate >= 50,
+                  }
+                : undefined
+            }
+          />
+          <StatCard
+            label="Tasa de éxito global"
+            value={performance.globalSuccessRate !== null ? `${performance.globalSuccessRate}%` : "—"}
+            icon={TrendingUp}
+            accent="success"
+          />
+          <StatCard
+            label="Completadas · 7 días"
+            value={performance.last7}
+            icon={CalendarCheck}
+            accent="gold"
+            delta={
+              performance.last7 > 0 || performance.last7Delta !== 0
+                ? {
+                    text: `${Math.abs(performance.last7Delta)}% vs. semana previa`,
+                    positive: performance.last7Delta >= 0,
+                  }
+                : undefined
+            }
+          />
+        </div>
+      )}
 
       <div className={`grid gap-3 sm:grid-cols-2 ${esCliente ? "lg:grid-cols-3" : "lg:grid-cols-5"}`}>
         <Card className="p-4">
