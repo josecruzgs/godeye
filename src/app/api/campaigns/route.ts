@@ -110,8 +110,10 @@ export type CampaignPerformance = {
   commentSuccess: number;
   commentSuccessRate: number | null;
   globalSuccessRate: number | null;
-  last7: number;
-  last7Delta: number;
+  /** Tareas cerradas con éxito en el periodo elegido (o en 7 días si no hay). */
+  completed: number;
+  /** Variación contra el periodo inmediatamente anterior, en porcentaje. */
+  completedDelta: number;
 };
 
 function rate(success: number, failed: number): number | null {
@@ -132,15 +134,24 @@ function rate(success: number, failed: number): number | null {
  * los números de la misma pantalla no cerrarían entre sí, que es exactamente la
  * confusión que estos KPIs vienen a evitar.
  */
-async function performanceFor(campaignIds: Types.ObjectId[]): Promise<CampaignPerformance> {
+async function performanceFor(
+  campaignIds: Types.ObjectId[],
+  /**
+   * Campañas del periodo inmediatamente anterior, cuando hay un rango elegido.
+   * `null` significa "sin periodo": ahí el cuarto KPI vuelve a ser el de siete
+   * días contra la semana previa, que es lo único comparable si el filtro dice
+   * "todas las fechas".
+   */
+  prevIds: Types.ObjectId[] | null,
+): Promise<CampaignPerformance> {
   const vacio: CampaignPerformance = {
     likeSuccess: 0,
     likeSuccessRate: null,
     commentSuccess: 0,
     commentSuccessRate: null,
     globalSuccessRate: null,
-    last7: 0,
-    last7Delta: 0,
+    completed: 0,
+    completedDelta: 0,
   };
   if (campaignIds.length === 0) return vacio;
 
@@ -196,8 +207,20 @@ async function performanceFor(campaignIds: Types.ObjectId[]): Promise<CampaignPe
     }
   }
 
-  const last7 = rows?.semanas.find((s) => s._id === "last7")?.count ?? 0;
-  const prev7 = rows?.semanas.find((s) => s._id === "prev7")?.count ?? 0;
+  // Con un periodo elegido, "completadas" es todo lo que salió bien en él —las
+  // campañas ya vienen recortadas a ese rango— y se compara contra las campañas
+  // del periodo anterior. Sin periodo se cae a las dos ventanas de siete días.
+  //
+  // El periodo anterior se cuenta sobre OTRAS campañas, no sobre estas con otra
+  // fecha: estas nacieron dentro del rango y en el rango previo no existían,
+  // así que compararlas contra sí mismas daría +100% siempre.
+  const conPeriodo = prevIds !== null;
+  const completed = conPeriodo ? success : (rows?.semanas.find((s) => s._id === "last7")?.count ?? 0);
+  const previo = conPeriodo
+    ? prevIds.length > 0
+      ? await TaskModel.countDocuments({ campaignId: { $in: prevIds }, status: "success" })
+      : 0
+    : (rows?.semanas.find((s) => s._id === "prev7")?.count ?? 0);
 
   return {
     likeSuccess,
@@ -205,10 +228,10 @@ async function performanceFor(campaignIds: Types.ObjectId[]): Promise<CampaignPe
     commentSuccess,
     commentSuccessRate: rate(commentSuccess, commentFailed),
     globalSuccessRate: rate(success, failed),
-    last7,
-    // Sin semana previa no hay con qué comparar: un 100% es más honesto que un
+    completed,
+    // Sin periodo previo no hay con qué comparar: un 100% es más honesto que un
     // porcentaje inventado sobre cero.
-    last7Delta: prev7 > 0 ? Math.round(((last7 - prev7) / prev7) * 100) : last7 > 0 ? 100 : 0,
+    completedDelta: previo > 0 ? Math.round(((completed - previo) / previo) * 100) : completed > 0 ? 100 : 0,
   };
 }
 
@@ -301,12 +324,24 @@ export const GET = withAuth(async (user, req: NextRequest) => {
   // UTC—, así que acá solo se validan y se aplican. Una fecha basura se ignora
   // en vez de tumbar la consulta: peor que un filtro de más es una pantalla en
   // blanco sin explicación.
-  const createdAt: Record<string, Date> = {};
-  const from = new Date(sp.get("from") ?? "");
-  const to = new Date(sp.get("to") ?? "");
-  if (!Number.isNaN(from.getTime())) createdAt.$gte = from;
-  if (!Number.isNaN(to.getTime())) createdAt.$lte = to;
-  if (Object.keys(createdAt).length > 0) filter.createdAt = createdAt;
+  //
+  // `sinFecha` se guarda aparte porque el periodo anterior —el que da el "vs."
+  // del KPI de completadas— se busca con los mismos criterios pero otro rango.
+  const sinFecha = { ...filter };
+  const fecha = (raw: string | null) => {
+    const d = new Date(raw ?? "");
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+  const desde = fecha(sp.get("from"));
+  const hasta = fecha(sp.get("to"));
+  const prevDesde = fecha(sp.get("prevFrom"));
+  const prevHasta = fecha(sp.get("prevTo"));
+  if (desde || hasta) {
+    filter.createdAt = {
+      ...(desde ? { $gte: desde } : {}),
+      ...(hasta ? { $lte: hasta } : {}),
+    };
+  }
 
   const campaignDocs = await CampaignModel.find(filter).sort({ createdAt: -1 }).lean();
   const campaignIds = campaignDocs.map((campaign) => campaign._id);
@@ -372,8 +407,20 @@ export const GET = withAuth(async (user, req: NextRequest) => {
     ? filtered.map((campaign) => new Types.ObjectId(String(campaign._id)))
     : [];
 
+  // Las campañas del periodo anterior, que dan el "vs." del KPI de completadas.
+  // Los extremos los manda el navegador ya resueltos: el anterior a "mes
+  // pasado" es un mes de calendario, no una resta de días (ver
+  // resolvePrevRange en la página).
+  let prevIds: Types.ObjectId[] | null = null;
+  if (isCliente(user) && prevDesde && prevHasta) {
+    const prev = await CampaignModel.find({ ...sinFecha, createdAt: { $gte: prevDesde, $lte: prevHasta } })
+      .select("_id")
+      .lean();
+    prevIds = prev.map((campaign) => campaign._id);
+  }
+
   const [performance, charts] = await Promise.all([
-    isCliente(user) ? performanceFor(filteredIds) : null,
+    isCliente(user) ? performanceFor(filteredIds, prevIds) : null,
     isCliente(user) && wantsCharts ? chartsFor(filteredIds) : null,
   ]);
 

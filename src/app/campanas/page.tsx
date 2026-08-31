@@ -108,8 +108,8 @@ type CampaignPerformance = {
   commentSuccess: number;
   commentSuccessRate: number | null;
   globalSuccessRate: number | null;
-  last7: number;
-  last7Delta: number;
+  completed: number;
+  completedDelta: number;
 };
 
 /**
@@ -203,15 +203,36 @@ function formatDay(value?: string) {
  * hace: qué se movió hoy, ayer, esta semana, este mes.
  */
 const DATE_RANGES = [
-  { key: "", label: "Todas las fechas" },
-  { key: "hoy", label: "Hoy" },
-  { key: "ayer", label: "Ayer" },
-  { key: "semana", label: "Esta semana" },
-  { key: "mes", label: "Este mes" },
-  { key: "rango", label: "Rango de fechas" },
+  { key: "hoy", label: "Hoy", periodo: "hoy" },
+  { key: "ayer", label: "Ayer", periodo: "ayer" },
+  { key: "semana", label: "Esta semana", periodo: "esta semana" },
+  { key: "dias30", label: "Últimos 30 días", periodo: "últimos 30 días" },
+  { key: "mes", label: "Este mes", periodo: "este mes" },
+  { key: "mesPasado", label: "Mes pasado", periodo: "mes pasado" },
+  { key: "anio", label: "Este año", periodo: "este año" },
+  { key: "rango", label: "Rango de fechas", periodo: "periodo elegido" },
+  { key: "", label: "Todas las fechas", periodo: "" },
 ] as const;
 
 type DateRangeKey = (typeof DATE_RANGES)[number]["key"];
+
+/** Lo que se abre al entrar: un mes de trabajo es la lectura por defecto. */
+const DEFAULT_RANGE: DateRangeKey = "dias30";
+
+/**
+ * El periodo, en palabras, para colgarlo del nombre de cada KPI. Sin esto la
+ * tarjeta dice "Likes completados: 12,479" sin decir de cuándo, y con el filtro
+ * en "mes pasado" esa cifra significa algo muy distinto que en "este año".
+ */
+function periodoDe(key: DateRangeKey): string {
+  return DATE_RANGES.find((r) => r.key === key)?.periodo ?? "";
+}
+
+/** "Likes completados · últimos 30 días", o a secas si no hay periodo. */
+function conPeriodo(label: string, key: DateRangeKey): string {
+  const periodo = periodoDe(key);
+  return periodo ? `${label} · ${periodo}` : label;
+}
 
 function startOfDay(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -249,8 +270,26 @@ function resolveDateRange(key: DateRangeKey, desde: string, hasta: string): { fr
     return { from: startOfDay(lunes), to: endOfDay(now) };
   }
 
+  if (key === "dias30") {
+    // Treinta días contando hoy: del día -29 a esta noche.
+    const inicio = new Date(now);
+    inicio.setDate(inicio.getDate() - 29);
+    return { from: startOfDay(inicio), to: endOfDay(now) };
+  }
+
   if (key === "mes") {
     return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: endOfDay(now) };
+  }
+
+  if (key === "mesPasado") {
+    // El día 0 del mes actual es el último del anterior, y así no hay que saber
+    // cuántos días tuvo ni acordarse de los bisiestos.
+    const fin = new Date(now.getFullYear(), now.getMonth(), 0);
+    return { from: new Date(fin.getFullYear(), fin.getMonth(), 1), to: endOfDay(fin) };
+  }
+
+  if (key === "anio") {
+    return { from: new Date(now.getFullYear(), 0, 1), to: endOfDay(now) };
   }
 
   if (key === "rango") {
@@ -267,6 +306,63 @@ function resolveDateRange(key: DateRangeKey, desde: string, hasta: string): { fr
   }
 
   return {};
+}
+
+/**
+ * El periodo inmediatamente anterior al elegido, para el "vs." del KPI de
+ * completadas.
+ *
+ * Se resuelve acá y no restando duraciones en el servidor porque los meses no
+ * miden lo mismo: el anterior a julio (31 días) es junio (30), y restando 31
+ * días se cae a un tramo a caballo entre mayo y junio que no es "junio" ni es
+ * nada. Con la clave del atajo a la vista, cada caso se dice explícito.
+ */
+function resolvePrevRange(key: DateRangeKey, from?: Date, to?: Date): { from?: Date; to?: Date } {
+  if (!from || !to) return {};
+
+  const corridos = (days: number) => {
+    const mover = (d: Date) => {
+      const x = new Date(d);
+      x.setDate(x.getDate() - days);
+      return x;
+    };
+    return { from: mover(from), to: mover(to) };
+  };
+
+  if (key === "hoy" || key === "ayer") return corridos(1);
+  if (key === "semana") return corridos(7);
+  if (key === "dias30") return corridos(30);
+
+  // Último día del mes: el "día 0" del siguiente. Así no hay que contar 30, 31
+  // ni acordarse de los bisiestos.
+  const finDeMes = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
+
+  if (key === "mes" || key === "anio") {
+    // El mes o el año en curso van a mitad de camino, así que se comparan
+    // contra el MISMO tramo del anterior —del 1 al día de hoy—, no contra el
+    // periodo completo: medir doce días contra treinta y uno no dice nada.
+    const y = key === "anio" ? from.getFullYear() - 1 : from.getFullYear();
+    const m = key === "anio" ? 0 : from.getMonth() - 1;
+    const inicio = new Date(y, m, 1);
+    const dia = Math.min(to.getDate(), finDeMes(inicio.getFullYear(), inicio.getMonth()));
+    const fin =
+      key === "anio"
+        ? new Date(y, to.getMonth(), Math.min(to.getDate(), finDeMes(y, to.getMonth())))
+        : new Date(inicio.getFullYear(), inicio.getMonth(), dia);
+    return { from: startOfDay(inicio), to: endOfDay(fin) };
+  }
+
+  if (key === "mesPasado") {
+    const anterior = new Date(from.getFullYear(), from.getMonth() - 1, 1);
+    return {
+      from: startOfDay(anterior),
+      to: endOfDay(new Date(anterior.getFullYear(), anterior.getMonth() + 1, 0)),
+    };
+  }
+
+  // Rango libre: la misma cantidad de días, pegada justo antes.
+  const dias = Math.round((endOfDay(to).getTime() - startOfDay(from).getTime()) / 86_400_000);
+  return corridos(dias);
 }
 
 function progressFor(campaign: Campaign) {
@@ -307,7 +403,7 @@ function CampaignsContent() {
   const [ownerId, setOwnerId] = useState("");
   // Filtro de fechas del cliente: el atajo elegido, y los dos extremos cuando
   // el atajo es "rango". Ver resolveDateRange.
-  const [dateRange, setDateRange] = useState<DateRangeKey>("");
+  const [dateRange, setDateRange] = useState<DateRangeKey>(DEFAULT_RANGE);
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
   const [operators, setOperators] = useState<Operator[]>([]);
@@ -362,6 +458,12 @@ function CampaignsContent() {
         const { from, to } = resolveDateRange(dateRange, desde, hasta);
         if (from) params.set("from", from.toISOString());
         if (to) params.set("to", to.toISOString());
+        // El periodo anterior viaja resuelto por la misma razón: el navegador
+        // sabe que "mes pasado" se compara contra el mes anterior de calendario
+        // y no contra "los mismos treinta y un días de atrás".
+        const previo = resolvePrevRange(dateRange, from, to);
+        if (previo.from) params.set("prevFrom", previo.from.toISOString());
+        if (previo.to) params.set("prevTo", previo.to.toISOString());
         if (withCharts) params.set("charts", "1");
         const data = await apiFetch<{
           campaigns: Campaign[];
@@ -474,7 +576,7 @@ function CampaignsContent() {
   const pendingInDetail = selectedCampaign?.counts.pending ?? 0;
   const pausableInDetail = (selectedCampaign?.counts.queued ?? 0) + (selectedCampaign?.counts.pending ?? 0);
   const pausedInDetail = selectedCampaign?.counts.paused ?? 0;
-  const hasFilters = Boolean(search || status || type || ownerId || dateRange);
+  const hasFilters = Boolean(search || status || type || ownerId || dateRange !== DEFAULT_RANGE);
 
   // La tabla del modal recortada al estado elegido. El filtro se aplica sobre
   // lo que ya vino: el detalle trae todas las tareas de la campaña en una sola
@@ -687,7 +789,7 @@ Las tareas que ya se cumplieron quedan como registro.`,
     setSearch("");
     setStatus("");
     setType("");
-    setDateRange("");
+    setDateRange(DEFAULT_RANGE);
     setDesde("");
     setHasta("");
     setPage(1);
@@ -755,7 +857,7 @@ Las tareas que ya se cumplieron quedan como registro.`,
         // pastilla de delta y sin eso quedaba más baja que las otras tres.
         <div className="bento is-stretch">
           <StatCard
-            label="Likes completados"
+            label={conPeriodo("Likes completados", dateRange)}
             value={performance.likeSuccess}
             icon={Heart}
             accent="series-3"
@@ -769,7 +871,7 @@ Las tareas que ya se cumplieron quedan como registro.`,
             }
           />
           <StatCard
-            label="Comentarios completados"
+            label={conPeriodo("Comentarios completados", dateRange)}
             value={performance.commentSuccess}
             icon={MessageSquare}
             accent="series-5"
@@ -783,21 +885,26 @@ Las tareas que ya se cumplieron quedan como registro.`,
             }
           />
           <StatCard
-            label="Tasa de éxito global"
+            label={conPeriodo("Tasa de éxito global", dateRange)}
             value={performance.globalSuccessRate !== null ? `${performance.globalSuccessRate}%` : "—"}
             icon={TrendingUp}
             accent="success"
           />
+          {/* Este ya venía con periodo en el nombre. Con un rango elegido pasa
+              a contar ese rango y a compararse contra el anterior de la misma
+              duración; sin rango sigue siendo la semana contra la previa. */}
           <StatCard
-            label="Completadas · 7 días"
-            value={performance.last7}
+            label={dateRange ? conPeriodo("Completadas", dateRange) : "Completadas · 7 días"}
+            value={performance.completed}
             icon={CalendarCheck}
             accent="gold"
             delta={
-              performance.last7 > 0 || performance.last7Delta !== 0
+              performance.completed > 0 || performance.completedDelta !== 0
                 ? {
-                    text: `${Math.abs(performance.last7Delta)}% vs. semana previa`,
-                    positive: performance.last7Delta >= 0,
+                    text: `${Math.abs(performance.completedDelta)}% vs. ${
+                      dateRange ? "periodo previo" : "semana previa"
+                    }`,
+                    positive: performance.completedDelta >= 0,
                   }
                 : undefined
             }
