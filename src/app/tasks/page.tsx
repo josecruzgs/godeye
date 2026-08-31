@@ -17,6 +17,7 @@ import {
   GitBranch,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { useSession } from "@/lib/session";
 import StatusBadge from "@/components/StatusBadge";
 import Pagination from "@/components/Pagination";
 import Card from "@/components/Card";
@@ -24,6 +25,8 @@ import Card from "@/components/Card";
 type Task = {
   _id: string;
   name: string;
+  /** Solo viene poblado cuando mira el admin; para un operador todas son suyas. */
+  ownerId?: { _id: string; username: string } | string | null;
   type: string;
   status: string;
   profileId: { _id: string; name: string } | null;
@@ -70,6 +73,12 @@ function enlacesDeLaTarea(task: Task): { url: string; label: string }[] {
 }
 
 type Profile = { _id: string; name: string };
+type Operator = { _id: string; username: string; role: string; active: boolean };
+
+/** El nombre del dueño, cuando el servidor lo mandó poblado. */
+function nombreDelDueno(task: Task) {
+  return task.ownerId && typeof task.ownerId === "object" ? task.ownerId.username : null;
+}
 
 const PAGE_SIZE = 20;
 const STATUSES = ["pending", "queued", "running", "paused", "success", "failed", "cancelled"];
@@ -85,11 +94,16 @@ export default function TasksPage() {
 
 function TasksContent() {
   const searchParams = useSearchParams();
+  const session = useSession();
+  // El admin ve el trabajo de todos los operadores: por eso aparecen la columna
+  // "Usuario" y el filtro por usuario, que a un operador no le dirían nada.
+  const esAdmin = session?.role === "admin";
   const initialStatus = searchParams.get("status") ?? "";
   const initialType = searchParams.get("type") ?? "";
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [operators, setOperators] = useState<Operator[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -102,12 +116,21 @@ function TasksContent() {
   const [status, setStatus] = useState(initialStatus);
   const [type, setType] = useState(initialType);
   const [profileId, setProfileId] = useState("");
+  const [ownerId, setOwnerId] = useState("");
 
   useEffect(() => {
     apiFetch<{ profiles: Profile[] }>("/api/profiles?all=true")
       .then(({ profiles }) => setProfiles(profiles))
       .catch(() => {});
   }, []);
+
+  // /api/users es solo para admin: al operador ni se le pide.
+  useEffect(() => {
+    if (!esAdmin) return;
+    apiFetch<{ users: Operator[] }>("/api/users")
+      .then(({ users }) => setOperators(users))
+      .catch(() => {});
+  }, [esAdmin]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -125,6 +148,7 @@ function TasksContent() {
       if (status) params.set("status", status);
       if (type) params.set("type", type);
       if (profileId) params.set("profileId", profileId);
+      if (ownerId) params.set("ownerId", ownerId);
       if (search) params.set("search", search);
       const data = await apiFetch<{ tasks: Task[]; total: number }>(`/api/tasks?${params}`);
       setTasks(data.tasks);
@@ -141,7 +165,7 @@ function TasksContent() {
     const interval = setInterval(load, 5000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, status, type, profileId, search]);
+  }, [page, status, type, profileId, ownerId, search]);
 
   function updateStatus(v: string) {
     setStatus(v);
@@ -155,12 +179,17 @@ function TasksContent() {
     setProfileId(v);
     setPage(1);
   }
+  function updateOwnerId(v: string) {
+    setOwnerId(v);
+    setPage(1);
+  }
   function clearFilters() {
     setSearchInput("");
     setSearch("");
     setStatus("");
     setType("");
     setProfileId("");
+    setOwnerId("");
     setPage(1);
   }
 
@@ -192,7 +221,12 @@ function TasksContent() {
   }
 
   async function stopCampaigns() {
-    if (!confirm("¿Parar campañas? Se eliminan todas las tareas 'pending' y 'queued' (las que aún no arrancaron). Las que ya están corriendo terminan solas.")) return;
+    // Al admin el botón le para el sistema entero, no solo lo suyo: la
+    // advertencia lo dice antes de que confirme.
+    const alcance = esAdmin
+      ? "¿Parar campañas de TODOS los usuarios? Se eliminan todas las tareas 'pending' y 'queued' del sistema (las que aún no arrancaron), sean de quien sean."
+      : "¿Parar campañas? Se eliminan todas las tareas 'pending' y 'queued' (las que aún no arrancaron).";
+    if (!confirm(`${alcance} Las que ya están corriendo terminan solas.`)) return;
     setStopping(true);
     setError(null);
     try {
@@ -207,7 +241,7 @@ function TasksContent() {
   }
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const hasFilters = Boolean(status || type || profileId || search);
+  const hasFilters = Boolean(status || type || profileId || ownerId || search);
 
   return (
     <div className="flex animate-fade-in-up flex-col gap-6">
@@ -318,6 +352,21 @@ function TasksContent() {
             <option key={p._id} value={p._id}>{p.name}</option>
           ))}
         </select>
+        {esAdmin && (
+          <select
+            value={ownerId}
+            onChange={(e) => updateOwnerId(e.target.value)}
+            className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none focus:border-primary"
+          >
+            <option value="">Todos los usuarios</option>
+            {operators.map((u) => (
+              <option key={u._id} value={u._id}>
+                {u.username}
+                {u.active ? "" : " (inactivo)"}
+              </option>
+            ))}
+          </select>
+        )}
         {hasFilters && (
           <button type="button" onClick={clearFilters} className="text-xs text-ink-muted underline hover:text-ink">
             Limpiar filtros
@@ -331,6 +380,7 @@ function TasksContent() {
             <thead className="border-b border-hairline text-left text-xs uppercase tracking-wide text-ink-muted">
               <tr>
                 <th className="px-4 py-3 font-medium">Nombre</th>
+                {esAdmin && <th className="px-4 py-3 font-medium">Usuario</th>}
                 <th className="px-4 py-3 font-medium">Perfil</th>
                 <th className="px-4 py-3 font-medium">Tipo</th>
                 <th className="px-4 py-3 font-medium">Estado</th>
@@ -341,11 +391,11 @@ function TasksContent() {
             <tbody>
               {loading && tasks.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-ink-muted">Cargando...</td>
+                  <td colSpan={esAdmin ? 7 : 6} className="px-4 py-10 text-center text-ink-muted">Cargando...</td>
                 </tr>
               ) : tasks.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-ink-muted">Sin tareas que coincidan.</td>
+                  <td colSpan={esAdmin ? 7 : 6} className="px-4 py-10 text-center text-ink-muted">Sin tareas que coincidan.</td>
                 </tr>
               ) : (
                 tasks.map((t) => {
@@ -357,6 +407,9 @@ function TasksContent() {
                         {t.name}
                       </Link>
                     </td>
+                    {esAdmin && (
+                      <td className="px-4 py-3 text-ink-secondary">{nombreDelDueno(t) ?? "—"}</td>
+                    )}
                     <td className="px-4 py-3 text-ink-secondary">{t.profileId?.name ?? "—"}</td>
                     <td className="px-4 py-3 text-ink-secondary">{t.type}</td>
                     <td className="px-4 py-3"><StatusBadge status={t.status} /></td>

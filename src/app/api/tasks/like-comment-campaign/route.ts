@@ -85,7 +85,7 @@ export const POST = withAuth(async (user, req: NextRequest) => {
   let campaign;
   let created;
   if (campaignId) {
-    const result = await addTasksToCampaign({ ownerId: user.objectId, campaignId, type: "likecomment", docs });
+    const result = await addTasksToCampaign({ user, campaignId, type: "likecomment", docs });
     if (!result.ok) {
       return result.error === "not_found"
         ? NextResponse.json({ error: "Campaña no encontrada" }, { status: 404 })

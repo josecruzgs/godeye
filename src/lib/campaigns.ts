@@ -1,6 +1,7 @@
 import type { Types } from "mongoose";
 import CampaignModel from "@/lib/models/Campaign";
 import TaskModel from "@/lib/models/Task";
+import { allowedOwnerFilter, type SessionUser } from "@/lib/auth/dal";
 
 type CountRow = {
   _id: { campaignId: Types.ObjectId; status: string };
@@ -124,24 +125,28 @@ export type AddTasksResult =
 // tareas nuevas entran con el mismo campaignId y quedan pending/queued como
 // cualquier otra, así que ese botón las recoge sin cambios.
 export async function addTasksToCampaign({
-  ownerId,
+  user,
   campaignId,
   type,
   docs,
 }: {
-  ownerId: Types.ObjectId;
+  user: SessionUser;
   campaignId: string;
   type: string;
   docs: Record<string, unknown>[];
 }): Promise<AddTasksResult> {
-  // Se busca por _id Y ownerId en la misma consulta: una campaña ajena no se
-  // "encuentra y después se rechaza", directamente no existe para este usuario.
-  const campaign = await CampaignModel.findOne({ _id: campaignId, ownerId });
+  // El alcance va en la misma consulta que el _id: una campaña fuera de alcance
+  // no se "encuentra y después se rechaza", directamente no existe para este
+  // usuario. El admin alcanza las de todos los operadores.
+  const campaign = await CampaignModel.findOne({ _id: campaignId, ...allowedOwnerFilter(user) });
   if (!campaign) return { ok: false, error: "not_found" };
   if (campaign.type !== type) return { ok: false, error: "type_mismatch", campaignType: campaign.type };
 
+  // Las tareas quedan a nombre del dueño de la campaña, no de quien las suma:
+  // si el admin le agrega perfiles a la campaña de un operador, el operador
+  // tiene que seguir viendo su campaña completa.
   const tasks = await TaskModel.insertMany(
-    docs.map((doc) => ({ ...doc, ownerId, campaignId: campaign._id })),
+    docs.map((doc) => ({ ...doc, ownerId: campaign.ownerId, campaignId: campaign._id })),
   );
   campaign.taskCount = (campaign.taskCount ?? 0) + tasks.length;
   await campaign.save();

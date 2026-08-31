@@ -7,12 +7,13 @@ import TaskLogModel from "@/lib/models/TaskLog";
 // cargó /api/profiles antes.
 import "@/lib/models/Profile";
 import { withAuth } from "@/lib/apiHandler";
+import { allowedOwnerFilter } from "@/lib/auth/dal";
 
 export const GET = withAuth(
   async (user, _req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
     const { id } = await params;
     await dbConnect();
-    const task = await TaskModel.findOne({ _id: id, ownerId: user.objectId }).populate(
+    const task = await TaskModel.findOne({ _id: id, ...allowedOwnerFilter(user) }).populate(
       "profileId",
       "name adsPowerProfileId",
     );
@@ -29,9 +30,10 @@ export const DELETE = withAuth(
     const { id } = await params;
     await dbConnect();
 
-    // El borrado de logs va atado a que la tarea fuera realmente de este
-    // usuario: sin el chequeo, un id ajeno igual se llevaba puestos sus logs.
-    const deleted = await TaskModel.findOneAndDelete({ _id: id, ownerId: user.objectId });
+    // El borrado de logs va atado a que la tarea estuviera al alcance de este
+    // usuario: sin el chequeo, un id fuera de alcance igual se llevaba puestos
+    // sus logs. Para el admin el alcance son todas.
+    const deleted = await TaskModel.findOneAndDelete({ _id: id, ...allowedOwnerFilter(user) });
     if (!deleted) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
     await TaskLogModel.deleteMany({ taskId: id });

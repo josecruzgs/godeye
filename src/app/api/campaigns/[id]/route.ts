@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
 import CampaignModel from "@/lib/models/Campaign";
 import TaskModel from "@/lib/models/Task";
+import UserModel from "@/lib/models/User";
 // Registra el schema de "Profile" para que TaskModel.populate("profileId")
 // no truene con "Schema hasn't been registered" en un lambda frío que nunca
 // cargó /api/profiles antes.
 import "@/lib/models/Profile";
 import { makeCampaignSummary, type TaskStatusCounts } from "@/lib/campaigns";
 import { withAuth } from "@/lib/apiHandler";
+import { allowedOwnerFilter, isAdmin } from "@/lib/auth/dal";
 
 /**
  * Los tipos de campaña que trabajan sobre una publicación concreta.
@@ -46,9 +48,10 @@ export const GET = withAuth(
     const { id } = await params;
     await dbConnect();
 
-    // Por _id y ownerId en la misma consulta: una campaña ajena no se encuentra
-    // y después se rechaza, directamente no existe para este usuario.
-    const campaign = await CampaignModel.findOne({ _id: id, ownerId: user.objectId }).lean();
+    // El alcance va en la misma consulta que el _id: una campaña fuera de
+    // alcance no se encuentra y después se rechaza, directamente no existe para
+    // este usuario. Para el admin no hay recorte: entra a la de cualquiera.
+    const campaign = await CampaignModel.findOne({ _id: id, ...allowedOwnerFilter(user) }).lean();
     if (!campaign) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
     const tasks = await TaskModel.find({ campaignId: id })
@@ -62,8 +65,14 @@ export const GET = withAuth(
       return acc;
     }, {});
 
+    // Solo para el admin: al abrir una campaña ajena, de quién es.
+    const owner = isAdmin(user)
+      ? ((await UserModel.findById(campaign.ownerId).select("username").lean<{ username: string } | null>())
+          ?.username ?? null)
+      : null;
+
     return NextResponse.json({
-      campaign: makeCampaignSummary({ campaign, counts }),
+      campaign: { ...makeCampaignSummary({ campaign, counts }), owner },
       postUrl: await findCampaignPostUrl(id, campaign.type),
       tasks,
     });
@@ -75,7 +84,7 @@ export const DELETE = withAuth(
     const { id } = await params;
     await dbConnect();
 
-    const campaign = await CampaignModel.findOne({ _id: id, ownerId: user.objectId }).select("_id").lean();
+    const campaign = await CampaignModel.findOne({ _id: id, ...allowedOwnerFilter(user) }).select("_id").lean();
     if (!campaign) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
     const runningCount = await TaskModel.countDocuments({ campaignId: id, status: "running" });

@@ -6,6 +6,7 @@ import TaskModel from "@/lib/models/Task";
 // cargó /api/profiles antes.
 import "@/lib/models/Profile";
 import { withAuth } from "@/lib/apiHandler";
+import { allowedOwnerFilter, isAdmin, requestedOwnerFilter } from "@/lib/auth/dal";
 import { findUsableProfile } from "@/lib/auth/profiles";
 import { escapeRegex } from "@/lib/regex";
 
@@ -15,20 +16,31 @@ export const GET = withAuth(async (user, req: NextRequest) => {
   const type = sp.get("type") ?? undefined;
   const profileId = sp.get("profileId") ?? undefined;
   const search = sp.get("search")?.trim();
+  const ownerId = sp.get("ownerId") ?? undefined;
   const page = Math.max(1, Number(sp.get("page")) || 1);
   const pageSize = Math.min(100, Math.max(1, Number(sp.get("pageSize")) || 20));
 
   await dbConnect();
 
-  const filter: Record<string, unknown> = { ownerId: user.objectId };
+  // El admin ve las tareas de todos los operadores; el operador, las suyas.
+  // El `ownerId` de la query es el filtro opcional de la interfaz —"ver solo
+  // las de fulano"— y solo se le hace caso al admin.
+  const filter: Record<string, unknown> = {
+    ...allowedOwnerFilter(user),
+    ...requestedOwnerFilter(user, ownerId),
+  };
   if (status) filter.status = status;
   if (type) filter.type = type;
   if (profileId) filter.profileId = profileId;
   if (search) filter.name = { $regex: escapeRegex(search), $options: "i" };
 
+  // El dueño solo viaja cuando mira el admin: para un operador todas las
+  // filas son suyas y el nombre sobraría en cada una.
+  const query = TaskModel.find(filter).populate("profileId", "name adsPowerProfileId");
+  if (isAdmin(user)) query.populate("ownerId", "username");
+
   const [tasks, total] = await Promise.all([
-    TaskModel.find(filter)
-      .populate("profileId", "name adsPowerProfileId")
+    query
       .sort({ createdAt: -1 })
       .skip((page - 1) * pageSize)
       .limit(pageSize),

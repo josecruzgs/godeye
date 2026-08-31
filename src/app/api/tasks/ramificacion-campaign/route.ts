@@ -154,7 +154,7 @@ export const POST = withAuth(async (user, req: NextRequest) => {
   }));
 
   const resultado = await addTasksToCampaign({
-    ownerId: user.objectId,
+    user,
     campaignId: String(campaign._id),
     type: "ramificacion",
     docs: hijosDocs,

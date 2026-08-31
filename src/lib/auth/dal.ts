@@ -92,7 +92,33 @@ export function canUseGroup(user: SessionUser, groupId: string | undefined | nul
   return user.groupIds.includes(groupId);
 }
 
-/** Filtro de propiedad para las colecciones con `ownerId`. */
+/** Filtro de propiedad para las colecciones con `ownerId`: solo lo propio. */
 export function ownerFilter(user: SessionUser): { ownerId: Types.ObjectId } {
   return { ownerId: user.objectId };
+}
+
+/**
+ * Alcance de lectura y edición sobre tareas y campañas.
+ *
+ * El admin las ve y las toca todas, sean de quien sean: es quien supervisa a
+ * los operadores y necesita poder entrar a una campaña ajena a relanzar lo que
+ * falló o a pausarla. Un operador sigue viendo únicamente lo suyo, igual que
+ * antes.
+ *
+ * `ownerFilter` no desaparece: sigue siendo el filtro correcto donde "lo mío"
+ * es lo que se quiere decir, como al crear.
+ */
+export function allowedOwnerFilter(user: SessionUser): Record<string, unknown> {
+  if (isAdmin(user)) return {};
+  return { ownerId: user.objectId };
+}
+
+/**
+ * El `ownerId` por el que filtrar cuando la interfaz pide ver a un operador en
+ * concreto. Solo el admin puede pedirlo; a un operador se le ignora, porque
+ * dejárselo poner sería pisar el filtro que lo acota a lo suyo.
+ */
+export function requestedOwnerFilter(user: SessionUser, ownerId: string | null | undefined) {
+  if (!isAdmin(user) || !ownerId || !Types.ObjectId.isValid(ownerId)) return {};
+  return { ownerId: new Types.ObjectId(ownerId) };
 }

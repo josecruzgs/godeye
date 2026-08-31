@@ -42,6 +42,8 @@ type Counts = {
 type Campaign = {
   _id: string;
   name: string;
+  /** username del dueño. Solo viene con sesión de admin, que ve las de todos. */
+  owner?: string | null;
   type: string;
   status: string;
   taskCount: number;
@@ -75,6 +77,8 @@ type DeleteProfileResult = {
   localOnly: boolean;
   deletedTaskCount: number;
 };
+
+type Operator = { _id: string; username: string; role: string; active: boolean };
 
 const PAGE_SIZE = 20;
 const STATUSES = ["pending", "queued", "running", "paused", "success", "failed", "partial", "cancelled", "empty"];
@@ -156,7 +160,8 @@ function CampaignsContent() {
   const session = useSession();
   // Eliminar un perfil es definitivo y se lleva puestas tareas de campañas que
   // el operador no está mirando; queda del lado de quien administra el parque
-  // de perfiles.
+  // de perfiles. El mismo rol es el que ve —y edita— las campañas de todos los
+  // operadores: por eso también gobierna la columna "Usuario" y su filtro.
   const esAdmin = session?.role === "admin";
   const campaignIdParam = searchParams.get("campaignId");
 
@@ -169,6 +174,8 @@ function CampaignsContent() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [type, setType] = useState("");
+  const [ownerId, setOwnerId] = useState("");
+  const [operators, setOperators] = useState<Operator[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<CampaignDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -192,6 +199,14 @@ function CampaignsContent() {
     setMounted(true);
   }, []);
 
+  // /api/users es solo para admin: al operador ni se le pide.
+  useEffect(() => {
+    if (!esAdmin) return;
+    apiFetch<{ users: Operator[] }>("/api/users")
+      .then(({ users }) => setOperators(users))
+      .catch(() => {});
+  }, [esAdmin]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -200,6 +215,7 @@ function CampaignsContent() {
       if (search) params.set("search", search);
       if (status) params.set("status", status);
       if (type) params.set("type", type);
+      if (ownerId) params.set("ownerId", ownerId);
       const data = await apiFetch<{ campaigns: Campaign[]; total: number }>(`/api/campaigns?${params}`);
       setCampaigns(data.campaigns);
       setTotal(data.total);
@@ -208,7 +224,7 @@ function CampaignsContent() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, status, type]);
+  }, [page, search, status, type, ownerId]);
 
   const loadCampaign = useCallback(async (id: string, silent = false) => {
     if (!silent) setDetailLoading(true);
@@ -290,7 +306,7 @@ function CampaignsContent() {
   const pendingInDetail = selectedCampaign?.counts.pending ?? 0;
   const pausableInDetail = (selectedCampaign?.counts.queued ?? 0) + (selectedCampaign?.counts.pending ?? 0);
   const pausedInDetail = selectedCampaign?.counts.paused ?? 0;
-  const hasFilters = Boolean(search || status || type);
+  const hasFilters = Boolean(search || status || type || ownerId);
 
   // La tabla del modal recortada al estado elegido. El filtro se aplica sobre
   // lo que ya vino: el detalle trae todas las tareas de la campaña en una sola
@@ -633,6 +649,24 @@ Las tareas que ya se cumplieron quedan como registro.`,
             </option>
           ))}
         </select>
+        {esAdmin && (
+          <select
+            value={ownerId}
+            onChange={(e) => {
+              setOwnerId(e.target.value);
+              setPage(1);
+            }}
+            className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none focus:border-primary"
+          >
+            <option value="">Todos los usuarios</option>
+            {operators.map((u) => (
+              <option key={u._id} value={u._id}>
+                {u.username}
+                {u.active ? "" : " (inactivo)"}
+              </option>
+            ))}
+          </select>
+        )}
         <button
           type="button"
           onClick={load}
@@ -654,6 +688,7 @@ Las tareas que ya se cumplieron quedan como registro.`,
             <thead className="border-b border-hairline text-left text-xs uppercase tracking-wide text-ink-muted">
               <tr>
                 <th className="px-4 py-3 font-medium">Campaña</th>
+                {esAdmin && <th className="px-4 py-3 font-medium">Usuario</th>}
                 <th className="px-4 py-3 font-medium">Avance</th>
                 <th className="px-4 py-3 font-medium">Tareas</th>
                 <th className="px-4 py-3 font-medium">Tipo</th>
@@ -664,13 +699,13 @@ Las tareas que ya se cumplieron quedan como registro.`,
             <tbody>
               {loading && campaigns.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-ink-muted">
+                  <td colSpan={esAdmin ? 7 : 6} className="px-4 py-10 text-center text-ink-muted">
                     Cargando...
                   </td>
                 </tr>
               ) : campaigns.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-ink-muted">
+                  <td colSpan={esAdmin ? 7 : 6} className="px-4 py-10 text-center text-ink-muted">
                     Sin campañas todavía.
                   </td>
                 </tr>
@@ -688,6 +723,9 @@ Las tareas que ya se cumplieron quedan como registro.`,
                           <span className="block truncate">{campaign.name}</span>
                         </button>
                       </td>
+                      {esAdmin && (
+                        <td className="px-4 py-3 text-ink-secondary">{campaign.owner ?? "—"}</td>
+                      )}
                       <td className="px-4 py-3">
                         <div className="flex min-w-36 items-center gap-2">
                           <div className="h-2 flex-1 overflow-hidden rounded-full bg-page">
@@ -763,6 +801,9 @@ Las tareas que ya se cumplieron quedan como registro.`,
                 {selectedCampaign && (
                   <p className="mt-1 text-sm text-ink-secondary">
                     {TYPE_LABELS[selectedCampaign.type] ?? selectedCampaign.type} · {selectedCampaign.taskCount} perfiles
+                    {/* Quién la armó, para que el admin sepa a quién le está
+                        tocando la campaña antes de pausarla o relanzarla. */}
+                    {esAdmin && selectedCampaign.owner ? ` · ${selectedCampaign.owner}` : ""}
                   </p>
                 )}
                 {/* Una sola vez acá arriba y no en cada fila: las tareas de la
