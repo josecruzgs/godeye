@@ -4,6 +4,7 @@ import { dbConnect } from "@/lib/mongodb";
 import CampaignModel from "@/lib/models/Campaign";
 import TaskModel from "@/lib/models/Task";
 import UserModel from "@/lib/models/User";
+import CommentModel from "@/lib/models/Comment";
 import { makeCampaignSummary, type TaskStatusCounts } from "@/lib/campaigns";
 import { withAuth } from "@/lib/apiHandler";
 import { allowedOwnerFilter, isAdmin, isCliente, requestedOwnerFilter } from "@/lib/auth/dal";
@@ -21,6 +22,95 @@ type CountRow = {
 const LIKE_TYPES = ["like", "likecomment"];
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Días que abarca la curva de actividad. Igual que en el dashboard. */
+const TREND_DAYS = 14;
+
+export type CampaignCharts = {
+  trend: { day: string; label: string; likes: number; comments: number }[];
+  topProfiles: { name: string; count: number }[];
+  commentTotal: number;
+  commentAvailable: number;
+};
+
+/**
+ * La curva de catorce días, el podio de perfiles y el banco de comentarios.
+ *
+ * Van aparte de `performanceFor` porque son caros —recorren tareas por día y
+ * cruzan contra perfiles— y la página se refresca cada cinco segundos. El
+ * cliente los pide solo al entrar y al cambiar un filtro (`?charts=1`); los
+ * refrescos de la tabla no los vuelven a calcular.
+ */
+async function chartsFor(campaignIds: Types.ObjectId[]): Promise<CampaignCharts> {
+  const now = new Date();
+  // Se corta por día UTC, igual que agrupa `$dateToString` sin timezone: si el
+  // corte y la agrupación no usaran el mismo huso, el primer y el último día
+  // de la curva saldrían mochos.
+  const since = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (TREND_DAYS - 1)),
+  );
+
+  const conCampaña = { campaignId: { $in: campaignIds } };
+  const exitosas = { ...conCampaña, type: { $in: [...LIKE_TYPES, "comment"] }, status: "success" };
+
+  const [dailyRows, topRows, commentTotal, commentAvailable] = await Promise.all([
+    campaignIds.length === 0
+      ? []
+      : TaskModel.aggregate<{ _id: { day: string; type: string }; count: number }>([
+          { $match: { ...exitosas, finishedAt: { $gte: since } } },
+          {
+            $group: {
+              _id: { day: { $dateToString: { format: "%Y-%m-%d", date: "$finishedAt" } }, type: "$type" },
+              count: { $sum: 1 },
+            },
+          },
+        ]),
+    campaignIds.length === 0
+      ? []
+      : TaskModel.aggregate<{ name: string; count: number }>([
+          { $match: exitosas },
+          { $group: { _id: "$profileId", count: { $sum: 1 } } },
+          { $sort: { count: -1 } },
+          { $limit: 6 },
+          { $lookup: { from: "profiles", localField: "_id", foreignField: "_id", as: "profile" } },
+          { $unwind: "$profile" },
+          { $project: { _id: 0, name: "$profile.name", count: 1 } },
+        ]),
+    // El banco de comentarios no cuelga de ninguna campaña: es munición suelta.
+    // Al cliente, que ve el sistema entero, se le cuenta entero.
+    CommentModel.countDocuments({}),
+    CommentModel.countDocuments({ used: false }),
+  ]);
+
+  // Los catorce días se siembran en cero primero: sin esto, un día sin
+  // actividad no existiría como punto y la curva uniría los dos vecinos con una
+  // recta, dibujando trabajo que no pasó.
+  const porDia = new Map<string, { likes: number; comments: number }>();
+  for (let i = 0; i < TREND_DAYS; i++) {
+    const d = new Date(since);
+    d.setUTCDate(d.getUTCDate() + i);
+    porDia.set(d.toISOString().slice(0, 10), { likes: 0, comments: 0 });
+  }
+  for (const row of dailyRows) {
+    const entry = porDia.get(row._id.day);
+    if (!entry) continue;
+    // Suma en vez de asignar: "like" y "likecomment" son dos filas del agregado
+    // que caen en el mismo punto de la curva.
+    if (LIKE_TYPES.includes(row._id.type)) entry.likes += row.count;
+    else entry.comments += row.count;
+  }
+
+  return {
+    trend: Array.from(porDia.entries()).map(([day, v]) => ({
+      day,
+      label: new Date(day).toLocaleDateString("es", { day: "2-digit", month: "short", timeZone: "UTC" }),
+      ...v,
+    })),
+    topProfiles: topRows,
+    commentTotal,
+    commentAvailable,
+  };
+}
 
 /** Los cuatro KPIs de rendimiento que ve el cliente. Ver `performanceFor`. */
 export type CampaignPerformance = {
@@ -196,6 +286,9 @@ export const GET = withAuth(async (user, req: NextRequest) => {
   const type = sp.get("type") ?? "";
   const search = sp.get("search")?.trim();
   const ownerId = sp.get("ownerId") ?? undefined;
+  // Las gráficas son caras y la tabla se refresca cada cinco segundos: solo se
+  // calculan cuando la página las pide, que es al entrar y al cambiar filtros.
+  const wantsCharts = sp.get("charts") === "1";
   const page = Math.max(1, Number(sp.get("page")) || 1);
   const pageSize = Math.min(100, Math.max(1, Number(sp.get("pageSize")) || 20));
 
@@ -269,11 +362,16 @@ export const GET = withAuth(async (user, req: NextRequest) => {
     { tasks: 0, running: 0, queued: 0, success: 0, failed: 0 },
   );
 
-  // Los cuatro de rendimiento son la pantalla entera del cliente, así que solo
-  // se calculan para él: al resto le sobran, porque tiene el dashboard.
-  const performance = isCliente(user)
-    ? await performanceFor(filtered.map((campaign) => new Types.ObjectId(String(campaign._id))))
-    : null;
+  // El rendimiento y las gráficas son la pantalla entera del cliente, así que
+  // solo se calculan para él: al resto le sobran, porque tiene el dashboard.
+  const filteredIds = isCliente(user)
+    ? filtered.map((campaign) => new Types.ObjectId(String(campaign._id)))
+    : [];
 
-  return NextResponse.json({ campaigns, total, totals, performance, page, pageSize });
+  const [performance, charts] = await Promise.all([
+    isCliente(user) ? performanceFor(filteredIds) : null,
+    isCliente(user) && wantsCharts ? chartsFor(filteredIds) : null,
+  ]);
+
+  return NextResponse.json({ campaigns, total, totals, performance, charts, page, pageSize });
 });

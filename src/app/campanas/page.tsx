@@ -30,6 +30,11 @@ import Card from "@/components/Card";
 import ElementIcon from "@/components/ui/ElementIcon";
 import Pagination from "@/components/Pagination";
 import StatCard from "@/components/StatCard";
+import Panel from "@/components/ui/Panel";
+import SubHead from "@/components/ui/SubHead";
+import Meter from "@/components/Meter";
+import CampaignTrendChart, { type TrendPoint } from "@/components/charts/CampaignTrendChart";
+import TopProfilesChart, { type ProfileRow } from "@/components/charts/TopProfilesChart";
 import StatusBadge, { STATUS_COLORS, STATUS_LABELS } from "@/components/StatusBadge";
 
 type Counts = {
@@ -106,6 +111,18 @@ type CampaignPerformance = {
   globalSuccessRate: number | null;
   last7: number;
   last7Delta: number;
+};
+
+/**
+ * Las gráficas de actividad. Caras de calcular, así que el servidor solo las
+ * manda cuando se piden con `charts=1`: al entrar y al cambiar un filtro, no en
+ * cada refresco de la tabla.
+ */
+type CampaignCharts = {
+  trend: TrendPoint[];
+  topProfiles: ProfileRow[];
+  commentTotal: number;
+  commentAvailable: number;
 };
 
 const PAGE_SIZE = 20;
@@ -210,6 +227,7 @@ function CampaignsContent() {
   const [total, setTotal] = useState(0);
   const [totals, setTotals] = useState<CampaignTotals>(EMPTY_TOTALS);
   const [performance, setPerformance] = useState<CampaignPerformance | null>(null);
+  const [charts, setCharts] = useState<CampaignCharts | null>(null);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -250,31 +268,42 @@ function CampaignsContent() {
       .catch(() => {});
   }, [esAdmin]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
-      if (search) params.set("search", search);
-      if (status) params.set("status", status);
-      if (type) params.set("type", type);
-      if (ownerId) params.set("ownerId", ownerId);
-      const data = await apiFetch<{
-        campaigns: Campaign[];
-        total: number;
-        totals?: CampaignTotals;
-        performance?: CampaignPerformance | null;
-      }>(`/api/campaigns?${params}`);
-      setCampaigns(data.campaigns);
-      setTotal(data.total);
-      setTotals(data.totals ?? EMPTY_TOTALS);
-      setPerformance(data.performance ?? null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [page, search, status, type, ownerId]);
+  // `withCharts` decide si el servidor recalcula las gráficas de actividad. Va
+  // en true al entrar y al cambiar filtros, y en false en el refresco de cada
+  // cinco segundos: la curva de catorce días y el podio de perfiles cuestan
+  // varios recorridos de la colección de tareas y no cambian de un latido al
+  // otro. Cuando no vienen, las que ya están en pantalla se quedan.
+  const load = useCallback(
+    async (withCharts = false) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+        if (search) params.set("search", search);
+        if (status) params.set("status", status);
+        if (type) params.set("type", type);
+        if (ownerId) params.set("ownerId", ownerId);
+        if (withCharts) params.set("charts", "1");
+        const data = await apiFetch<{
+          campaigns: Campaign[];
+          total: number;
+          totals?: CampaignTotals;
+          performance?: CampaignPerformance | null;
+          charts?: CampaignCharts | null;
+        }>(`/api/campaigns?${params}`);
+        setCampaigns(data.campaigns);
+        setTotal(data.total);
+        setTotals(data.totals ?? EMPTY_TOTALS);
+        setPerformance(data.performance ?? null);
+        if (data.charts) setCharts(data.charts);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [page, search, status, type, ownerId],
+  );
 
   const loadCampaign = useCallback(async (id: string, silent = false) => {
     if (!silent) setDetailLoading(true);
@@ -322,8 +351,11 @@ function CampaignsContent() {
   }, [searchInput]);
 
   useEffect(() => {
-    load();
-    const interval = setInterval(load, 5000);
+    // Con gráficas al montar y al cambiar de filtro (`load` se rehace); sin
+    // ellas en el latido, que solo está para que "corriendo" y "en cola" se
+    // muevan solos.
+    load(true);
+    const interval = setInterval(() => load(false), 5000);
     return () => clearInterval(interval);
   }, [load]);
 
@@ -768,7 +800,7 @@ Las tareas que ya se cumplieron quedan como registro.`,
         )}
         <button
           type="button"
-          onClick={load}
+          onClick={() => load(true)}
           title="Actualizar"
           className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-hairline text-ink-muted transition-colors hover:bg-page hover:text-ink"
         >
@@ -780,6 +812,57 @@ Las tareas que ya se cumplieron quedan como registro.`,
           </button>
         )}
       </Card>
+
+      {/* Actividad, solo para el cliente: las mismas tres chapas del dashboard,
+          contadas sobre las campañas que el filtro dejó pasar. `bento` es la
+          rejilla de doce columnas que entienden los `col` de Panel. */}
+      {esCliente && charts && (
+        <div className="bento">
+          <SubHead>Actividad</SubHead>
+
+          <Panel
+            col={8}
+            title="Actividad de campañas · últimos 14 días"
+            tag="likes + comentarios"
+            accent="var(--el-agua)"
+            icon={<ElementIcon name="agua" size={13} />}
+          >
+            <CampaignTrendChart data={charts.trend} />
+          </Panel>
+
+          <Panel
+            col={4}
+            title="Banco de comentarios"
+            tag="sin usar"
+            accent="var(--gold)"
+            icon={<ElementIcon name="eye" size={13} />}
+            bodyClassName="flex h-full flex-col gap-4"
+          >
+            <Meter
+              label="Disponibles"
+              value={charts.commentAvailable}
+              total={charts.commentTotal}
+              accent="var(--gold)"
+            />
+            {/* Sin el botón que lleva a crear la campaña de comentarios: el
+                cliente no tiene esa pantalla y el enlace lo rebotaría. */}
+            <p className="text-[12px] leading-relaxed text-ink-secondary">
+              Comentarios listos para la próxima campaña. Cuando se agotan, las tareas de comentar se quedan
+              sin munición.
+            </p>
+          </Panel>
+
+          <Panel
+            col={12}
+            title="Perfiles más activos"
+            tag="likes + comentarios exitosos"
+            accent="var(--el-viento)"
+            icon={<ElementIcon name="viento" size={13} />}
+          >
+            <TopProfilesChart data={charts.topProfiles} />
+          </Panel>
+        </div>
+      )}
 
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
