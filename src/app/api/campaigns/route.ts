@@ -82,5 +82,22 @@ export const GET = withAuth(async (user, req: NextRequest) => {
   const total = filtered.length;
   const campaigns = filtered.slice((page - 1) * pageSize, page * pageSize);
 
-  return NextResponse.json({ campaigns, total, page, pageSize });
+  // Los KPIs de arriba de la página suman TODO lo que cae bajo el filtro, no
+  // la página que se está viendo. Se calculan acá porque `filtered` ya son
+  // todas las campañas —la paginación es el `slice` de la línea de arriba— y
+  // sumarlas en el cliente daba el total de veinte campañas haciéndose pasar
+  // por el del sistema.
+  const totals = filtered.reduce(
+    (acc, campaign) => {
+      acc.tasks += campaign.taskCount;
+      acc.running += campaign.counts.running;
+      acc.queued += campaign.counts.queued;
+      acc.success += campaign.counts.success;
+      acc.failed += campaign.counts.failed;
+      return acc;
+    },
+    { tasks: 0, running: 0, queued: 0, success: 0, failed: 0 },
+  );
+
+  return NextResponse.json({ campaigns, total, totals, page, pageSize });
 });

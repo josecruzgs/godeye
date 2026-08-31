@@ -80,6 +80,11 @@ type DeleteProfileResult = {
 
 type Operator = { _id: string; username: string; role: string; active: boolean };
 
+/** Los KPIs de la cabecera, sumados en el servidor sobre todas las campañas del filtro. */
+type CampaignTotals = { tasks: number; running: number; queued: number; success: number; failed: number };
+
+const EMPTY_TOTALS: CampaignTotals = { tasks: 0, running: 0, queued: 0, success: 0, failed: 0 };
+
 const PAGE_SIZE = 20;
 const STATUSES = ["pending", "queued", "running", "paused", "success", "failed", "partial", "cancelled", "empty"];
 const TYPES = ["like", "likecomment", "comment", "post", "warmup", "scrape", "custom"];
@@ -167,6 +172,7 @@ function CampaignsContent() {
 
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [total, setTotal] = useState(0);
+  const [totals, setTotals] = useState<CampaignTotals>(EMPTY_TOTALS);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -216,9 +222,12 @@ function CampaignsContent() {
       if (status) params.set("status", status);
       if (type) params.set("type", type);
       if (ownerId) params.set("ownerId", ownerId);
-      const data = await apiFetch<{ campaigns: Campaign[]; total: number }>(`/api/campaigns?${params}`);
+      const data = await apiFetch<{ campaigns: Campaign[]; total: number; totals?: CampaignTotals }>(
+        `/api/campaigns?${params}`,
+      );
       setCampaigns(data.campaigns);
       setTotal(data.total);
+      setTotals(data.totals ?? EMPTY_TOTALS);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -314,22 +323,6 @@ function CampaignsContent() {
   const visibleTasks = useMemo(
     () => (taskFilter ? (detail?.tasks ?? []).filter((task) => task.status === taskFilter) : (detail?.tasks ?? [])),
     [detail, taskFilter],
-  );
-
-  const totals = useMemo(
-    () =>
-      campaigns.reduce(
-        (acc, campaign) => {
-          acc.tasks += campaign.taskCount;
-          acc.running += campaign.counts.running;
-          acc.queued += campaign.counts.queued;
-          acc.success += campaign.counts.success;
-          acc.failed += campaign.counts.failed;
-          return acc;
-        },
-        { tasks: 0, running: 0, queued: 0, success: 0, failed: 0 },
-      ),
-    [campaigns],
   );
 
   async function runPendingTasks() {
