@@ -6,13 +6,60 @@ import TaskModel from "@/lib/models/Task";
 import UserModel from "@/lib/models/User";
 import { makeCampaignSummary, type TaskStatusCounts } from "@/lib/campaigns";
 import { withAuth } from "@/lib/apiHandler";
-import { allowedOwnerFilter, isAdmin, requestedOwnerFilter } from "@/lib/auth/dal";
+import { allowedOwnerFilter, isAdmin, isCliente, requestedOwnerFilter } from "@/lib/auth/dal";
 import { escapeRegex } from "@/lib/regex";
 
 type CountRow = {
   _id: { campaignId: Types.ObjectId; status: string };
   count: number;
 };
+
+/**
+ * Los tipos de campaña que trabajan sobre una publicación concreta. Igual que
+ * en la ruta del detalle: en warmup y publicaciones el primer `goto` va al muro
+ * o al grupo, así que llamarle "la publicación de la campaña" sería mentir.
+ */
+const CAMPAIGN_TYPES_WITH_POST = ["like", "likecomment", "comment", "ramificacion"];
+
+/**
+ * La publicación de cada campaña, sacada del primer `goto` de su primera tarea.
+ *
+ * Solo se pide para el rol cliente, que en vez de abrir el detalle va derecho
+ * al posteo, y solo para las campañas de la página que se está mirando: los
+ * `steps` son lo más pesado de una tarea y traer los de las noventa campañas
+ * para leer una URL no se paga.
+ */
+async function postUrlsFor(campaigns: { _id: Types.ObjectId | string; type: string }[]) {
+  const ids = campaigns
+    .filter((c) => CAMPAIGN_TYPES_WITH_POST.includes(c.type))
+    .map((c) => new Types.ObjectId(String(c._id)));
+  if (ids.length === 0) return new Map<string, string>();
+
+  const rows = await TaskModel.aggregate<{ _id: Types.ObjectId; url: string | null }>([
+    { $match: { campaignId: { $in: ids } } },
+    { $sort: { scheduledAt: 1, createdAt: 1 } },
+    { $group: { _id: "$campaignId", steps: { $first: "$steps" } } },
+    {
+      $project: {
+        url: {
+          $first: {
+            $map: {
+              input: {
+                $filter: {
+                  input: { $ifNull: ["$steps", []] },
+                  cond: { $and: [{ $eq: ["$$this.action", "goto"] }, { $ne: ["$$this.url", null] }] },
+                },
+              },
+              in: "$$this.url",
+            },
+          },
+        },
+      },
+    },
+  ]);
+
+  return new Map(rows.filter((row) => row.url).map((row) => [String(row._id), row.url as string]));
+}
 
 /** username de cada dueño, en una sola consulta para toda la página. */
 async function ownerNamesFor(campaigns: { ownerId?: Types.ObjectId | null }[]) {
@@ -80,7 +127,13 @@ export const GET = withAuth(async (user, req: NextRequest) => {
   }));
   const filtered = status ? summaries.filter((campaign) => campaign.status === status) : summaries;
   const total = filtered.length;
-  const campaigns = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
+
+  // Al cliente la tabla no le abre el detalle: su botón va a la publicación.
+  const postUrls = isCliente(user) ? await postUrlsFor(paged) : null;
+  const campaigns = postUrls
+    ? paged.map((campaign) => ({ ...campaign, postUrl: postUrls.get(String(campaign._id)) ?? null }))
+    : paged;
 
   // Los KPIs de arriba de la página suman TODO lo que cae bajo el filtro, no
   // la página que se está viendo. Se calculan acá porque `filtered` ya son

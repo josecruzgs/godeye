@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
 import ListeningProjectModel from "@/lib/models/ListeningProject";
 import { withAuth } from "@/lib/apiHandler";
+import { readOnlyWideFilter } from "@/lib/auth/dal";
 import { providerStatus } from "@/lib/listening/providers";
 import { normalizeEntities, DuplicateEntityError } from "@/lib/listening/entities";
 
 export const GET = withAuth(async (user) => {
   await dbConnect();
-  const projects = await ListeningProjectModel.find({ ownerId: user.objectId })
+  const projects = await ListeningProjectModel.find(readOnlyWideFilter(user))
     .sort({ createdAt: -1 })
     .lean();
   // El estado de los proveedores viaja con la lista para que la UI pueda

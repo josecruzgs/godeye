@@ -8,6 +8,7 @@ import ThemeToggle from "./ThemeToggle";
 import ElementIcon from "./ui/ElementIcon";
 import { getElementForPath, ELEMENT_META } from "@/lib/elements";
 import { useSession } from "@/lib/session";
+import { isClienteRole, ROLE_LABELS } from "@/lib/auth/roles";
 import { findCity } from "@/lib/timezones";
 import { BRAND_NAME } from "@/lib/brand";
 
@@ -72,6 +73,31 @@ function useClock(timeZone: string) {
   // null hasta que hidrata: la hora del servidor y la del cliente no
   // coinciden nunca, así que pintarla en SSR sería un error de hidratación.
   return now;
+}
+
+/** El chip de quién está conectado: enlace a Ajustes, o texto plano si no lo tiene. */
+function UserChip({
+  href,
+  title,
+  children,
+}: {
+  href: string | null;
+  title: string;
+  children: React.ReactNode;
+}) {
+  const className = "flex items-center gap-1.5 rounded-full px-1 py-0.5 transition-colors";
+  if (!href) {
+    return (
+      <span title={title} className={className}>
+        {children}
+      </span>
+    );
+  }
+  return (
+    <Link href={href} title={title} className={`${className} hover:bg-page`}>
+      {children}
+    </Link>
+  );
 }
 
 export default function Topbar() {
@@ -174,10 +200,16 @@ export default function Topbar() {
 
         {session && (
           <div className="flex items-center gap-1.5 border-l border-hairline pl-2.5">
-            <Link
-              href="/ajustes"
-              title={`${session.role === "admin" ? "Administrador" : "Operador"} · ir a Ajustes`}
-              className="flex items-center gap-1.5 rounded-full px-1 py-0.5 transition-colors hover:bg-page"
+            {/* El cliente no tiene Ajustes, así que su chip no es un enlace:
+                dejarlo clickeable lo mandaba a una página que el proxy le
+                rebota de vuelta acá. */}
+            <UserChip
+              href={isClienteRole(session.role) ? null : "/ajustes"}
+              title={
+                isClienteRole(session.role)
+                  ? ROLE_LABELS[session.role]
+                  : `${ROLE_LABELS[session.role]} · ir a Ajustes`
+              }
             >
               {avatar && (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -187,7 +219,7 @@ export default function Topbar() {
                 {session.username}
                 {session.role === "admin" && <span className="ml-1 text-gold">·admin</span>}
               </span>
-            </Link>
+            </UserChip>
             <button
               type="button"
               onClick={logout}

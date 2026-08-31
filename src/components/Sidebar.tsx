@@ -27,6 +27,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useSession } from "@/lib/session";
+import { clienteCanOpenPage, isClienteRole } from "@/lib/auth/roles";
 import { normalizeHex, sidebarStyle } from "@/lib/theme";
 import { BRAND_NAME, BRAND_SUBTITLE } from "@/lib/brand";
 
@@ -136,6 +137,32 @@ function useIsDark() {
   return isDark;
 }
 
+/** El pie del menú: enlace a Ajustes, o texto plano para quien no los tiene. */
+function FooterUser({
+  href,
+  title,
+  className,
+  children,
+}: {
+  href: string | null;
+  title: string;
+  className: string;
+  children: React.ReactNode;
+}) {
+  if (!href) {
+    return (
+      <div title={title} className={className}>
+        {children}
+      </div>
+    );
+  }
+  return (
+    <Link href={href} title={title} className={`${className} hover:bg-surface-2`}>
+      {children}
+    </Link>
+  );
+}
+
 export default function Sidebar() {
   const pathname = usePathname();
   const isDark = useIsDark();
@@ -192,14 +219,21 @@ export default function Sidebar() {
 
   // La sesión viene del servidor por contexto, así que el rol ya se conoce en
   // la primera pintura: los ítems de admin no parpadean ni de más ni de menos.
-  const sections = useMemo(
-    () =>
-      NAV_SECTIONS.map((section) => ({
-        ...section,
-        items: section.items.filter((item) => !item.adminOnly || session?.role === "admin"),
-      })),
-    [session],
-  );
+  //
+  // Al cliente se le arma el menú con la misma lista que usan el proxy y la
+  // API (lib/auth/roles.ts), no con una copia: así no puede quedar un enlace
+  // dibujado que al hacer clic rebote, ni una página alcanzable que no figure
+  // en el menú. Las secciones que quedan sin ítems se caen enteras.
+  const sections = useMemo(() => {
+    const cliente = isClienteRole(session?.role);
+    return NAV_SECTIONS.map((section) => ({
+      ...section,
+      items: section.items.filter((item) => {
+        if (item.adminOnly && session?.role !== "admin") return false;
+        return cliente ? clienteCanOpenPage(item.href) : true;
+      }),
+    })).filter((section) => section.items.length > 0);
+  }, [session]);
 
   const prefs = session?.preferences;
   const hasCustomSidebar = Boolean(normalizeHex(prefs?.sidebarColor));
@@ -337,11 +371,13 @@ export default function Sidebar() {
 
       {/* Al pie, quién está conectado. Es también la entrada a Ajustes, que es
           donde se cambian su foto, su color y su hora. */}
+      {/* Para el cliente no lleva a ningún lado: no tiene Ajustes, así que es
+          solo su nombre. */}
       {session && (
-        <Link
-          href="/ajustes"
-          title={`${session.username} · ir a Ajustes`}
-          className={`flex shrink-0 items-center gap-2.5 border-t border-hairline py-3 transition-colors hover:bg-surface-2 ${
+        <FooterUser
+          href={isClienteRole(session.role) ? null : "/ajustes"}
+          title={isClienteRole(session.role) ? session.username : `${session.username} · ir a Ajustes`}
+          className={`flex shrink-0 items-center gap-2.5 border-t border-hairline py-3 transition-colors ${
             collapsed ? "justify-center px-2" : "px-5"
           }`}
         >
@@ -356,7 +392,7 @@ export default function Sidebar() {
           {showLabels && (
             <span className="min-w-0 flex-1 truncate text-[13px] text-ink-secondary">{session.username}</span>
           )}
-        </Link>
+        </FooterUser>
       )}
     </aside>
   );

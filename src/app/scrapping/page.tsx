@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus, RefreshCw, AlertTriangle } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { useSession } from "@/lib/session";
 import Modal from "@/components/Modal";
 import ElementIcon from "@/components/ui/ElementIcon";
 import ProjectForm, { EMPTY_DRAFT, type ProjectDraft } from "@/components/listening/ProjectForm";
@@ -40,6 +41,9 @@ export default function EscuchaPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [creating, setCreating] = useState(false);
+  // El cliente entra a mirar: no se le ofrece crear proyectos (la API se lo
+  // rechazaría igual, ver lib/auth/roles.ts).
+  const esCliente = useSession()?.role === "cliente";
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState<ProjectDraft>(EMPTY_DRAFT);
 
@@ -99,7 +103,7 @@ export default function EscuchaPage() {
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className={`flex-wrap gap-2 ${esCliente ? "hidden" : "flex"}`}>
           <button
             onClick={() => {
               setDraft(EMPTY_DRAFT);
@@ -146,12 +150,14 @@ export default function EscuchaPage() {
             Crea un proyecto con las figuras que quieras monitorear. Google News y GDELT arrancan sin
             configurar nada; las redes sociales entran cuando conectes Bright Data.
           </p>
-          <button
-            onClick={() => setCreating(true)}
-            className="glow-btn mt-1 inline-flex items-center gap-1.5 rounded-[9px] bg-primary px-4 py-2 text-sm font-semibold text-primary-fg"
-          >
-            <Plus className="h-4 w-4" /> Crear el primero
-          </button>
+          {!esCliente && (
+            <button
+              onClick={() => setCreating(true)}
+              className="glow-btn mt-1 inline-flex items-center gap-1.5 rounded-[9px] bg-primary px-4 py-2 text-sm font-semibold text-primary-fg"
+            >
+              <Plus className="h-4 w-4" /> Crear el primero
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">

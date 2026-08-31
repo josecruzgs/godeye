@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext } from "react";
-import type { Preferences } from "@/lib/models/User";
+import type { Preferences, UserRole } from "@/lib/models/User";
 
 /**
  * La sesión tal como la ve el navegador. Es lo mismo que `SessionUser` del
@@ -11,7 +11,7 @@ import type { Preferences } from "@/lib/models/User";
 export type ClientSession = {
   id: string;
   username: string;
-  role: "admin" | "operador";
+  role: UserRole;
   groupIds: string[];
   preferences: Preferences;
 };

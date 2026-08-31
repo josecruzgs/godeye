@@ -41,7 +41,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
   if (!username || !password) return invalid;
 
   await dbConnect();
-  const user = await UserModel.findOne({ username }).select("passwordHash active");
+  const user = await UserModel.findOne({ username }).select("passwordHash active role");
 
   const ok = await verifyPassword(password, user?.passwordHash ?? DUMMY_HASH);
   if (!user || !ok || user.active === false) return invalid;
@@ -49,7 +49,7 @@ export const POST = withApiErrors(async (req: NextRequest) => {
   rateLimitReset(`login:${ip}`);
 
   const res = NextResponse.json({ ok: true });
-  res.cookies.set(SESSION_COOKIE, await createSessionToken(String(user._id)), {
+  res.cookies.set(SESSION_COOKIE, await createSessionToken(String(user._id), user.role), {
     ...SESSION_COOKIE_OPTIONS,
     maxAge: SESSION_MAX_AGE_SECONDS,
   });

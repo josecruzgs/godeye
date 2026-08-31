@@ -68,6 +68,16 @@ export function isAdmin(user: SessionUser): boolean {
 }
 
 /**
+ * El rol de solo lectura. Ve el resumen de campañas de todo el sistema y la
+ * escucha, y no puede escribir nada: el candado vive en `withAuth`, que le
+ * rechaza cualquier método que no sea GET y cualquier ruta fuera de la lista de
+ * src/lib/auth/roles.ts.
+ */
+export function isCliente(user: SessionUser): boolean {
+  return user.role === "cliente";
+}
+
+/**
  * Filtro de Mongo que recorta una colección con campo `groupId` a los grupos
  * permitidos. Para el admin no filtra nada; para un operador sin grupos
  * asignados no matchea nada, que es lo correcto.
@@ -109,7 +119,27 @@ export function ownerFilter(user: SessionUser): { ownerId: Types.ObjectId } {
  * es lo que se quiere decir, como al crear.
  */
 export function allowedOwnerFilter(user: SessionUser): Record<string, unknown> {
-  if (isAdmin(user)) return {};
+  // El cliente mira el sistema entero igual que el admin, pero solo mira: no
+  // hay ninguna ruta de escritura a la que pueda llegar con este filtro puesto,
+  // porque `withAuth` ya lo frenó antes por método.
+  if (isAdmin(user) || isCliente(user)) return {};
+  return { ownerId: user.objectId };
+}
+
+/**
+ * Alcance de lectura para lo que todavía es estrictamente de cada quien.
+ *
+ * La escucha se sigue guardando por dueño y nadie la comparte: un operador ve
+ * sus proyectos y el admin los suyos, como siempre. El cliente es la excepción,
+ * porque su razón de existir es mirar el trabajo de la casa entera y con el
+ * filtro de dueño puesto no vería un solo proyecto —no es dueño de ninguno.
+ *
+ * Se mantiene separado de `allowedOwnerFilter` a propósito: aquel abre también
+ * para el admin, y ampliarle la escucha al admin de paso sería un cambio de
+ * comportamiento que nadie pidió.
+ */
+export function readOnlyWideFilter(user: SessionUser): Record<string, unknown> {
+  if (isCliente(user)) return {};
   return { ownerId: user.objectId };
 }
 

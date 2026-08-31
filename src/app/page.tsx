@@ -15,7 +15,8 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { dbConnect } from "@/lib/mongodb";
-import { currentUser, allowedGroupFilter, allowedGroupIdFilter, type SessionUser } from "@/lib/auth/dal";
+import { currentUser, allowedGroupFilter, allowedGroupIdFilter, isCliente, type SessionUser } from "@/lib/auth/dal";
+import { CLIENTE_HOME } from "@/lib/auth/roles";
 import Panel from "@/components/ui/Panel";
 import SubHead from "@/components/ui/SubHead";
 import ElementIcon from "@/components/ui/ElementIcon";
@@ -184,6 +185,13 @@ export default async function Home() {
   // alcance de las cifras.
   const user = await currentUser();
   if (!user) redirect("/login");
+
+  // El proxy ya manda al cliente a /campanas, pero decide con el rol de la
+  // cookie, que puede haber quedado viejo si alguien cambió de rol sin volver a
+  // entrar. Esta es la única página que arma cifras en el servidor —el resto
+  // las pide por API, donde `withAuth` relee el rol—, así que acá se comprueba
+  // otra vez contra Mongo antes de contar nada.
+  if (isCliente(user)) redirect(CLIENTE_HOME);
 
   // En paralelo: Agua (campañas y tareas) y Viento (escucha) son consultas
   // independientes, no tiene sentido encadenarlas.

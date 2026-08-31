@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { currentUser, isAdmin, type SessionUser } from "@/lib/auth/dal";
+import { currentUser, isAdmin, isCliente, type SessionUser } from "@/lib/auth/dal";
+import { clienteCanReadApi } from "@/lib/auth/roles";
 
 /**
  * Error con código HTTP propio. Sirve para que un helper compartido —validar
@@ -59,6 +60,25 @@ export function withAuth<Args extends unknown[]>(
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });
     }
+
+    // Acá está el candado del rol cliente, y está acá y no en cada ruta a
+    // propósito: toda la API pasa por `withAuth`, así que una ruta nueva nace
+    // cerrada para él sin que nadie tenga que acordarse de cerrarla.
+    //
+    // El rol sale de `currentUser()`, que lo relee de Mongo en cada request —el
+    // de la cookie que mira el proxy puede estar viejo, este no.
+    //
+    // `args[0]` es siempre el Request: Next se lo pasa al handler aunque el
+    // handler no lo declare, así que se puede leer método y ruta sin obligar a
+    // ninguna ruta a cambiar su firma.
+    if (isCliente(user)) {
+      const req = args[0] instanceof Request ? args[0] : null;
+      const denied = !req || req.method !== "GET" || !clienteCanReadApi(new URL(req.url).pathname);
+      if (denied) {
+        return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+      }
+    }
+
     return handler(user, ...args);
   });
 }

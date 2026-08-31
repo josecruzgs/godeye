@@ -1,8 +1,14 @@
 import { Schema, models, model, type InferSchemaType } from "mongoose";
 import { dropStaleModel } from "./staleModel";
 
-export const USER_ROLES = ["admin", "operador"] as const;
+// "cliente" es el rol de mirar: entra, ve el resumen de campañas y la escucha,
+// y no puede escribir nada. Qué páginas y qué endpoints alcanza está en
+// src/lib/auth/roles.ts, que es la lista que usan el proxy, la API y el menú.
+export const USER_ROLES = ["admin", "operador", "cliente"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
+// Cómo se llama cada rol en pantalla vive en lib/auth/roles.ts, no acá: este
+// archivo importa mongoose, y los componentes del navegador que muestran el rol
+// no pueden arrastrarlo al bundle.
 
 /**
  * Apariencia y hora local, por usuario.
@@ -78,6 +84,6 @@ export function toPublicUser(user: {
   };
 }
 
-dropStaleModel("User", ["preferences"]);
+dropStaleModel("User", ["preferences"], { role: [...USER_ROLES] });
 
 export default models.User ?? model("User", UserSchema);

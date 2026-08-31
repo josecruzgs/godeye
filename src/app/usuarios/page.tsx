@@ -6,7 +6,9 @@ import { apiFetch, ApiError } from "@/lib/api";
 import Card from "@/components/Card";
 import { useSession } from "@/lib/session";
 
-type Role = "admin" | "operador";
+// El cliente es de solo lectura y ve todas las campañas, así que no se le
+// eligen grupos: la columna lo dice igual que para el admin.
+type Role = "admin" | "operador" | "cliente";
 
 type User = {
   _id: string;
@@ -176,6 +178,7 @@ export default function UsersPage() {
               >
                 <option value="operador">Operador</option>
                 <option value="admin">Administrador</option>
+                <option value="cliente">Cliente (solo lectura)</option>
               </select>
             </div>
             <button
@@ -240,10 +243,11 @@ export default function UsersPage() {
                       >
                         <option value="operador">Operador</option>
                         <option value="admin">Administrador</option>
+                        <option value="cliente">Cliente (solo lectura)</option>
                       </select>
                     </td>
                     <td className="px-4 py-3">
-                      {u.role === "admin" ? (
+                      {u.role !== "operador" ? (
                         <span className="inline-flex items-center gap-1.5 text-xs text-ink-secondary">
                           <ShieldCheck className="h-3.5 w-3.5 text-gold" /> Todos
                         </span>

@@ -50,6 +50,12 @@ type Campaign = {
   counts: Counts;
   createdAt: string;
   updatedAt: string;
+  /**
+   * La publicación sobre la que trabajó la campaña. Solo viaja con sesión de
+   * cliente, que en vez de abrir el detalle va derecho al posteo. `null` en las
+   * campañas que no trabajan sobre una publicación (warmup, publicaciones).
+   */
+  postUrl?: string | null;
 };
 
 type CampaignTask = {
@@ -154,6 +160,12 @@ function formatDate(value?: string) {
   return new Date(value).toLocaleString();
 }
 
+/** Solo el día. Es lo que ve el cliente: la hora exacta es ruido de operación. */
+function formatDay(value?: string) {
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString();
+}
+
 function progressFor(campaign: Campaign) {
   const done = campaign.counts.success + campaign.counts.failed + campaign.counts.cancelled;
   if (!campaign.taskCount) return 0;
@@ -168,6 +180,12 @@ function CampaignsContent() {
   // de perfiles. El mismo rol es el que ve —y edita— las campañas de todos los
   // operadores: por eso también gobierna la columna "Usuario" y su filtro.
   const esAdmin = session?.role === "admin";
+  // El cliente es de solo lectura: ve el resumen y nada más. No se le muestran
+  // los accesos para crear, ni el detalle de la campaña, ni los conteos de
+  // exitosas y fallidas — lo que le importa es que la campaña corrió y sobre
+  // qué publicación. El servidor ya se lo impide (ver lib/auth/roles.ts); esto
+  // es que la pantalla diga lo mismo que el candado.
+  const esCliente = session?.role === "cliente";
   const campaignIdParam = searchParams.get("campaignId");
 
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -250,6 +268,10 @@ function CampaignsContent() {
 
   const openCampaign = useCallback(
     async (id: string) => {
+      // Un solo portón para el detalle: la tabla ya no le ofrece el botón al
+      // cliente, pero a esta función también se llega con ?campaignId= en la
+      // URL. (La API le contesta 403 igual; esto evita el modal vacío.)
+      if (esCliente) return;
       setSelectedId(id);
       // El filtro no se hereda de la campaña anterior: "fallidas" en una no
       // quiere decir nada en la siguiente, y arrancar con la tabla recortada
@@ -258,7 +280,7 @@ function CampaignsContent() {
       setNotice(null);
       await loadCampaign(id);
     },
-    [loadCampaign],
+    [loadCampaign, esCliente],
   );
 
   const closeCampaign = useCallback(() => {
@@ -311,6 +333,9 @@ function CampaignsContent() {
   }, [closeCampaign, selectedId]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // Campaña, Avance, Tipo, Creada y Acciones son fijas; "Usuario" solo la ve el
+  // admin y "Tareas" la ve todo el mundo menos el cliente.
+  const colSpan = 5 + (esAdmin ? 1 : 0) + (esCliente ? 0 : 1);
   const selectedCampaign = detail?.campaign;
   const pendingInDetail = selectedCampaign?.counts.pending ?? 0;
   const pausableInDetail = (selectedCampaign?.counts.queued ?? 0) + (selectedCampaign?.counts.pending ?? 0);
@@ -543,7 +568,8 @@ Las tareas que ya se cumplieron quedan como registro.`,
             <p className="label-mono-sm mt-1">{total} campañas · tareas agrupadas por perfil</p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        {/* Todos estos llevan a pantallas de crear: el cliente no las tiene. */}
+        <div className={`flex-wrap gap-2 ${esCliente ? "hidden" : "flex"}`}>
           <Link
             href="/campanas/compartir"
             className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-surface px-3 py-2 text-sm font-medium text-ink-secondary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:text-ink hover:shadow-md"
@@ -579,7 +605,7 @@ Las tareas que ya se cumplieron quedan como registro.`,
 
       {error && <p className="rounded-xl bg-critical/10 p-3 text-sm text-critical">{error}</p>}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className={`grid gap-3 sm:grid-cols-2 ${esCliente ? "lg:grid-cols-3" : "lg:grid-cols-5"}`}>
         <Card className="p-4">
           <p className="label-mono">Tareas</p>
           <p className="stat-value mt-2.5">{totals.tasks}</p>
@@ -592,11 +618,11 @@ Las tareas que ya se cumplieron quedan como registro.`,
           <p className="label-mono">En cola</p>
           <p className="stat-value mt-2.5 text-primary">{totals.queued}</p>
         </Card>
-        <Card className="p-4">
+        <Card className={`p-4 ${esCliente ? "hidden" : ""}`}>
           <p className="label-mono">Exitosas</p>
           <p className="stat-value mt-2.5 text-success">{totals.success}</p>
         </Card>
-        <Card className="p-4">
+        <Card className={`p-4 ${esCliente ? "hidden" : ""}`}>
           <p className="label-mono">Fallidas</p>
           <p className="stat-value mt-2.5 text-critical">{totals.failed}</p>
         </Card>
@@ -683,7 +709,7 @@ Las tareas que ya se cumplieron quedan como registro.`,
                 <th className="px-4 py-3 font-medium">Campaña</th>
                 {esAdmin && <th className="px-4 py-3 font-medium">Usuario</th>}
                 <th className="px-4 py-3 font-medium">Avance</th>
-                <th className="px-4 py-3 font-medium">Tareas</th>
+                {!esCliente && <th className="px-4 py-3 font-medium">Tareas</th>}
                 <th className="px-4 py-3 font-medium">Tipo</th>
                 <th className="px-4 py-3 font-medium">Creada</th>
                 <th className="px-4 py-3 font-medium">Acciones</th>
@@ -692,13 +718,13 @@ Las tareas que ya se cumplieron quedan como registro.`,
             <tbody>
               {loading && campaigns.length === 0 ? (
                 <tr>
-                  <td colSpan={esAdmin ? 7 : 6} className="px-4 py-10 text-center text-ink-muted">
+                  <td colSpan={colSpan} className="px-4 py-10 text-center text-ink-muted">
                     Cargando...
                   </td>
                 </tr>
               ) : campaigns.length === 0 ? (
                 <tr>
-                  <td colSpan={esAdmin ? 7 : 6} className="px-4 py-10 text-center text-ink-muted">
+                  <td colSpan={colSpan} className="px-4 py-10 text-center text-ink-muted">
                     Sin campañas todavía.
                   </td>
                 </tr>
@@ -708,13 +734,17 @@ Las tareas que ya se cumplieron quedan como registro.`,
                   return (
                     <tr key={campaign._id} className="border-t border-hairline transition-colors hover:bg-page/60">
                       <td className="px-4 py-3">
-                        <button
-                          type="button"
-                          onClick={() => openCampaign(campaign._id)}
-                          className="max-w-80 text-left font-medium text-ink hover:text-primary hover:underline"
-                        >
-                          <span className="block truncate">{campaign.name}</span>
-                        </button>
+                        {esCliente ? (
+                          <span className="block max-w-80 truncate font-medium text-ink">{campaign.name}</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => openCampaign(campaign._id)}
+                            className="max-w-80 text-left font-medium text-ink hover:text-primary hover:underline"
+                          >
+                            <span className="block truncate">{campaign.name}</span>
+                          </button>
+                        )}
                       </td>
                       {esAdmin && (
                         <td className="px-4 py-3 text-ink-secondary">{campaign.owner ?? "—"}</td>
@@ -727,24 +757,55 @@ Las tareas que ya se cumplieron quedan como registro.`,
                           <span className="w-9 text-right text-xs text-ink-muted">{progress}%</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-ink-secondary">
-                        {campaign.taskCount}
-                        <span className="ml-2 text-xs text-ink-muted">
-                          {campaign.counts.success} ok / {campaign.counts.failed} fail
-                        </span>
-                      </td>
+                      {!esCliente && (
+                        <td className="px-4 py-3 text-ink-secondary">
+                          {campaign.taskCount}
+                          <span className="ml-2 text-xs text-ink-muted">
+                            {campaign.counts.success} ok / {campaign.counts.failed} fail
+                          </span>
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-ink-secondary">{TYPE_LABELS[campaign.type] ?? campaign.type}</td>
-                      <td className="px-4 py-3 text-ink-secondary">{formatDate(campaign.createdAt)}</td>
+                      <td className="px-4 py-3 text-ink-secondary">
+                        {esCliente ? formatDay(campaign.createdAt) : formatDate(campaign.createdAt)}
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => openCampaign(campaign._id)}
-                            title="Ver perfiles y tareas"
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink-muted transition-colors hover:bg-page hover:text-ink"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
+                          {esCliente ? (
+                            // Al cliente el botón lo lleva a la publicación
+                            // sobre la que trabajó la campaña, no al detalle.
+                            // Las campañas sin posteo (warmup, publicaciones)
+                            // lo muestran apagado en vez de esconderlo, para
+                            // que la columna no se descuadre entre filas.
+                            <a
+                              href={campaign.postUrl ?? undefined}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              aria-disabled={!campaign.postUrl}
+                              title={
+                                campaign.postUrl
+                                  ? "Abrir la publicación · se abre en otra pestaña"
+                                  : "Esta campaña no trabaja sobre una publicación"
+                              }
+                              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline transition-colors ${
+                                campaign.postUrl
+                                  ? "text-ink-muted hover:bg-page hover:text-ink"
+                                  : "pointer-events-none opacity-40"
+                              }`}
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </a>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => openCampaign(campaign._id)}
+                              title="Ver perfiles y tareas"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-hairline text-ink-muted transition-colors hover:bg-page hover:text-ink"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
+                          )}
+                          {!esCliente && (
                           <button
                             type="button"
                             disabled={deletingId === campaign._id || campaign.counts.running > 0}
@@ -758,6 +819,7 @@ Las tareas que ya se cumplieron quedan como registro.`,
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
+                          )}
                         </div>
                       </td>
                     </tr>
