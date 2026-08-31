@@ -32,7 +32,6 @@ import Pagination from "@/components/Pagination";
 import StatCard from "@/components/StatCard";
 import Panel from "@/components/ui/Panel";
 import SubHead from "@/components/ui/SubHead";
-import Meter from "@/components/Meter";
 import CampaignTrendChart, { type TrendPoint } from "@/components/charts/CampaignTrendChart";
 import TopProfilesChart, { type ProfileRow } from "@/components/charts/TopProfilesChart";
 import StatusBadge, { STATUS_COLORS, STATUS_LABELS } from "@/components/StatusBadge";
@@ -121,8 +120,6 @@ type CampaignPerformance = {
 type CampaignCharts = {
   trend: TrendPoint[];
   topProfiles: ProfileRow[];
-  commentTotal: number;
-  commentAvailable: number;
 };
 
 const PAGE_SIZE = 20;
@@ -200,6 +197,78 @@ function formatDay(value?: string) {
   return new Date(value).toLocaleDateString();
 }
 
+/**
+ * El filtro de fechas del cliente. En vez de estados y tipos —vocabulario de
+ * operación: "partial", "cancelled", "empty"— se le da la pregunta que sí se
+ * hace: qué se movió hoy, ayer, esta semana, este mes.
+ */
+const DATE_RANGES = [
+  { key: "", label: "Todas las fechas" },
+  { key: "hoy", label: "Hoy" },
+  { key: "ayer", label: "Ayer" },
+  { key: "semana", label: "Esta semana" },
+  { key: "mes", label: "Este mes" },
+  { key: "rango", label: "Rango de fechas" },
+] as const;
+
+type DateRangeKey = (typeof DATE_RANGES)[number]["key"];
+
+function startOfDay(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function endOfDay(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+}
+
+/**
+ * El rango en instantes, resuelto en la hora del navegador.
+ *
+ * Se calcula acá y no en el servidor a propósito: el VPS corre en UTC, y "hoy"
+ * para quien mira la pantalla empieza a la medianoche de SU reloj. Es además el
+ * mismo huso con el que la columna "Creada" formatea cada fila, así que lo que
+ * el filtro deja pasar coincide con las fechas que se leen en la tabla.
+ *
+ * La semana arranca el lunes, que es la convención de acá y no la de
+ * `getDay()`, donde el domingo es 0.
+ */
+function resolveDateRange(key: DateRangeKey, desde: string, hasta: string): { from?: Date; to?: Date } {
+  const now = new Date();
+
+  if (key === "hoy") return { from: startOfDay(now), to: endOfDay(now) };
+
+  if (key === "ayer") {
+    const ayer = new Date(now);
+    ayer.setDate(ayer.getDate() - 1);
+    return { from: startOfDay(ayer), to: endOfDay(ayer) };
+  }
+
+  if (key === "semana") {
+    const lunes = new Date(now);
+    lunes.setDate(lunes.getDate() - ((now.getDay() + 6) % 7));
+    return { from: startOfDay(lunes), to: endOfDay(now) };
+  }
+
+  if (key === "mes") {
+    return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: endOfDay(now) };
+  }
+
+  if (key === "rango") {
+    // Los <input type="date"> dan "YYYY-MM-DD", que `new Date()` interpreta
+    // como medianoche UTC. Se parten a mano para que el día sea el del reloj de
+    // quien mira, igual que en los atajos de arriba.
+    const parse = (value: string) => {
+      const [y, m, d] = value.split("-").map(Number);
+      return y && m && d ? new Date(y, m - 1, d) : null;
+    };
+    const a = parse(desde);
+    const b = parse(hasta);
+    return { from: a ? startOfDay(a) : undefined, to: b ? endOfDay(b) : undefined };
+  }
+
+  return {};
+}
+
 function progressFor(campaign: Campaign) {
   const done = campaign.counts.success + campaign.counts.failed + campaign.counts.cancelled;
   if (!campaign.taskCount) return 0;
@@ -236,6 +305,11 @@ function CampaignsContent() {
   const [status, setStatus] = useState("");
   const [type, setType] = useState("");
   const [ownerId, setOwnerId] = useState("");
+  // Filtro de fechas del cliente: el atajo elegido, y los dos extremos cuando
+  // el atajo es "rango". Ver resolveDateRange.
+  const [dateRange, setDateRange] = useState<DateRangeKey>("");
+  const [desde, setDesde] = useState("");
+  const [hasta, setHasta] = useState("");
   const [operators, setOperators] = useState<Operator[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<CampaignDetail | null>(null);
@@ -283,6 +357,11 @@ function CampaignsContent() {
         if (status) params.set("status", status);
         if (type) params.set("type", type);
         if (ownerId) params.set("ownerId", ownerId);
+        // Los extremos se mandan resueltos a instantes: el servidor no tiene
+        // por qué saber en qué huso vive quien mira (ver resolveDateRange).
+        const { from, to } = resolveDateRange(dateRange, desde, hasta);
+        if (from) params.set("from", from.toISOString());
+        if (to) params.set("to", to.toISOString());
         if (withCharts) params.set("charts", "1");
         const data = await apiFetch<{
           campaigns: Campaign[];
@@ -302,7 +381,7 @@ function CampaignsContent() {
         setLoading(false);
       }
     },
-    [page, search, status, type, ownerId],
+    [page, search, status, type, ownerId, dateRange, desde, hasta],
   );
 
   const loadCampaign = useCallback(async (id: string, silent = false) => {
@@ -395,7 +474,7 @@ function CampaignsContent() {
   const pendingInDetail = selectedCampaign?.counts.pending ?? 0;
   const pausableInDetail = (selectedCampaign?.counts.queued ?? 0) + (selectedCampaign?.counts.pending ?? 0);
   const pausedInDetail = selectedCampaign?.counts.paused ?? 0;
-  const hasFilters = Boolean(search || status || type || ownerId);
+  const hasFilters = Boolean(search || status || type || ownerId || dateRange);
 
   // La tabla del modal recortada al estado elegido. El filtro se aplica sobre
   // lo que ya vino: el detalle trae todas las tareas de la campaña en una sola
@@ -608,6 +687,9 @@ Las tareas que ya se cumplieron quedan como registro.`,
     setSearch("");
     setStatus("");
     setType("");
+    setDateRange("");
+    setDesde("");
+    setHasta("");
     setPage(1);
   }
 
@@ -665,7 +747,11 @@ Las tareas que ya se cumplieron quedan como registro.`,
           dashboard donde el resto la mira. Mismas tarjetas y mismos acentos
           que allá, para que sea reconocible. */}
       {esCliente && performance && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        // `bento` y no una grilla de cuatro: StatCard trae la clase `c3` —tres
+        // de doce columnas—, así que en una grilla de cuatro cada tarjeta pedía
+        // tres cuartos del ancho y terminaban una por renglón. Sobre las doce
+        // del bento, `c3` es exactamente un cuarto y los cuatro entran en línea.
+        <div className="bento">
           <StatCard
             label="Likes completados"
             value={performance.likeSuccess}
@@ -750,36 +836,87 @@ Las tareas que ya se cumplieron quedan como registro.`,
             className="w-full rounded-lg border border-hairline bg-page py-2 pl-9 pr-3 text-sm outline-none transition-colors focus:border-primary"
           />
         </div>
-        <select
-          value={status}
-          onChange={(e) => {
-            setStatus(e.target.value);
-            setPage(1);
-          }}
-          className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none focus:border-primary"
-        >
-          <option value="">Todos los estados</option>
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <select
-          value={type}
-          onChange={(e) => {
-            setType(e.target.value);
-            setPage(1);
-          }}
-          className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none focus:border-primary"
-        >
-          <option value="">Todos los tipos</option>
-          {TYPES.map((t) => (
-            <option key={t} value={t}>
-              {TYPE_LABELS[t] ?? t}
-            </option>
-          ))}
-        </select>
+        {/* Al cliente, fechas en vez de estados y tipos: "partial", "empty" o
+            "warmup" son vocabulario de operación, y lo que él se pregunta es
+            qué se movió hoy o esta semana. */}
+        {esCliente ? (
+          <>
+            <select
+              value={dateRange}
+              onChange={(e) => {
+                setDateRange(e.target.value as DateRangeKey);
+                setPage(1);
+              }}
+              className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none focus:border-primary"
+            >
+              {DATE_RANGES.map((r) => (
+                <option key={r.key} value={r.key}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+            {dateRange === "rango" && (
+              <>
+                <input
+                  type="date"
+                  value={desde}
+                  max={hasta || undefined}
+                  onChange={(e) => {
+                    setDesde(e.target.value);
+                    setPage(1);
+                  }}
+                  aria-label="Desde"
+                  className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none focus:border-primary"
+                />
+                <span className="text-xs text-ink-muted">a</span>
+                <input
+                  type="date"
+                  value={hasta}
+                  min={desde || undefined}
+                  onChange={(e) => {
+                    setHasta(e.target.value);
+                    setPage(1);
+                  }}
+                  aria-label="Hasta"
+                  className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none focus:border-primary"
+                />
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <select
+              value={status}
+              onChange={(e) => {
+                setStatus(e.target.value);
+                setPage(1);
+              }}
+              className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none focus:border-primary"
+            >
+              <option value="">Todos los estados</option>
+              {STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+            <select
+              value={type}
+              onChange={(e) => {
+                setType(e.target.value);
+                setPage(1);
+              }}
+              className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none focus:border-primary"
+            >
+              <option value="">Todos los tipos</option>
+              {TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {TYPE_LABELS[t] ?? t}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
         {esAdmin && (
           <select
             value={ownerId}
@@ -813,7 +950,7 @@ Las tareas que ya se cumplieron quedan como registro.`,
         )}
       </Card>
 
-      {/* Actividad, solo para el cliente: las mismas tres chapas del dashboard,
+      {/* Actividad, solo para el cliente: las mismas chapas del dashboard,
           contadas sobre las campañas que el filtro dejó pasar. `bento` es la
           rejilla de doce columnas que entienden los `col` de Panel. */}
       {esCliente && charts && (
@@ -830,30 +967,10 @@ Las tareas que ya se cumplieron quedan como registro.`,
             <CampaignTrendChart data={charts.trend} />
           </Panel>
 
+          {/* En las cuatro columnas que dejó el banco de comentarios, que era
+              inventario de operación y no le decía nada al cliente. */}
           <Panel
             col={4}
-            title="Banco de comentarios"
-            tag="sin usar"
-            accent="var(--gold)"
-            icon={<ElementIcon name="eye" size={13} />}
-            bodyClassName="flex h-full flex-col gap-4"
-          >
-            <Meter
-              label="Disponibles"
-              value={charts.commentAvailable}
-              total={charts.commentTotal}
-              accent="var(--gold)"
-            />
-            {/* Sin el botón que lleva a crear la campaña de comentarios: el
-                cliente no tiene esa pantalla y el enlace lo rebotaría. */}
-            <p className="text-[12px] leading-relaxed text-ink-secondary">
-              Comentarios listos para la próxima campaña. Cuando se agotan, las tareas de comentar se quedan
-              sin munición.
-            </p>
-          </Panel>
-
-          <Panel
-            col={12}
             title="Perfiles más activos"
             tag="likes + comentarios exitosos"
             accent="var(--el-viento)"

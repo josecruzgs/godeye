@@ -117,7 +117,10 @@ export default function Topbar() {
   }
 
   const element = getElementForPath(pathname ?? "");
-  const meta = element ? ELEMENT_META[element] : null;
+  // Al cliente no se le nombra el elemento. "Agua · Narrativa y comunicación"
+  // es vocabulario de la sala —tiene sentido para quien navega los cuatro
+  // módulos— y él solo ve esta página: ahí arriba tiene que decir la marca.
+  const meta = element && !isClienteRole(session?.role) ? ELEMENT_META[element] : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -152,11 +155,16 @@ export default function Topbar() {
         </span>
         <div className="min-w-0">
           {/* En un módulo manda el nombre del elemento; fuera de ellos, la
-              marca que el usuario haya puesto en Ajustes. */}
+              marca que el usuario haya puesto en Ajustes. Al cliente le va la
+              marca de la casa y punto: no tiene Ajustes donde cambiarla, y si
+              alguien le dejó un brandTitle puesto en su cuenta, ahí arriba
+              volvería a decir cualquier otra cosa. */}
           <p className="font-display truncate text-[15px] font-semibold leading-tight text-ink">
-            {meta?.name ?? brandTitle}
+            {isClienteRole(session?.role) ? BRAND_NAME : (meta?.name ?? brandTitle)}
           </p>
-          <p className="label-mono-sm truncate">{meta?.title ?? "Sala de inteligencia"}</p>
+          {(meta?.title || !isClienteRole(session?.role)) && (
+            <p className="label-mono-sm truncate">{meta?.title ?? "Sala de inteligencia"}</p>
+          )}
         </div>
       </div>
 

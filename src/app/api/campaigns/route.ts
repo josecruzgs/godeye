@@ -4,7 +4,6 @@ import { dbConnect } from "@/lib/mongodb";
 import CampaignModel from "@/lib/models/Campaign";
 import TaskModel from "@/lib/models/Task";
 import UserModel from "@/lib/models/User";
-import CommentModel from "@/lib/models/Comment";
 import { makeCampaignSummary, type TaskStatusCounts } from "@/lib/campaigns";
 import { withAuth } from "@/lib/apiHandler";
 import { allowedOwnerFilter, isAdmin, isCliente, requestedOwnerFilter } from "@/lib/auth/dal";
@@ -29,12 +28,10 @@ const TREND_DAYS = 14;
 export type CampaignCharts = {
   trend: { day: string; label: string; likes: number; comments: number }[];
   topProfiles: { name: string; count: number }[];
-  commentTotal: number;
-  commentAvailable: number;
 };
 
 /**
- * La curva de catorce días, el podio de perfiles y el banco de comentarios.
+ * La curva de catorce días y el podio de perfiles.
  *
  * Van aparte de `performanceFor` porque son caros —recorren tareas por día y
  * cruzan contra perfiles— y la página se refresca cada cinco segundos. El
@@ -53,7 +50,7 @@ async function chartsFor(campaignIds: Types.ObjectId[]): Promise<CampaignCharts>
   const conCampaña = { campaignId: { $in: campaignIds } };
   const exitosas = { ...conCampaña, type: { $in: [...LIKE_TYPES, "comment"] }, status: "success" };
 
-  const [dailyRows, topRows, commentTotal, commentAvailable] = await Promise.all([
+  const [dailyRows, topRows] = await Promise.all([
     campaignIds.length === 0
       ? []
       : TaskModel.aggregate<{ _id: { day: string; type: string }; count: number }>([
@@ -76,10 +73,6 @@ async function chartsFor(campaignIds: Types.ObjectId[]): Promise<CampaignCharts>
           { $unwind: "$profile" },
           { $project: { _id: 0, name: "$profile.name", count: 1 } },
         ]),
-    // El banco de comentarios no cuelga de ninguna campaña: es munición suelta.
-    // Al cliente, que ve el sistema entero, se le cuenta entero.
-    CommentModel.countDocuments({}),
-    CommentModel.countDocuments({ used: false }),
   ]);
 
   // Los catorce días se siembran en cero primero: sin esto, un día sin
@@ -107,8 +100,6 @@ async function chartsFor(campaignIds: Types.ObjectId[]): Promise<CampaignCharts>
       ...v,
     })),
     topProfiles: topRows,
-    commentTotal,
-    commentAvailable,
   };
 }
 
@@ -303,6 +294,19 @@ export const GET = withAuth(async (user, req: NextRequest) => {
   };
   if (type) filter.type = type;
   if (search) filter.name = { $regex: escapeRegex(search), $options: "i" };
+
+  // Rango de fechas sobre `createdAt`, que es lo que la tabla muestra como
+  // "Creada". Los extremos llegan ya resueltos a instantes desde el navegador
+  // —él sabe en qué huso está quien mira, y "hoy" en Mexicali no es "hoy" en
+  // UTC—, así que acá solo se validan y se aplican. Una fecha basura se ignora
+  // en vez de tumbar la consulta: peor que un filtro de más es una pantalla en
+  // blanco sin explicación.
+  const createdAt: Record<string, Date> = {};
+  const from = new Date(sp.get("from") ?? "");
+  const to = new Date(sp.get("to") ?? "");
+  if (!Number.isNaN(from.getTime())) createdAt.$gte = from;
+  if (!Number.isNaN(to.getTime())) createdAt.$lte = to;
+  if (Object.keys(createdAt).length > 0) filter.createdAt = createdAt;
 
   const campaignDocs = await CampaignModel.find(filter).sort({ createdAt: -1 }).lean();
   const campaignIds = campaignDocs.map((campaign) => campaign._id);
