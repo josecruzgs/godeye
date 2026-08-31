@@ -9,6 +9,11 @@ const PATHS = {
   fuego:
     "M12 21.4a5.8 5.8 0 0 0 5.8-5.8c0-4.1-3-6.2-3.6-9.9C13 7 11.6 8.4 11.1 10.8 9.7 9.8 9.2 8.4 9.2 6.4c-1.9 1.9-3 4.7-3 8.8a5.8 5.8 0 0 0 5.8 5.8Z",
   eye: "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z M12 9.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6Z",
+  // Globo de diálogo con cola abajo a la izquierda. Es lo que ve el cliente en
+  // lugar de la gota: para él la pantalla no se llama "Agua" —ese nombre es de
+  // la sala y él no la navega—, y lo que mira son likes y comentarios.
+  charla:
+    "M17.6 4H6.4A2.4 2.4 0 0 0 4 6.4v7.2A2.4 2.4 0 0 0 6.4 16H7v3.6L11.4 16h6.2a2.4 2.4 0 0 0 2.4-2.4V6.4A2.4 2.4 0 0 0 17.6 4Z",
 } as const;
 
 export type IconName = keyof typeof PATHS;

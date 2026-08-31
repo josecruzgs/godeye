@@ -698,7 +698,7 @@ Las tareas que ya se cumplieron quedan como registro.`,
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] accent-fill border">
-            <ElementIcon name="agua" size={18} />
+            <ElementIcon name={esCliente ? "charla" : "agua"} size={18} />
           </span>
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold text-ink">Campañas</h1>
@@ -966,7 +966,7 @@ Las tareas que ya se cumplieron quedan como registro.`,
             title="Actividad de campañas · últimos 14 días"
             tag="likes + comentarios"
             accent="var(--el-agua)"
-            icon={<ElementIcon name="agua" size={13} />}
+            icon={<ElementIcon name="charla" size={13} />}
           >
             <CampaignTrendChart data={charts.trend} />
           </Panel>

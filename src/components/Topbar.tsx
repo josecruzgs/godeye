@@ -151,7 +151,7 @@ export default function Topbar() {
           con --primary y su tinta legible. */}
       <div key={element ?? "general"} className="animate-rise flex min-w-0 items-center gap-2.5">
         <span className="accent-fill grid h-8 w-8 shrink-0 place-items-center rounded-[10px] border">
-          <ElementIcon name={element ?? "eye"} size={16} />
+          <ElementIcon name={isClienteRole(session?.role) ? "charla" : (element ?? "eye")} size={16} />
         </span>
         <div className="min-w-0">
           {/* En un módulo manda el nombre del elemento; fuera de ellos, la
