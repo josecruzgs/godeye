@@ -15,11 +15,15 @@
 export const MOTORES_TOTALES = 5;
 
 /**
- * Dos y no cinco a propósito: cada motor abre su propio navegador en AdsPower
+ * Tres y no cinco a propósito: cada motor abre su propio navegador en AdsPower
  * sobre la pantalla virtual del VPS, y eso cuesta RAM y disco. Se sube cuando
  * la máquina lo aguante, con `WORKER_ENGINES`.
+ *
+ * Este número tiene que valer por sí solo, sin la variable de entorno: PM2 no
+ * relee el env en un `reload`, así que un worker que arrancó antes del cambio
+ * puede quedarse sin `WORKER_ENGINES` y este es el que decide.
  */
-export const MOTORES_POR_DEFECTO = 2;
+export const MOTORES_POR_DEFECTO = 3;
 
 /** Lee `WORKER_ENGINES` y lo deja dentro de lo que la UI sabe dibujar. */
 export function motoresConfigurados(raw: string | undefined): number {

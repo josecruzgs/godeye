@@ -55,11 +55,15 @@ module.exports = {
       script: "node_modules/tsx/dist/cli.mjs",
       args: "src/worker/index.ts",
       // `WORKER_ENGINES` es cuántas tareas corre a la vez (los "motores" que
-      // dibuja /campanas). Dos para empezar: cada motor abre su propio
-      // navegador en AdsPower sobre la pantalla virtual, y eso es RAM y disco.
-      // Se sube acá y en el próximo `pm2 restart godeye-tasks`; el tope que la
-      // sala sabe dibujar son 5 (src/lib/motores.ts).
-      env: { NODE_ENV: "production", WORKER_TASKS: "1", WORKER_LISTENING: "0", WORKER_ENGINES: "2" },
+      // dibuja /campanas). Cada uno abre su propio navegador en AdsPower sobre
+      // la pantalla virtual: son ~400 MB de RAM y, sobre todo, caché en disco,
+      // que es lo que lo llenó el 28/8 y otra vez el 3/9. El tope que la sala
+      // sabe dibujar son 5 (src/lib/motores.ts).
+      //
+      // Cambiar el número acá NO alcanza: PM2 se queda con el env con el que
+      // arrancó el proceso, así que después del deploy hay que correr
+      // `pm2 restart godeye-tasks --update-env` para que lo lea.
+      env: { NODE_ENV: "production", WORKER_TASKS: "1", WORKER_LISTENING: "0", WORKER_ENGINES: "3" },
       kill_timeout: 30_000,
     },
   ],
