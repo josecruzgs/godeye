@@ -25,8 +25,8 @@ type Respuesta = {
 /** Cada cuánto se le pregunta al servidor qué hay en los motores. */
 const POLL_MS = 4000;
 
-/** Segmentos de la barra. Veinte entran cómodos en la fila más angosta. */
-const SEGMENTOS = 20;
+/** Segmentos de la barra. Catorce entran cómodos en una tarjeta de un quinto. */
+const SEGMENTOS = 14;
 
 const TYPE_LABELS: Record<string, string> = {
   like: "Like",
@@ -63,6 +63,20 @@ function useTranscurrido(desde: string | null): string | null {
 }
 
 /**
+ * Qué se lee debajo del tipo de tarea: el perfil que la está corriendo.
+ *
+ * El `name` de la tarea ya viene armado como "tipo · perfil", así que ponerlo
+ * junto a la etiqueta y al perfil repetía las dos cosas ("COMENTARIO comment ·
+ * Ignacia · Ignacia"). El perfil manda cuando está; el nombre solo aparece si
+ * no hay perfil que mostrar, y sin el prefijo del tipo, que ya está arriba.
+ */
+function detalleDe(task: MotorTask): string {
+  if (task.profile) return task.profile;
+  const prefijo = `${task.type} · `;
+  return task.name.startsWith(prefijo) ? task.name.slice(prefijo.length) : task.name;
+}
+
+/**
  * Una ranura del worker.
  *
  * Los tres estados son distintos a propósito: apagado (el worker no lo
@@ -70,7 +84,7 @@ function useTranscurrido(desde: string | null): string | null {
  * adentro). Sin el primero, subir `WORKER_ENGINES` sería una sorpresa; con él,
  * la pantalla ya muestra a dónde puede crecer el sistema.
  */
-function Fila({ motor }: { motor: Motor }) {
+function Ranura({ motor }: { motor: Motor }) {
   const task = motor.task;
   const corriendo = Boolean(task);
   const transcurrido = useTranscurrido(task?.startedAt ?? null);
@@ -83,61 +97,64 @@ function Fila({ motor }: { motor: Motor }) {
       ? "En espera"
       : "No disponible";
 
-  const detalle = task
-    ? task.visible
-      ? [task.name, task.profile].filter(Boolean).join(" · ")
-      : task.name
+  // En cinco columnas el texto es angosto, así que el detalle va corto y el
+  // largo queda en el `title` para quien pase el mouse.
+  const detalle = task ? detalleDe(task) : motor.active ? "Sin tarea" : "Capacidad futura";
+  const completo = task
+    ? detalle
     : motor.active
-      ? "Listo para tomar la siguiente tarea de la cola"
-      : "Se enciende al subir la capacidad del worker";
+      ? "Encendido, listo para tomar la siguiente tarea de la cola"
+      : "Se enciende al subir WORKER_ENGINES en el worker";
 
   const cuerpo = (
-    <div className={`motor-fila ${estado} flex items-center gap-3 px-3 py-2.5`}>
-      {/* Número del motor. Es la identidad de la ranura: la misma tarea se ve
-          en el mismo hueco mientras dure. */}
-      <span
-        className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-hairline font-mono text-[11px] font-semibold tabular-nums"
-        style={{
-          color: corriendo ? "var(--gold)" : "var(--text-muted, inherit)",
-          borderColor: corriendo ? "color-mix(in srgb, var(--gold) 40%, transparent)" : undefined,
-          opacity: motor.active ? 1 : 0.45,
-        }}
-      >
-        {motor.active ? motor.engine : <Lock className="h-3 w-3" aria-hidden />}
-      </span>
+    <div className={`motor-fila ${estado} flex h-full flex-col gap-2 px-3 py-2.5`}>
+      <div className="flex items-center justify-between gap-2">
+        {/* Número del motor. Es la identidad de la ranura: la misma tarea se ve
+            en el mismo hueco mientras dure. */}
+        <span
+          className="grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-hairline font-mono text-[11px] font-semibold tabular-nums"
+          style={{
+            color: corriendo ? "var(--gold)" : "var(--text-muted, inherit)",
+            borderColor: corriendo ? "color-mix(in srgb, var(--gold) 40%, transparent)" : undefined,
+            opacity: motor.active ? 1 : 0.45,
+          }}
+        >
+          {motor.active ? motor.engine : <Lock className="h-3 w-3" aria-hidden />}
+        </span>
+        {/* El cronómetro ocupa lugar siempre, aunque esté vacío: si apareciera
+            y desapareciera, la tarjeta cambiaría de alto en cada arranque y
+            cada final de tarea. */}
+        <span
+          className="shrink-0 font-mono text-[13px] tabular-nums"
+          style={{ color: corriendo ? "var(--gold)" : "transparent" }}
+        >
+          {transcurrido ?? "—"}
+        </span>
+      </div>
 
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-        <div className="flex items-baseline justify-between gap-3">
-          <span
-            className={`truncate text-[13px] ${corriendo ? "font-medium text-ink" : "text-ink-muted"}`}
-            style={{ opacity: motor.active ? 1 : 0.6 }}
-          >
-            <span className="label-mono-sm mr-2">{etiqueta}</span>
-            <span className="text-ink-secondary">{detalle}</span>
-          </span>
-          {/* El cronómetro ocupa lugar siempre, aunque esté vacío: si apareciera
-              y desapareciera, el texto de la izquierda se movería en cada
-              arranque y cada final de tarea. */}
-          <span
-            className="w-14 shrink-0 text-right font-mono text-[13px] tabular-nums"
-            style={{ color: corriendo ? "var(--gold)" : "transparent" }}
-          >
-            {transcurrido ?? "—"}
-          </span>
-        </div>
+      <div className="min-w-0 flex-1" title={completo}>
+        <p className="label-mono-sm truncate" style={{ opacity: motor.active ? 1 : 0.6 }}>
+          {etiqueta}
+        </p>
+        <p
+          className={`truncate text-[12.5px] ${corriendo ? "font-medium text-ink" : "text-ink-muted"}`}
+          style={{ opacity: motor.active ? 1 : 0.6 }}
+        >
+          {detalle}
+        </p>
+      </div>
 
-        <div className={`motor-barra ${estado}`} aria-hidden>
-          {Array.from({ length: SEGMENTOS }, (_, i) => (
-            <span
-              key={i}
-              className="motor-seg"
-              // El desfase por índice es lo que hace la onda. 55ms sobre 20
-              // segmentos da algo más de un segundo de recorrido, por debajo
-              // del ciclo de la animación: la onda entra antes de reiniciarse.
-              style={corriendo ? { ["--d" as string]: `${i * 55}ms` } : undefined}
-            />
-          ))}
-        </div>
+      <div className={`motor-barra ${estado}`} aria-hidden>
+        {Array.from({ length: SEGMENTOS }, (_, i) => (
+          <span
+            key={i}
+            className="motor-seg"
+            // El desfase por índice es lo que hace la onda. 55ms sobre catorce
+            // segmentos da algo menos de un segundo de recorrido, por debajo
+            // del ciclo de la animación: la onda entra antes de reiniciarse.
+            style={corriendo ? { ["--d" as string]: `${i * 55}ms` } : undefined}
+          />
+        ))}
       </div>
     </div>
   );
@@ -145,7 +162,7 @@ function Fila({ motor }: { motor: Motor }) {
   // Solo se puede ir a la campaña si es del que mira; la de otro operador no
   // existe para él y el link daría un 404 o, peor, una pantalla vacía.
   return task?.campaignId ? (
-    <Link href={`/campanas?campaignId=${task.campaignId}`} className="block">
+    <Link href={`/campanas?campaignId=${task.campaignId}`} className="block h-full">
       {cuerpo}
     </Link>
   ) : (
@@ -225,9 +242,13 @@ export default function Motores() {
         </div>
       </header>
 
-      <div className="flex flex-col gap-1">
+      {/* Los cinco en una sola línea: son ranuras de la misma máquina y se leen
+          de un vistazo como una fila de instrumentos, no como una lista. En
+          pantallas angostas bajan a dos columnas y después a una, que es lo
+          único que entra sin que el nombre del perfil quede en tres letras. */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
         {slots.map((motor) => (
-          <Fila key={motor.engine} motor={motor} />
+          <Ranura key={motor.engine} motor={motor} />
         ))}
       </div>
     </section>
