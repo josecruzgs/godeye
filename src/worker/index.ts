@@ -7,11 +7,24 @@ import TaskModel from "@/lib/models/Task";
 import WorkerHeartbeatModel, { type WorkerRole } from "@/lib/models/WorkerHeartbeat";
 import ListeningProjectModel from "@/lib/models/ListeningProject";
 import { runTask } from "@/lib/automation/runner";
+import { motoresConfigurados } from "@/lib/motores";
 import { findDueProjects, ingestProject } from "@/lib/listening/ingest";
 import { analyzeMentions } from "@/lib/listening/analyze";
 import { generateNextBriefWindow } from "@/lib/listening/briefSchedule";
 
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS ?? 5000);
+
+/**
+ * Cuántas tareas puede tener este worker en vuelo a la vez.
+ *
+ * Antes no había número: el bucle hacía `await tick()` y no volvía hasta que la
+ * tarea terminaba, así que "de a una" era la forma del código y no una
+ * decisión. Ahora cada motor es un bucle independiente que toma su propia tarea
+ * de la misma cola de Mongo, que es la que evita que dos tomen la misma.
+ *
+ * Ver src/lib/motores.ts para el tope y el valor por defecto.
+ */
+const MOTORES = motoresConfigurados(process.env.WORKER_ENGINES);
 
 /**
  * Tope duro por tarea. Pasado esto, el worker se da por colgado y se mata.
@@ -56,13 +69,24 @@ let stopping = false;
 process.on("SIGINT", () => (stopping = true));
 process.on("SIGTERM", () => (stopping = true));
 
+const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function heartbeat() {
   // Un latido por rol activo: así la UI puede decir "la escucha corre pero la
   // automatización no" en vez de un sí/no que en dos máquinas sería mentira.
   for (const role of ROLES) {
     await WorkerHeartbeatModel.findByIdAndUpdate(
       role,
-      { $set: { pollIntervalMs: POLL_INTERVAL_MS, host: HOST } },
+      // `engines` solo tiene sentido en el rol de tareas: es la capacidad que
+      // la sala dibuja como motores encendidos. El de escucha no lo escribe
+      // para no pisar con un 0 lo que informó el otro proceso.
+      {
+        $set: {
+          pollIntervalMs: POLL_INTERVAL_MS,
+          host: HOST,
+          ...(role === "tasks" ? { engines: MOTORES } : {}),
+        },
+      },
       { upsert: true },
     );
   }
@@ -115,23 +139,60 @@ async function cerrarComoFallida(taskId: string, motivo: string) {
   );
 }
 
-async function tick() {
+/**
+ * Toma UNA tarea de la cola para este motor y la ejecuta.
+ *
+ * El `findOneAndUpdate` es lo que impide que dos motores se lleven la misma:
+ * es atómico, así que el segundo ya la ve en "running" y sigue de largo.
+ *
+ * El perfil sí necesita cuidado aparte. Dos tareas del mismo perfil en dos
+ * motores serían dos navegadores sobre el mismo perfil de AdsPower, que no lo
+ * soporta: pelean por la misma sesión y las dos terminan mal. Por eso la cola
+ * se filtra por los perfiles que ya están ocupados.
+ */
+async function tick(motor: number) {
+  // Los perfiles que otro motor ya tiene tomados. Sale de las tareas en
+  // "running", que es también de donde la sala lee qué está corriendo.
+  const ocupados = await TaskModel.distinct("profileId", { status: "running" });
+
   const task = await TaskModel.findOneAndUpdate(
-    { status: "queued", scheduledAt: { $lte: new Date() } },
-    { $set: { status: "running" } },
+    { status: "queued", scheduledAt: { $lte: new Date() }, profileId: { $nin: ocupados } },
+    // `startedAt` acá y no solo en `runTask`: entre tomarla y que el runner la
+    // marque pasan segundos —abrir AdsPower no es instantáneo— y la sala
+    // necesita desde cuándo corre para poner el cronómetro del motor.
+    { $set: { status: "running", engine: motor, startedAt: new Date() } },
     { sort: { scheduledAt: 1 }, returnDocument: "after" },
   );
 
   if (!task) return;
 
-  console.log(`[worker] ejecutando tarea ${task._id} (${task.name})`);
+  // El `distinct` de arriba y este `findOneAndUpdate` son dos viajes, y entre
+  // uno y otro el otro motor pudo tomar una tarea del mismo perfil. Se
+  // comprueba después de tomarla: si hay choque, esta vuelve a la cola. Que los
+  // dos motores se echen atrás a la vez no rompe nada —la tarea queda "queued"
+  // y alguien la toma en la vuelta siguiente—, y es preferible a abrir dos
+  // navegadores sobre el mismo perfil.
+  const choque = await TaskModel.exists({
+    _id: { $ne: task._id },
+    status: "running",
+    profileId: task.profileId,
+  });
+  if (choque) {
+    await TaskModel.updateOne(
+      { _id: task._id, status: "running" },
+      { $set: { status: "queued" }, $unset: { startedAt: 1, engine: 1 } },
+    );
+    return;
+  }
+
+  console.log(`[motor ${motor}] ejecutando tarea ${task._id} (${task.name})`);
   try {
     // runTask vuelve a marcar running/success/failed y escribe logs;
     // aquí solo evitamos que dos ticks tomen la misma tarea.
     await ejecutarConTope(String(task._id));
   } catch (err) {
     const motivo = err instanceof Error ? err.message : String(err);
-    console.error(`[worker] error en tarea ${task._id}:`, err);
+    console.error(`[motor ${motor}] error en tarea ${task._id}:`, err);
 
     // `runTask` sabe marcar `failed`, pero solo desde su propio try, al que no
     // llega si revienta antes —un perfil borrado es el caso habitual—. Esos
@@ -139,7 +200,7 @@ async function tick() {
     // la tarea en "running" al tomarla, así que quedaba ahí para siempre, sin
     // error visible y sin contar como fallida en ningún lado.
     await cerrarComoFallida(String(task._id), motivo).catch((cerrarErr) =>
-      console.error(`[worker] no se pudo cerrar la tarea ${task._id}:`, cerrarErr),
+      console.error(`[motor ${motor}] no se pudo cerrar la tarea ${task._id}:`, cerrarErr),
     );
 
     if (err instanceof TareaColgada) {
@@ -147,7 +208,12 @@ async function tick() {
       // este proceso, con su conexión CDP a medias y el perfil de AdsPower
       // tomado. Un proceso nuevo cuesta dos segundos; adivinar qué quedó a
       // medio camino, mucho más. PM2 lo levanta por `autorestart`.
-      console.error("[worker] tarea colgada: me reinicio para soltar el navegador");
+      //
+      // Con varios motores esto también corta lo que estuvieran haciendo los
+      // otros, y es a propósito: el navegador colgado no se suelta por partes,
+      // y lo que estaba a mitad vuelve solo a la cola al arrancar (ver
+      // `recuperarHuerfanas`).
+      console.error(`[motor ${motor}] tarea colgada: me reinicio para soltar el navegador`);
       process.exit(1);
     }
   }
@@ -249,16 +315,18 @@ async function recuperarHuerfanas() {
   const aEncolar = huerfanas.filter((t) => !enPausa(t)).map((t) => t._id);
   const aPausar = huerfanas.filter(enPausa).map((t) => t._id);
 
+  // El `engine` se borra junto con `startedAt`: es de la corrida que se perdió,
+  // y dejarlo puesto pintaría esa tarea en un motor que ya no la tiene.
   if (aEncolar.length > 0) {
     await TaskModel.updateMany(
       { _id: { $in: aEncolar } },
-      { $set: { status: "queued" }, $unset: { startedAt: 1 } },
+      { $set: { status: "queued" }, $unset: { startedAt: 1, engine: 1 } },
     );
   }
   if (aPausar.length > 0) {
     await TaskModel.updateMany(
       { _id: { $in: aPausar } },
-      { $set: { status: "paused", resumeStatus: "queued" }, $unset: { startedAt: 1 } },
+      { $set: { status: "paused", resumeStatus: "queued" }, $unset: { startedAt: 1, engine: 1 } },
     );
   }
 
@@ -266,6 +334,43 @@ async function recuperarHuerfanas() {
     `[worker] ${aEncolar.length} tareas huérfanas devueltas a la cola` +
       (aPausar.length > 0 ? ` y ${aPausar.length} a su campaña pausada` : ""),
   );
+}
+
+/**
+ * Un motor: pide trabajo, lo hace, vuelve a pedir.
+ *
+ * Los motores arrancan escalonados dentro del intervalo de poll para no
+ * consultar la cola todos en el mismo instante. No es lo que evita que se pisen
+ * —de eso se encarga `tick`—, sino que reparte los arranques de AdsPower, que
+ * es lo caro: varios navegadores abriéndose a la vez sobre la pantalla virtual
+ * del VPS es justo el pico que conviene no provocar.
+ */
+async function bucleDeMotor(motor: number) {
+  await esperar(Math.round(((motor - 1) * POLL_INTERVAL_MS) / MOTORES));
+
+  while (!stopping) {
+    try {
+      await tick(motor);
+    } catch (err) {
+      // Un error acá es de la cola misma (Mongo caído, por ejemplo), no de la
+      // tarea: los de la tarea ya los atrapa `tick`. Se registra y este motor
+      // reintenta en la vuelta siguiente, en vez de tirar abajo a los demás.
+      console.error(`[motor ${motor}] error al tomar trabajo:`, err);
+    }
+    await esperar(POLL_INTERVAL_MS);
+  }
+}
+
+/** La escucha, en su propio bucle: no comparte ritmo con los motores. */
+async function bucleDeEscucha() {
+  while (!stopping) {
+    try {
+      await listeningTick();
+    } catch (err) {
+      console.error("[escucha] error en la pasada:", err);
+    }
+    await esperar(POLL_INTERVAL_MS);
+  }
 }
 
 async function main() {
@@ -276,7 +381,8 @@ async function main() {
 
   await dbConnect();
   console.log(
-    `[worker] ${HOST} · roles: ${ROLES.join(" + ")} · poll cada ${POLL_INTERVAL_MS}ms`,
+    `[worker] ${HOST} · roles: ${ROLES.join(" + ")} · poll cada ${POLL_INTERVAL_MS}ms` +
+      (ROLES.includes("tasks") ? ` · ${MOTORES} motor${MOTORES === 1 ? "" : "es"}` : ""),
   );
 
   // Antes del primer latido: `recuperarHuerfanas` mira el latido de "tasks"
@@ -290,7 +396,7 @@ async function main() {
 
   // El latido va en su propio temporizador, no dentro del bucle de trabajo.
   //
-  // Latir una vez por vuelta parecía suficiente, pero `tick()` ejecuta una
+  // Latir una vez por vuelta parecía suficiente, pero un motor ejecuta una
   // tarea entera —abrir el navegador en AdsPower, navegar, publicar, cerrar—,
   // y eso tarda bastante más que los tres intervalos que la web usa para dar
   // el worker por vivo. Resultado: el chip de la barra superior pasaba a "SOLO
@@ -301,12 +407,17 @@ async function main() {
     heartbeat().catch((err) => console.error("[worker] latido falló:", err));
   }, POLL_INTERVAL_MS);
 
+  // Un bucle por motor más el de la escucha, todos en paralelo sobre el mismo
+  // proceso. Son esperas de E/S casi todo el tiempo, así que el único hilo de
+  // Node alcanza: lo que antes bloqueaba la cola no era la CPU sino el `await`.
+  const bucles: Promise<void>[] = [];
+  if (ROLES.includes("tasks")) {
+    for (let motor = 1; motor <= MOTORES; motor++) bucles.push(bucleDeMotor(motor));
+  }
+  if (ROLES.includes("listening")) bucles.push(bucleDeEscucha());
+
   try {
-    while (!stopping) {
-      if (ROLES.includes("tasks")) await tick();
-      if (ROLES.includes("listening")) await listeningTick();
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-    }
+    await Promise.all(bucles);
   } finally {
     clearInterval(latido);
   }

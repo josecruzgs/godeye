@@ -54,7 +54,12 @@ module.exports = {
       name: "godeye-tasks",
       script: "node_modules/tsx/dist/cli.mjs",
       args: "src/worker/index.ts",
-      env: { NODE_ENV: "production", WORKER_TASKS: "1", WORKER_LISTENING: "0" },
+      // `WORKER_ENGINES` es cuántas tareas corre a la vez (los "motores" que
+      // dibuja /campanas). Dos para empezar: cada motor abre su propio
+      // navegador en AdsPower sobre la pantalla virtual, y eso es RAM y disco.
+      // Se sube acá y en el próximo `pm2 restart godeye-tasks`; el tope que la
+      // sala sabe dibujar son 5 (src/lib/motores.ts).
+      env: { NODE_ENV: "production", WORKER_TASKS: "1", WORKER_LISTENING: "0", WORKER_ENGINES: "2" },
       kill_timeout: 30_000,
     },
   ],

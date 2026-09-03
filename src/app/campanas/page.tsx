@@ -28,6 +28,7 @@ import { ApiError, apiFetch } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import Card from "@/components/Card";
 import ElementIcon from "@/components/ui/ElementIcon";
+import Motores from "@/components/Motores";
 import Pagination from "@/components/Pagination";
 import StatCard from "@/components/StatCard";
 import Panel from "@/components/ui/Panel";
@@ -841,6 +842,11 @@ Las tareas que ya se cumplieron quedan como registro.`,
           </Link>
         </div>
       </div>
+
+      {/* Los motores del worker, arriba de todo: cuántas tareas puede correr a
+          la vez y qué hay en cada una ahora mismo. El cliente no los ve —es
+          maquinaria, no resultado— igual que el resto de lo operativo. */}
+      {!esCliente && <Motores />}
 
       {error && <p className="rounded-xl bg-critical/10 p-3 text-sm text-critical">{error}</p>}
 
