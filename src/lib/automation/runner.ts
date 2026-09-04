@@ -316,7 +316,22 @@ type CommentLikeProbe = {
   detail: string;
 };
 
-const FACEBOOK_BLOCKERS = [
+/**
+ * Un freno de la red: la pantalla que aparece cuando la cuenta ya no puede
+ * seguir trabajando hasta que alguien entre a mano.
+ *
+ * `text` se busca en el cuerpo de la página (normalizado, sin acentos) y
+ * tambien en la URL —Facebook manda el motivo en la ruta, como /checkpoint/—.
+ * `url` es solo para la URL, para rutas que no querriamos ir a buscar dentro
+ * del texto de la página.
+ */
+type PlatformBlocker = {
+  label: string;
+  text: string[];
+  url?: string[];
+};
+
+const FACEBOOK_BLOCKERS: PlatformBlocker[] = [
   {
     label: "cuenta bloqueada",
     text: ["desbloquear tu cuenta", "bloqueamos tu cuenta", "unlock your account", "locked your account"],
@@ -341,6 +356,61 @@ const FACEBOOK_BLOCKERS = [
   },
 ];
 
+/**
+ * Los frenos de Instagram.
+ *
+ * La cuenta suspendida se reconoce sobre todo por la ruta: Instagram manda a
+ * /accounts/suspended/ y ahi muestra "Confirma que eres una persona real para
+ * usar tu cuenta, <usuario>" con un boton de Continuar. Sin esto la tarea
+ * fallaba con el timeout de la caja de comentario —un sintoma que manda a
+ * revisar selectores— en vez de decir que la cuenta ya no sirve.
+ *
+ * La sesion caida queda afuera a proposito: se resuelve volviendo a loguear el
+ * perfil, no eliminandolo, y ya tiene su mensaje propio en
+ * prepareInstagramCommentBox.
+ */
+const INSTAGRAM_BLOCKERS: PlatformBlocker[] = [
+  {
+    label: "cuenta suspendida",
+    url: ["/accounts/suspended", "/accounts/disabled"],
+    text: [
+      "suspendimos tu cuenta",
+      "tu cuenta fue suspendida",
+      "we suspended your account",
+      "your account has been suspended",
+      "cuenta inhabilitada",
+      "your account has been disabled",
+    ],
+  },
+  {
+    label: "checkpoint de persona real",
+    text: [
+      "confirma que eres una persona real",
+      "confirm that you are a real person",
+      "confirm that you're a real person",
+      "confirma tu identidad",
+      "confirm your identity",
+    ],
+  },
+  {
+    label: "revision de seguridad",
+    url: ["/challenge"],
+    text: [
+      "actividad sospechosa",
+      "suspicious activity",
+      "detectamos actividad inusual",
+      "unusual activity",
+      "ayudanos a confirmar que eres tu",
+      "help us confirm it's you",
+    ],
+  },
+];
+
+const PLATAFORMAS_CON_FRENOS = [
+  { host: "facebook.com", nombre: "Facebook", blockers: FACEBOOK_BLOCKERS },
+  { host: "instagram.com", nombre: "Instagram", blockers: INSTAGRAM_BLOCKERS },
+];
+
 type ClickableTarget = {
   locator: Locator;
   position: { x: number; y: number };
@@ -363,28 +433,43 @@ function normalizePageText(value: string) {
     .toLowerCase();
 }
 
-async function knownFacebookBlocker(page: Page): Promise<string | null> {
+/**
+ * El freno que la red esta mostrando en esta pagina, si es uno de los conocidos.
+ *
+ * El texto del mensaje lo lee la pantalla de campañas para ofrecer el boton de
+ * eliminar el perfil (ver `redQueFreno`), asi que la forma
+ * "<Red> detuvo este perfil" es parte del contrato: cambiarla apaga ese boton.
+ */
+async function knownPlatformBlocker(page: Page): Promise<string | null> {
   const url = page.url();
-  if (!url.includes("facebook.com")) return null;
-
   const normalizedUrl = url.toLowerCase();
+  const plataforma = PLATAFORMAS_CON_FRENOS.find((p) => normalizedUrl.includes(p.host));
+  if (!plataforma) return null;
+
   const bodyText = await page
     .locator("body")
     .innerText({ timeout: 1000 })
     .then(normalizePageText)
     .catch(() => "");
 
-  for (const blocker of FACEBOOK_BLOCKERS) {
-    if (blocker.text.some((pattern) => bodyText.includes(pattern) || normalizedUrl.includes(pattern))) {
-      return `Facebook detuvo este perfil por ${blocker.label}. Requiere accion manual en la cuenta antes de volver a usarla.`;
+  for (const blocker of plataforma.blockers) {
+    const porTexto = blocker.text.some((pattern) => bodyText.includes(pattern) || normalizedUrl.includes(pattern));
+    const porUrl = (blocker.url ?? []).some((pattern) => normalizedUrl.includes(pattern));
+    if (porTexto || porUrl) {
+      return `${plataforma.nombre} detuvo este perfil por ${blocker.label}. Requiere accion manual en la cuenta antes de volver a usarla.`;
     }
   }
 
   return null;
 }
 
+/** Si el error que subio es el freno de la red y no un fallo del paso. */
+function esFrenoDeLaRed(message: string) {
+  return /^(Facebook|Instagram) detuvo este perfil/.test(message);
+}
+
 async function assertNoKnownBlocker(page: Page) {
-  const blocker = await knownFacebookBlocker(page);
+  const blocker = await knownPlatformBlocker(page);
   if (blocker) throw new Error(blocker);
 }
 
@@ -677,6 +762,10 @@ function esTareaDeComentario(taskType: string) {
 async function prepareInstagramCommentBox(page: Page, ctx: StepContext) {
   await ensureOnTargetUrl(page, ctx);
   await freezeReelPlayback(page);
+
+  // Antes que nada: si la cuenta esta suspendida no hay caja que buscar, y
+  // los intentos de abrir el panel se comen el error de a uno con `.catch`.
+  await assertNoKnownBlocker(page);
 
   if (await hasVisibleLocator(page, INSTAGRAM_COMMENT_BOX_SELECTOR)) return;
 
@@ -1024,7 +1113,7 @@ async function prepareSelectorTarget(page: Page, rawSelector: string, ctx: StepC
       target = await firstClickableLocator(page, FACEBOOK_COMMENT_OPEN_SELECTOR, 2500);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (message.startsWith("Facebook detuvo este perfil")) throw err;
+      if (esFrenoDeLaRed(message)) throw err;
     }
 
     if (target) {
@@ -1239,7 +1328,7 @@ async function defineEsbuildNameHelper(page: Page) {
  *   se descarta cualquier candidato que contenga a otro: el bueno es el más
  *   adentro.
  * - El `comment_id` no está en el comentario sino en el href del ancla de la
- *   fecha ("hace 2 h"), el mismo del que se cuelga markFacebookCommentLike.
+ *   fecha ("hace 2 h"), el mismo del que se cuelga markFacebookComment.
  *
  * Devuelve null si no lo encuentra; el que llama decide si eso es un fallo.
  */
@@ -1393,10 +1482,53 @@ async function waitForPublishedComment(page: Page, texto: string, timeoutMs: num
   }
 }
 
-async function markFacebookCommentLike(page: Page, commentId: string): Promise<CommentLikeProbe> {
+/**
+ * Qué botón hay que marcar dentro del comentario.
+ *
+ * Like y responder compartían el 80% del código —ubicar el comentario por su
+ * `comment_id` y subir a su contenedor es exactamente el mismo problema— en dos
+ * copias que ya habían empezado a divergir. Van por una sola función porque la
+ * parte difícil, emparejar el id, acaba de crecer y no puede vivir duplicada.
+ */
+type MarcaDeComentario = {
+  /** Atributo con el que se marca el botón encontrado, para que Playwright lo pulse. */
+  mark: string;
+  /** Rótulos del botón que se busca, en todos los idiomas mapeados. */
+  targetLabels: string[];
+  /** Cómo se llama ese botón en el mensaje de error. */
+  targetName: string;
+  /**
+   * Rótulos del botón ya pulsado. Solo el like los tiene: si el comentario ya
+   * está likeado hay que decirlo y no volver a pulsarlo, que lo desharía.
+   * Responder no tiene estado, así que va sin esto.
+   */
+  pressedLabels?: string[];
+};
+
+const MARCA_LIKE: MarcaDeComentario = {
+  mark: FACEBOOK_COMMENT_LIKE_MARK,
+  targetLabels: FACEBOOK_LIKE_LABELS,
+  targetName: "Me gusta",
+  pressedLabels: FACEBOOK_UNLIKE_LABELS,
+};
+
+const MARCA_RESPUESTA: MarcaDeComentario = {
+  mark: FACEBOOK_COMMENT_REPLY_MARK,
+  targetLabels: FACEBOOK_REPLY_LABELS,
+  targetName: "Responder",
+};
+
+/**
+ * Ubica el comentario en la página y marca su botón, o dice por qué no pudo.
+ */
+async function markFacebookComment(
+  page: Page,
+  commentId: string,
+  marca: MarcaDeComentario,
+): Promise<CommentLikeProbe> {
   await defineEsbuildNameHelper(page);
   return page.evaluate(
-    ({ commentId, mark, likeLabels, unlikeLabels }): CommentLikeProbe => {
+    ({ commentId, mark, targetLabels, targetName, pressedLabels }): CommentLikeProbe => {
       // Comparación insensible a mayúsculas y a acentos ("Gefällt mir" vs
       // "gefallt mir"): la interfaz de Facebook no siempre respeta el
       // capitalizado del rótulo entre layouts.
@@ -1409,34 +1541,110 @@ async function markFacebookCommentLike(page: Page, commentId: string): Promise<C
         marked.removeAttribute(mark);
       }
 
-      // El href del DOM puede traer el id escapado (`%3D` del padding base64)
-      // y el link del que salió, decodificado — o al revés. Se prueban las dos
-      // formas contra las dos versiones del href.
-      const wantedIds = [commentId];
-      const encoded = encodeURIComponent(commentId);
-      if (encoded !== commentId) wantedIds.push(encoded);
+      /**
+       * Todas las formas en las que un mismo comentario puede venir escrito.
+       *
+       * Facebook identifica un comentario de dos maneras: numérica
+       * (`comment_id=2459428374544479`) y base64 en los permalinks nuevos
+       * (`comment_id=Y29tbWVudDo...`), que decodifica a
+       * `comment:<id_del_post>_<id_del_comentario>`. El link que pegó el
+       * operador y el href que Facebook renderiza no tienen por qué usar la
+       * misma, y compararlas como cadenas era justo lo que fallaba: el
+       * comentario estaba a la vista y el runner decía no encontrarlo.
+       *
+       * Reduciendo las dos formas a los números que contienen, las dos se
+       * encuentran. El mínimo de seis dígitos deja afuera los números sueltos
+       * de un permalink (`?_rdr=1`, un índice de página) sin llegar nunca a
+       * excluir un id real, que tiene quince o dieciséis.
+       */
+      const digitos = (valor: string) => valor.match(/\d{6,}/g) ?? [];
 
-      const patterns = wantedIds.map(
-        (id) => new RegExp(`(^|[?&])(reply_)?comment_id=${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(&|#|$)`),
-      );
+      const formasDe = (valor: string) => {
+        const formas = new Set<string>();
+        const bruto = valor.trim();
+        if (!bruto) return formas;
 
-      const hrefMatches = (href: string) => {
-        const variants = [href];
+        formas.add(bruto);
+
+        let plano = bruto;
         try {
-          const decoded = decodeURIComponent(href);
-          if (decoded !== href) variants.push(decoded);
+          plano = decodeURIComponent(bruto);
         } catch {
-          // href con escapes inválidos: basta con la forma cruda
+          // Escapes inválidos: queda la forma cruda, que ya está adentro.
         }
-        return variants.some((variant) => patterns.some((pattern) => pattern.test(variant)));
+        formas.add(plano);
+        for (const numero of digitos(plano)) formas.add(numero);
+
+        // base64, con el padding `%3D` ya resuelto arriba y aceptando la
+        // variante url-safe. Solo vale si lo que sale es texto imprimible: un
+        // id numérico largo también "decodifica", pero a basura binaria.
+        try {
+          const texto = atob(plano.replace(/-/g, "+").replace(/_/g, "/"));
+          if (texto && /^[\x20-\x7e]+$/.test(texto)) {
+            formas.add(texto);
+            for (const numero of digitos(texto)) formas.add(numero);
+          }
+        } catch {
+          // No era base64.
+        }
+
+        return formas;
       };
 
-      const anchors = Array.from(document.querySelectorAll("a[href]")).filter((a) =>
-        hrefMatches(a.getAttribute("href") ?? ""),
+      /** Los `comment_id` / `reply_comment_id` que lleva un href. */
+      const valoresDelHref = (href: string) => {
+        const valores: string[] = [];
+        const variantes = [href];
+        try {
+          const plano = decodeURIComponent(href);
+          if (plano !== href) variantes.push(plano);
+        } catch {
+          // href con escapes inválidos: basta con la forma cruda.
+        }
+
+        for (const variante of variantes) {
+          const patron = /(?:^|[?&])(?:reply_)?comment_id=([^&#]+)/g;
+          for (let m = patron.exec(variante); m; m = patron.exec(variante)) {
+            valores.push(m[1]);
+          }
+        }
+        return valores;
+      };
+
+      const buscadas = formasDe(commentId);
+      const links = Array.from(document.querySelectorAll("a[href]"));
+      const anchors = links.filter((a) =>
+        valoresDelHref(a.getAttribute("href") ?? "").some((valor) => {
+          for (const forma of formasDe(valor)) {
+            if (buscadas.has(forma)) return true;
+          }
+          return false;
+        }),
       );
+
       if (!anchors.length) {
         const articles = document.querySelectorAll('[role="article"]').length;
-        return { status: "not_found", detail: `${articles} comentario(s) renderizado(s) en la página` };
+
+        // Qué ids SÍ hay. Antes el error solo decía "no está", y con eso no se
+        // podía distinguir "el link es de otra publicación" de "Facebook los
+        // renderiza con otro formato" o de "esta vista no pone permalinks en
+        // los comentarios". Con la muestra, el log lo dice solo.
+        const vistos = new Set<string>();
+        for (const a of links) {
+          for (const valor of valoresDelHref(a.getAttribute("href") ?? "")) {
+            vistos.add(valor.slice(0, 60));
+          }
+        }
+        const muestra = Array.from(vistos).slice(0, 5);
+        const restantes = vistos.size - muestra.length;
+        const idsEnPagina = muestra.length
+          ? `ids en la página: ${muestra.join(", ")}${restantes > 0 ? ` y ${restantes} más` : ""}`
+          : "ningún link con comment_id en la página";
+
+        return {
+          status: "not_found",
+          detail: `${articles} comentario(s) renderizado(s); ${idsEnPagina}`,
+        };
       }
 
       // El mismo id puede aparecer en más de un link (el permalink del
@@ -1458,25 +1666,27 @@ async function markFacebookCommentLike(page: Page, commentId: string): Promise<C
 
       const labelOf = (el: Element) => el.getAttribute("aria-label") ?? "";
       const textOf = (el: Element) => (el as HTMLElement).innerText || el.textContent || "";
-      const isLikeButton = (el: Element) =>
-        matchesAny(labelOf(el), likeLabels) || matchesAny(textOf(el), likeLabels);
+      const esObjetivo = (el: Element) =>
+        matchesAny(labelOf(el), targetLabels) || matchesAny(textOf(el), targetLabels);
 
-      const liked = buttons.find(
-        (button) =>
-          matchesAny(labelOf(button), unlikeLabels) ||
-          (button.getAttribute("aria-pressed") === "true" && isLikeButton(button)),
-      );
-      if (liked) return { status: "already_liked", detail: "" };
+      if (pressedLabels && pressedLabels.length) {
+        const pulsado = buttons.find(
+          (button) =>
+            matchesAny(labelOf(button), pressedLabels) ||
+            (button.getAttribute("aria-pressed") === "true" && esObjetivo(button)),
+        );
+        if (pulsado) return { status: "already_liked", detail: "" };
+      }
 
-      const likeButton = buttons.find(isLikeButton);
-      if (!likeButton) {
+      const objetivo = buttons.find(esObjetivo);
+      if (!objetivo) {
         return {
           status: "no_button",
-          detail: `${buttons.length} botón(es) en el comentario, ninguno rotulado como "Me gusta"`,
+          detail: `${buttons.length} botón(es) en el comentario, ninguno rotulado como "${targetName}"`,
         };
       }
 
-      likeButton.setAttribute(mark, "1");
+      objetivo.setAttribute(mark, "1");
       // El picker de reacciones se abre hacia arriba: el comentario tiene que
       // quedar a media pantalla para que quepa.
       article.scrollIntoView({ block: "center" });
@@ -1484,9 +1694,10 @@ async function markFacebookCommentLike(page: Page, commentId: string): Promise<C
     },
     {
       commentId,
-      mark: FACEBOOK_COMMENT_LIKE_MARK,
-      likeLabels: FACEBOOK_LIKE_LABELS,
-      unlikeLabels: FACEBOOK_UNLIKE_LABELS,
+      mark: marca.mark,
+      targetLabels: marca.targetLabels,
+      targetName: marca.targetName,
+      pressedLabels: marca.pressedLabels ?? [],
     },
   );
 }
@@ -1496,14 +1707,15 @@ async function markFacebookCommentLike(page: Page, commentId: string): Promise<C
  * comentarios de a poco y el que se busca puede estar detrás de un "Ver más
  * comentarios", sobre todo en publicaciones con mucha conversación.
  */
-async function resolveFacebookCommentLike(
+async function resolveFacebookComment(
   page: Page,
   commentId: string,
+  marca: MarcaDeComentario,
   timeoutMs: number,
   ctx: StepContext,
 ): Promise<CommentLikeProbe> {
   const deadline = Date.now() + timeoutMs;
-  let probe = await markFacebookCommentLike(page, commentId);
+  let probe = await markFacebookComment(page, commentId, marca);
   let expansions = 0;
 
   while (probe.status === "not_found" && Date.now() < deadline) {
@@ -1517,121 +1729,18 @@ async function resolveFacebookCommentLike(
     }
 
     await page.waitForTimeout(1000);
-    probe = await markFacebookCommentLike(page, commentId);
+    probe = await markFacebookComment(page, commentId, marca);
   }
 
   return probe;
 }
 
-/**
- * Igual que markFacebookCommentLike pero marcando el botón de responder.
- *
- * Comparte con aquella la parte difícil —ubicar el comentario por su
- * `comment_id`, que puede venir escapado o en base64, y subir a su contenedor—
- * porque es exactamente el mismo problema. Lo que cambia es a qué botón se
- * baja después.
- */
-async function markFacebookCommentReply(page: Page, commentId: string): Promise<CommentLikeProbe> {
-  await defineEsbuildNameHelper(page);
-  return page.evaluate(
-    ({ commentId, mark, replyLabels }): CommentLikeProbe => {
-      const sameLabel = (value: string, label: string) =>
-        value.trim().localeCompare(label, undefined, { sensitivity: "base" }) === 0;
-      const matchesAny = (value: string, labels: string[]) =>
-        Boolean(value.trim()) && labels.some((label) => sameLabel(value, label));
-
-      for (const marked of Array.from(document.querySelectorAll(`[${mark}]`))) {
-        marked.removeAttribute(mark);
-      }
-
-      const wantedIds = [commentId];
-      const encoded = encodeURIComponent(commentId);
-      if (encoded !== commentId) wantedIds.push(encoded);
-
-      const patterns = wantedIds.map(
-        (id) => new RegExp(`(^|[?&])(reply_)?comment_id=${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(&|#|$)`),
-      );
-
-      const hrefMatches = (href: string) => {
-        const variants = [href];
-        try {
-          const decoded = decodeURIComponent(href);
-          if (decoded !== href) variants.push(decoded);
-        } catch {
-          // href con escapes inválidos: basta con la forma cruda
-        }
-        return variants.some((variant) => patterns.some((pattern) => pattern.test(variant)));
-      };
-
-      const anchors = Array.from(document.querySelectorAll("a[href]")).filter((a) =>
-        hrefMatches(a.getAttribute("href") ?? ""),
-      );
-      if (!anchors.length) {
-        const articles = document.querySelectorAll('[role="article"]').length;
-        return { status: "not_found", detail: `${articles} comentario(s) renderizado(s) en la página` };
-      }
-
-      const article = anchors.map((a) => a.closest('[role="article"]')).find(Boolean);
-      if (!article) {
-        return {
-          status: "no_article",
-          detail: `${anchors.length} link(s) con ese id, ninguno dentro de un contenedor de comentario`,
-        };
-      }
-
-      // Solo los botones de este comentario, no los de sus respuestas anidadas:
-      // responderle a una respuesta cuelga la rama del lugar equivocado.
-      const buttons = Array.from(article.querySelectorAll('[role="button"]')).filter(
-        (button) => button.closest('[role="article"]') === article,
-      );
-
-      const labelOf = (el: Element) => el.getAttribute("aria-label") ?? "";
-      const textOf = (el: Element) => (el as HTMLElement).innerText || el.textContent || "";
-      const replyButton = buttons.find(
-        (el) => matchesAny(labelOf(el), replyLabels) || matchesAny(textOf(el), replyLabels),
-      );
-
-      if (!replyButton) {
-        return {
-          status: "no_button",
-          detail: `${buttons.length} botón(es) en el comentario, ninguno rotulado como "Responder"`,
-        };
-      }
-
-      replyButton.setAttribute(mark, "1");
-      article.scrollIntoView({ block: "center" });
-      return { status: "ready", detail: "" };
-    },
-    { commentId, mark: FACEBOOK_COMMENT_REPLY_MARK, replyLabels: FACEBOOK_REPLY_LABELS },
-  );
+function resolveFacebookCommentLike(page: Page, commentId: string, timeoutMs: number, ctx: StepContext) {
+  return resolveFacebookComment(page, commentId, MARCA_LIKE, timeoutMs, ctx);
 }
 
-/** Reintenta abriendo "ver más comentarios", igual que para los likes. */
-async function resolveFacebookCommentReply(
-  page: Page,
-  commentId: string,
-  timeoutMs: number,
-  ctx: StepContext,
-): Promise<CommentLikeProbe> {
-  const deadline = Date.now() + timeoutMs;
-  let probe = await markFacebookCommentReply(page, commentId);
-  let expansions = 0;
-
-  while (probe.status === "not_found" && Date.now() < deadline) {
-    await assertNoKnownBlocker(page);
-
-    if (expansions < FACEBOOK_MAX_COMMENT_EXPANSIONS && (await hasVisibleLocator(page, FACEBOOK_MORE_COMMENTS_SELECTOR))) {
-      expansions += 1;
-      await log(ctx.taskId, "info", `El comentario aún no está cargado; abriendo más comentarios (intento ${expansions}).`);
-      const target = await firstClickableLocator(page, FACEBOOK_MORE_COMMENTS_SELECTOR, 3000).catch(() => null);
-      if (target) await target.locator.click({ position: target.position, timeout: 3000 }).catch(() => {});
-    }
-
-    await page.waitForTimeout(1000);
-    probe = await markFacebookCommentReply(page, commentId);
-  }
-
-  return probe;
+function resolveFacebookCommentReply(page: Page, commentId: string, timeoutMs: number, ctx: StepContext) {
+  return resolveFacebookComment(page, commentId, MARCA_RESPUESTA, timeoutMs, ctx);
 }
 
 function commentProbeError(probe: CommentLikeProbe, commentId: string) {

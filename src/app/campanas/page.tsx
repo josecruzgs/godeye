@@ -158,15 +158,20 @@ function relaunchVerb(status: string) {
 }
 
 /**
- * Si la tarea falló porque Facebook frenó la cuenta.
+ * La red que frenó la cuenta, si la tarea falló por eso.
  *
- * El texto lo escribe `knownFacebookBlocker` en el runner y es el mismo para
- * los cuatro frenos que sabe reconocer (bloqueo, checkpoint, sesión caída,
- * revisión de seguridad). Se busca por `includes` y no por prefijo porque hay
- * pasos que envuelven el mensaje antes de guardarlo.
+ * El texto lo escribe `knownPlatformBlocker` en el runner y es el mismo para
+ * todos los frenos que sabe reconocer —de Facebook: bloqueo, checkpoint,
+ * sesión caída, revisión de seguridad; de Instagram: cuenta suspendida,
+ * checkpoint de persona real, revisión de seguridad—. Se busca en cualquier
+ * parte del mensaje y no por prefijo porque hay pasos que lo envuelven antes
+ * de guardarlo.
  */
-function frenadoPorFacebook(task: CampaignTask) {
-  return Boolean(task.error?.includes("Facebook detuvo este perfil"));
+function redQueFreno(task: CampaignTask): "Facebook" | "Instagram" | null {
+  const error = task.error ?? "";
+  if (error.includes("Instagram detuvo este perfil")) return "Instagram";
+  if (error.includes("Facebook detuvo este perfil")) return "Facebook";
+  return null;
 }
 
 // Solo los tipos con un formulario que soporta "agregar a campaña
@@ -657,11 +662,11 @@ function CampaignsContent() {
   }
 
   /**
-   * Retira del sistema el perfil que Facebook frenó.
+   * Retira del sistema el perfil que la red frenó.
    *
    * Vive en la fila de la tarea porque es ahí donde uno se entera: el error de
-   * la campaña dice que la cuenta quedó en revisión, y el perfil no va a
-   * volver a servir hasta que alguien entre a Facebook a mano. Borra primero
+   * la campaña dice que la cuenta quedó suspendida o en revisión, y el perfil
+   * no va a volver a servir hasta que alguien entre a la red a mano. Borra primero
    * las tareas que ya no se van a poder cumplir —si no, el worker seguiría
    * sacándolas de la cola para fallarlas de a una— y después el perfil, de
    * acá y de AdsPower, para que la próxima sincronización no lo traiga de
@@ -1486,16 +1491,17 @@ Las tareas que ya se cumplieron quedan como registro.`,
                                 >
                                   <Eye className="h-4 w-4" />
                                 </Link>
-                                {/* Solo cuando el error es el freno de
-                                    Facebook: un perfil se elimina una vez y no
-                                    hay vuelta atrás, así que el botón no se
-                                    ofrece al lado de cualquier fallo pasajero. */}
-                                {esAdmin && frenadoPorFacebook(task) && task.profileId && (
+                                {/* Solo cuando el error es el freno de la red
+                                    —Facebook o Instagram—: un perfil se elimina
+                                    una vez y no hay vuelta atrás, así que el
+                                    botón no se ofrece al lado de cualquier
+                                    fallo pasajero. */}
+                                {esAdmin && redQueFreno(task) && task.profileId && (
                                   <button
                                     type="button"
                                     disabled={deletingProfileId === task.profileId._id}
                                     onClick={() => deleteBlockedProfile(task)}
-                                    title="Facebook frenó este perfil: eliminarlo del sistema y de AdsPower, con sus tareas en cola"
+                                    title={`${redQueFreno(task)} frenó este perfil: eliminarlo del sistema y de AdsPower, con sus tareas en cola`}
                                     aria-label="Eliminar este perfil del sistema"
                                     className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-critical/30 text-critical transition-colors hover:bg-critical/10 disabled:pointer-events-none disabled:opacity-40"
                                   >
