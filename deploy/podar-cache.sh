@@ -7,13 +7,20 @@
 # no lo puede reinstalar, así que el servidor queda sin dependencias y el
 # síntoma —"mi cambio no aparece"— no se parece en nada a la causa.
 #
-# AdsPower recibe `clear_cache_after_closing: 1` desde el 28/8 y lo ignora: el
-# 3/9 la caché había vuelto a 73 GB. De ahí este cron.
+# AdsPower recibe `clear_cache_after_closing: 1` desde el 28/8 y lo ignora. Está
+# medido, no supuesto: el 3/9/2026, una hora después de vaciar el directorio a
+# mano, había 133 carpetas de perfil y 5,4 GB, con nunca más de 3 navegadores
+# abiertos a la vez. Cada tarea deja ~40 MB y nadie los borra.
+#
+# A ese ritmo el disco se llena en ~15 horas, así que esto NO es una red de
+# seguridad: mientras el parámetro de AdsPower no funcione, es la única defensa.
 #
 # Se instala en el crontab del usuario `godeye`:
 #
 #   crontab -e
-#   0 */6 * * * /home/godeye/godeye/deploy/podar-cache.sh >> /home/godeye/podar-cache.log 2>&1
+#   17 * * * * /home/godeye/godeye/deploy/podar-cache.sh >> /home/godeye/podar-cache.log 2>&1
+#
+# Cada hora y no cada seis: ver EDAD más abajo.
 #
 set -uo pipefail
 
@@ -21,16 +28,21 @@ set -uo pipefail
 # sesiones de Facebook viven en ~/.config/adspower_global, que NO se toca.
 CACHE="${GODEYE_CACHE_DIR:-/home/godeye/.cache/adspower_global/cwd_global/source/cache}"
 
-# A partir de qué uso de disco vale la pena podar. No es cada seis horas porque
-# sí: recorrer un árbol de millones de archivos diminutos cuesta I/O, y mientras
-# haya lugar de sobra ese costo no compra nada.
-UMBRAL="${GODEYE_CACHE_UMBRAL:-50}"
+# A partir de qué uso de disco se poda. Bajo a propósito: el sistema sin caché
+# ocupa ~14%, así que esto poda casi siempre, y ese es el punto. Con el árbol
+# chico cada pasada es barata; el umbral existe solo para no recorrer nada
+# cuando de verdad no hay nada que recorrer.
+UMBRAL="${GODEYE_CACHE_UMBRAL:-25}"
 
-# Minutos de gracia. Este es el número que hace seguro correr esto a ciegas: una
-# tarea dura minutos y el tope duro del worker son 20, así que un archivo sin
-# tocar en seis horas es de una sesión cerrada hace rato. Los que el navegador
-# abierto está usando son recientes y quedan afuera de la poda.
-EDAD="${GODEYE_CACHE_EDAD_MIN:-360}"
+# Minutos de gracia. Este es el número que hace seguro correr esto a ciegas: el
+# tope duro de una tarea son 20 minutos, así que dos horas es seis veces el peor
+# caso. Los archivos que un navegador abierto está usando son recientes y quedan
+# afuera de la poda.
+#
+# También es lo que fija cuánta caché vive en el disco en régimen: la que se
+# generó en las últimas dos horas. Medido el 3/9/2026 con 3 motores, eso son
+# ~11 GB. Si algún día se suben los motores, este número baja, no el umbral.
+EDAD="${GODEYE_CACHE_EDAD_MIN:-120}"
 
 [ -d "$CACHE" ] || exit 0
 

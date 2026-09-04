@@ -1,5 +1,6 @@
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import { adsPower } from "@/lib/adspower/client";
+import { borrarCacheDelPerfil } from "@/lib/adspower/cache";
 
 /**
  * Abre (si no está abierto) el perfil en AdsPower y se conecta al Chromium
@@ -68,7 +69,25 @@ async function dejarUnaSolaPestaña(context: BrowserContext): Promise<Page> {
   return page;
 }
 
+/**
+ * Cierra el navegador del perfil y recoge lo que dejó.
+ *
+ * La caché se borra solo si `stopBrowser` no tiró: si el cierre falló, el
+ * Chromium puede seguir vivo y borrarle la caché por debajo es pedir problemas.
+ * Ese caso lo levanta después `deploy/podar-cache.sh`, que solo toca archivos
+ * sin modificar en dos horas.
+ */
 export async function disconnectProfile(browser: Browser, profileId: string) {
   await browser.close().catch(() => {});
-  await adsPower.stopBrowser(profileId).catch(() => {});
+
+  try {
+    await adsPower.stopBrowser(profileId);
+  } catch {
+    return;
+  }
+
+  const borradas = await borrarCacheDelPerfil(profileId).catch(() => [] as string[]);
+  if (borradas.length > 0) {
+    console.log(`[cache] ${profileId}: ${borradas.length} carpeta(s) de caché borradas`);
+  }
 }

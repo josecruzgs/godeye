@@ -260,13 +260,20 @@ export const adsPower = {
    * nombre, dice si abrir la histórica— y `ip_tab: 0` es no abrir la de la IP.
    * Ver https://localapi-doc-en.adspower.com/docs/FFMFMf.
    *
-   * `clear_cache_after_closing: 1` vacía la caché del perfil cuando el navegador
-   * se cierra, y no es una optimización: es lo que evita que el VPS se quede sin
-   * disco. Sin esto, cada tarea deja en `~/.cache/adspower_global` el video del
-   * reel que miró, para un perfil que quizá no se vuelve a usar en un mes. Entre
-   * el 7 y el 28 de agosto de 2026 eso acumuló 79 GB —de 96— y tiró producción:
-   * el `npm ci` del despliegue borró node_modules y ya no tuvo espacio para
-   * reinstalarlo. La contra es que cada tarea vuelve a bajar los assets de
+   * `clear_cache_after_closing: 1` debería vaciar la caché del perfil cuando el
+   * navegador se cierra. **No funciona**, y se sigue mandando solo por si alguna
+   * versión de AdsPower lo arregla: el 3/9/2026, una hora después de vaciar
+   * `~/.cache/adspower_global` a mano, había 133 carpetas de perfil y 5,4 GB,
+   * con nunca más de 3 navegadores abiertos a la vez. Cada tarea deja ~40 MB.
+   *
+   * Que eso se acumule no es cosmético: entre el 7 y el 28 de agosto de 2026
+   * llenó los 96 GB del VPS y tiró producción —el `npm ci` del despliegue borró
+   * node_modules y ya no tuvo espacio para reinstalarlo—, y volvió a llenarlos
+   * el 3/9. De ahí que la caché la borremos nosotros al cerrar el navegador
+   * (`disconnectProfile` → `borrarCacheDelPerfil`), con `deploy/podar-cache.sh`
+   * por cron como red de seguridad.
+   *
+   * La contra de borrarla es que cada tarea vuelve a bajar los assets de
    * Facebook por el proxy residencial, que se paga por GB; se aceptó porque lo
    * que se acumula es sobre todo video, y cada tarea mira una publicación
    * distinta, así que esa caché casi nunca se reutilizaba.
