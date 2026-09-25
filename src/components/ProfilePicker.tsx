@@ -20,6 +20,8 @@ export type PickerProfile = {
   tags?: Tag[];
   /** Tareas acumuladas por el perfil. Lo calcula GET /api/profiles?all=true. */
   taskCount?: number;
+  /** AdsPower contestó "Profile does not exist" al abrirlo. Idem. */
+  missingInAdsPower?: boolean;
 };
 
 type Orden = "menos-usados" | "nombre";
@@ -30,10 +32,18 @@ export default function ProfilePicker({
   loading,
   selected,
   onChange,
+  pickLeastUsed = false,
 }: {
   profiles: PickerProfile[];
   groups: PickerGroup[];
   loading: boolean;
+  /**
+   * Muestra "Elegir los N menos usados". Vive acá y no en la página porque
+   * tiene que elegir entre lo que dejan los filtros de esta tabla: afuera no
+   * se ven, y el botón terminaba eligiendo de todos los grupos. Necesita que
+   * los perfiles traigan `taskCount` (`/api/profiles?all=true`).
+   */
+  pickLeastUsed?: boolean;
   selected: Set<string>;
   onChange: (next: Set<string>) => void;
 }) {
@@ -49,6 +59,7 @@ export default function ProfilePicker({
   // conviene descansar.
   const [orden, setOrden] = useState<Orden>("menos-usados");
   const [page, setPage] = useState(1);
+  const [cantidad, setCantidad] = useState(10);
 
   function groupName(groupId: string) {
     return groups.find((g) => g.adsPowerGroupId === groupId)?.name ?? groupId;
@@ -132,6 +143,17 @@ export default function ProfilePicker({
     onChange(new Set());
   }
 
+  // Los N con menos tareas dentro del filtro actual. Fuera los que no tienen
+  // nombre y los que AdsPower ya no reconoce: son restos de perfiles borrados,
+  // con cero tareas justamente porque no abren. Se ordena aparte, sin importar
+  // el orden elegido para la tabla, con el mismo desempate por nombre.
+  function pickLeastUsedFiltered() {
+    const candidatos = filtered
+      .filter((p) => p.name?.trim() && !p.missingInAdsPower)
+      .sort((a, b) => (a.taskCount ?? 0) - (b.taskCount ?? 0) || a.name.localeCompare(b.name));
+    onChange(new Set(candidatos.slice(0, Math.max(0, cantidad)).map((p) => p._id)));
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -155,6 +177,30 @@ export default function ProfilePicker({
           </button>
         </div>
       </div>
+
+      {pickLeastUsed && (
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="number"
+            min={1}
+            value={cantidad}
+            onChange={(e) => setCantidad(Math.max(1, Math.round(Number(e.target.value))))}
+            aria-label="Cantidad de perfiles"
+            className="w-24 rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none focus:border-primary"
+          />
+          <button
+            type="button"
+            disabled={loading}
+            onClick={pickLeastUsedFiltered}
+            className="rounded-lg border border-hairline px-3 py-2 text-sm font-medium text-ink-secondary transition-colors hover:bg-page hover:text-ink disabled:opacity-50"
+          >
+            Elegir los {cantidad} menos usados
+          </button>
+          <p className="text-xs text-ink-muted">
+            entre los {filtered.length} que dejan los filtros de abajo; reemplaza la selección.
+          </p>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         <div className="relative min-w-50 flex-1">

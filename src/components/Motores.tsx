@@ -37,6 +37,7 @@ const TYPE_LABELS: Record<string, string> = {
   scrape: "Scrape",
   login: "Login",
   ramificacion: "Ramificación",
+  joingroup: "Unirse a grupo",
   custom: "Personalizada",
 };
 

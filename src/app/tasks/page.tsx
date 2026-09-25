@@ -15,6 +15,7 @@ import {
   FolderKanban,
   ExternalLink,
   GitBranch,
+  UsersRound,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useSession } from "@/lib/session";
@@ -82,7 +83,7 @@ function nombreDelDueno(task: Task) {
 
 const PAGE_SIZE = 20;
 const STATUSES = ["pending", "queued", "running", "paused", "success", "failed", "cancelled"];
-const TYPES = ["login", "post", "warmup", "scrape", "like", "likecomment", "comment", "custom"];
+const TYPES = ["login", "post", "warmup", "scrape", "like", "likecomment", "comment", "joingroup", "custom"];
 
 export default function TasksPage() {
   return (
@@ -280,6 +281,12 @@ function TasksContent() {
             className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-surface px-3 py-2 text-sm font-medium text-ink-secondary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:text-ink hover:shadow-md"
           >
             <GitBranch className="h-4 w-4" /> Ramificaciones
+          </Link>
+          <Link
+            href="/tasks/unirse-grupo"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-surface px-3 py-2 text-sm font-medium text-ink-secondary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:text-ink hover:shadow-md"
+          >
+            <UsersRound className="h-4 w-4" /> Unirse a grupos
           </Link>
           <Link
             href="/tasks/post"

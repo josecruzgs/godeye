@@ -21,6 +21,7 @@ const StepSchema = new Schema(
         "likeComment",
         "captureComment",
         "replyComment",
+        "joinGroup",
       ],
       required: true,
     },
@@ -51,6 +52,7 @@ export const TASK_TYPES = [
   "likecomment",
   "comment",
   "ramificacion",
+  "joingroup",
   "custom",
 ] as const;
 
@@ -127,7 +129,8 @@ function isStaleTaskModel() {
   if (!schema.path("parentTaskId")) return true;
   if (!schema.path("engine")) return true;
   const types = (schema.path("type") as { enumValues?: string[] }).enumValues ?? [];
-  return !types.includes("likecomment") || !types.includes("ramificacion");
+  const actions = ((schema.path("steps") as { schema?: { path: (p: string) => { enumValues?: string[] } } }).schema?.path("action")?.enumValues) ?? [];
+  return !types.includes("likecomment") || !types.includes("ramificacion") || !types.includes("joingroup") || !actions.includes("joinGroup");
 }
 
 if (isStaleTaskModel()) {
