@@ -20,6 +20,7 @@ import {
   Activity,
   Tornado,
   UserCog,
+  UserPlus,
   LogIn,
   type LucideIcon,
 } from "lucide-react";
@@ -61,6 +62,7 @@ const TYPE_LABELS: Record<string, string> = {
   likecomment: "Likes a comentarios",
   comment: "Comentarios",
   joingroup: "Unirse a grupos",
+  follow: "Seguir perfiles",
   post: "Publicaciones",
   warmup: "Warmup",
   scrape: "Scrapping",
@@ -77,6 +79,7 @@ const TYPE_ICONS: Record<string, LucideIcon> = {
   scrape: Tornado,
   custom: UserCog,
   login: LogIn,
+  follow: UserPlus,
 };
 
 const TYPE_ICON_BG: Record<string, string> = {
@@ -88,6 +91,7 @@ const TYPE_ICON_BG: Record<string, string> = {
   scrape: "bg-series-1",
   custom: "bg-primary",
   login: "bg-primary",
+  follow: "bg-series-2",
 };
 
 const REFRESH_MS = 20000;

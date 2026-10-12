@@ -29,6 +29,7 @@ export const TYPE_LABELS: Record<string, string> = {
   likecomment: "Likes a comentarios",
   comment: "Comentarios",
   joingroup: "Unirse a grupos",
+  follow: "Seguir perfiles",
   ramificacion: "Ramificaciones",
   post: "Publicaciones",
   warmup: "Warmup",
@@ -199,6 +200,7 @@ export function makeCampaignSummary({
     type: string;
     autoRun?: boolean;
     taskCount?: number;
+    stopReason?: string | null;
     createdAt?: Date;
     updatedAt?: Date;
   };
@@ -214,6 +216,7 @@ export function makeCampaignSummary({
     taskCount: total || campaign.taskCount || 0,
     status: computeCampaignStatus(normalizedCounts),
     counts: normalizedCounts,
+    stopReason: campaign.stopReason ?? null,
     createdAt: campaign.createdAt,
     updatedAt: campaign.updatedAt,
   };

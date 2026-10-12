@@ -56,6 +56,8 @@ type Campaign = {
   status: string;
   taskCount: number;
   counts: Counts;
+  /** Por qué el runner la frenó solo (p. ej. el perfil a seguir no admite seguidores). */
+  stopReason?: string | null;
   createdAt: string;
   updatedAt: string;
   /**
@@ -125,13 +127,14 @@ type CampaignCharts = {
 
 const PAGE_SIZE = 20;
 const STATUSES = ["pending", "queued", "running", "paused", "success", "failed", "partial", "cancelled", "empty"];
-const TYPES = ["like", "likecomment", "comment", "joingroup", "post", "warmup", "scrape", "custom"];
+const TYPES = ["like", "likecomment", "comment", "joingroup", "follow", "post", "warmup", "scrape", "custom"];
 
 const TYPE_LABELS: Record<string, string> = {
   like: "Likes",
   likecomment: "Likes a comentarios",
   comment: "Comentarios",
   joingroup: "Unirse a grupos",
+  follow: "Seguir perfiles",
   post: "Publicaciones",
   warmup: "Warmup",
   scrape: "Scrapping",
@@ -194,6 +197,7 @@ const TYPE_ROUTES: Record<string, string> = {
   likecomment: "/tasks/likecomment",
   comment: "/tasks/comment",
   joingroup: "/tasks/unirse-grupo",
+  follow: "/tasks/follow",
   post: "/tasks/post",
   warmup: "/tasks/warmup",
 };
@@ -1254,6 +1258,11 @@ Las tareas que ya se cumplieron quedan como registro.`,
                             <span className="block truncate">{campaign.name}</span>
                           </button>
                         )}
+                        {campaign.stopReason && (
+                          <p className="mt-1 line-clamp-2 max-w-80 text-xs text-critical" title={campaign.stopReason}>
+                            {campaign.stopReason}
+                          </p>
+                        )}
                       </td>
                       {esAdmin && (
                         <td className="px-4 py-3 text-ink-secondary">{campaign.owner ?? "—"}</td>
@@ -1463,6 +1472,11 @@ Las tareas que ya se cumplieron quedan como registro.`,
                   detrás del overlay y con el modal abierto no se ve nada. */}
               {notice && <p className="mb-4 rounded-xl bg-success/10 p-3 text-sm text-success">{notice}</p>}
               {error && <p className="mb-4 rounded-xl bg-critical/10 p-3 text-sm text-critical">{error}</p>}
+              {selectedCampaign?.stopReason && (
+                <p className="mb-4 rounded-xl border border-critical/30 bg-critical/10 p-3 text-sm text-critical">
+                  {selectedCampaign.stopReason}
+                </p>
+              )}
               {detailLoading && !detail ? (
                 <div className="h-48 animate-pulse-soft rounded-xl bg-page" />
               ) : detail ? (
