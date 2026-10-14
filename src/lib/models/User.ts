@@ -57,6 +57,14 @@ const UserSchema = new Schema(
     // existiendo con su ownerId y quedarían huérfanas.
     active: { type: Boolean, default: true },
     preferences: { type: PreferencesSchema, default: () => ({}) },
+    // Para saber desde /usuarios quién usa el panel. lastSeenAt se refresca
+    // como mucho cada pocos minutos (ver currentUser en src/lib/auth/dal.ts).
+    lastLoginAt: { type: Date, default: null },
+    lastSeenAt: { type: Date, default: null },
+    // Desde dónde fue el último login. La ubicación es aproximada, por IP
+    // (src/lib/geo.ts). Solo la ve el admin en /usuarios.
+    lastLoginIp: { type: String, default: "" },
+    lastLoginLocation: { type: String, default: "" },
   },
   { timestamps: true },
 );
@@ -84,6 +92,6 @@ export function toPublicUser(user: {
   };
 }
 
-dropStaleModel("User", ["preferences"], { role: [...USER_ROLES] });
+dropStaleModel("User", ["preferences", "lastLoginAt", "lastSeenAt", "lastLoginLocation"], { role: [...USER_ROLES] });
 
 export default models.User ?? model("User", UserSchema);
