@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
 import WorkerHeartbeatModel, { type WorkerRole } from "@/lib/models/WorkerHeartbeat";
+import WorkerConfigModel from "@/lib/models/WorkerConfig";
 import TaskModel from "@/lib/models/Task";
 import ProfileModel from "@/lib/models/Profile";
 import { withAuth } from "@/lib/apiHandler";
@@ -127,6 +128,10 @@ export const GET = withAuth(async (user) => {
     MOTORES_TOTALES,
   );
 
+  // Lo elegido en /ajustes, que puede ir unos segundos por delante de
+  // `active` hasta que el worker lo lee. null: nadie eligió, manda el env.
+  const pedido = (await WorkerConfigModel.findById("tasks").lean<{ engines?: number }>())?.engines ?? null;
+
   return NextResponse.json({
     online: status.tasks.online,
     lastSeenAt: status.tasks.lastSeenAt,
@@ -134,6 +139,7 @@ export const GET = withAuth(async (user) => {
     engines: {
       total: MOTORES_TOTALES,
       active: activos,
+      wanted: pedido,
       slots: await motores(user, activos, status.tasks.online),
     },
   });

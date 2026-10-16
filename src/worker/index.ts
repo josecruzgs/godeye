@@ -5,9 +5,10 @@ import { hostname } from "os";
 import { dbConnect } from "@/lib/mongodb";
 import TaskModel from "@/lib/models/Task";
 import WorkerHeartbeatModel, { type WorkerRole } from "@/lib/models/WorkerHeartbeat";
+import WorkerConfigModel from "@/lib/models/WorkerConfig";
 import ListeningProjectModel from "@/lib/models/ListeningProject";
 import { runTask } from "@/lib/automation/runner";
-import { motoresConfigurados } from "@/lib/motores";
+import { MOTORES_TOTALES, motoresConfigurados } from "@/lib/motores";
 import { findDueProjects, ingestProject } from "@/lib/listening/ingest";
 import { analyzeMentions } from "@/lib/listening/analyze";
 import { generateNextBriefWindow } from "@/lib/listening/briefSchedule";
@@ -23,8 +24,26 @@ const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS ?? 5000);
  * de la misma cola de Mongo, que es la que evita que dos tomen la misma.
  *
  * Ver src/lib/motores.ts para el tope y el valor por defecto.
+ *
+ * `WORKER_ENGINES` es solo el punto de partida: si el admin eligió otro número
+ * en /ajustes, ese queda en Mongo (WorkerConfig) y se relee en cada latido, así
+ * que cambiarlo no pide reiniciar el proceso. Por eso se arrancan siempre los
+ * cinco bucles y cada uno mira si su número está encendido antes de pedir
+ * trabajo: apagar un motor no corta la tarea que tenga en curso, solo hace que
+ * no tome la siguiente.
  */
-const MOTORES = motoresConfigurados(process.env.WORKER_ENGINES);
+const MOTORES_DEL_ENTORNO = motoresConfigurados(process.env.WORKER_ENGINES);
+let motoresEncendidos = MOTORES_DEL_ENTORNO;
+
+/** Relee el número de motores elegido en /ajustes. */
+async function leerMotores() {
+  const cfg = await WorkerConfigModel.findById("tasks").lean<{ engines?: number }>();
+  const n = cfg?.engines === undefined ? MOTORES_DEL_ENTORNO : motoresConfigurados(cfg.engines);
+  if (n !== motoresEncendidos) {
+    console.log(`[worker] motores: ${motoresEncendidos} → ${n}`);
+    motoresEncendidos = n;
+  }
+}
 
 /**
  * Tope duro por tarea. Pasado esto, el worker se da por colgado y se mata.
@@ -72,6 +91,12 @@ process.on("SIGTERM", () => (stopping = true));
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function heartbeat() {
+  if (ROLES.includes("tasks")) {
+    // Si falla la lectura se sigue con el número que ya había: un tropiezo de
+    // Mongo no tiene por qué apagar ni encender motores.
+    await leerMotores().catch((err) => console.error("[worker] no se pudo leer la config de motores:", err));
+  }
+
   // Un latido por rol activo: así la UI puede decir "la escucha corre pero la
   // automatización no" en vez de un sí/no que en dos máquinas sería mentira.
   for (const role of ROLES) {
@@ -84,7 +109,7 @@ async function heartbeat() {
         $set: {
           pollIntervalMs: POLL_INTERVAL_MS,
           host: HOST,
-          ...(role === "tasks" ? { engines: MOTORES } : {}),
+          ...(role === "tasks" ? { engines: motoresEncendidos } : {}),
         },
       },
       { upsert: true },
@@ -346,11 +371,13 @@ async function recuperarHuerfanas() {
  * del VPS es justo el pico que conviene no provocar.
  */
 async function bucleDeMotor(motor: number) {
-  await esperar(Math.round(((motor - 1) * POLL_INTERVAL_MS) / MOTORES));
+  await esperar(Math.round(((motor - 1) * POLL_INTERVAL_MS) / MOTORES_TOTALES));
 
   while (!stopping) {
     try {
-      await tick(motor);
+      // Apagado desde /ajustes: el bucle sigue vivo, esperando a que lo
+      // vuelvan a encender, pero no toma trabajo.
+      if (motor <= motoresEncendidos) await tick(motor);
     } catch (err) {
       // Un error acá es de la cola misma (Mongo caído, por ejemplo), no de la
       // tarea: los de la tarea ya los atrapa `tick`. Se registra y este motor
@@ -382,7 +409,7 @@ async function main() {
   await dbConnect();
   console.log(
     `[worker] ${HOST} · roles: ${ROLES.join(" + ")} · poll cada ${POLL_INTERVAL_MS}ms` +
-      (ROLES.includes("tasks") ? ` · ${MOTORES} motor${MOTORES === 1 ? "" : "es"}` : ""),
+      (ROLES.includes("tasks") ? ` · ${motoresEncendidos} motor${motoresEncendidos === 1 ? "" : "es"} (env)` : ""),
   );
 
   // Antes del primer latido: `recuperarHuerfanas` mira el latido de "tasks"
@@ -412,7 +439,7 @@ async function main() {
   // Node alcanza: lo que antes bloqueaba la cola no era la CPU sino el `await`.
   const bucles: Promise<void>[] = [];
   if (ROLES.includes("tasks")) {
-    for (let motor = 1; motor <= MOTORES; motor++) bucles.push(bucleDeMotor(motor));
+    for (let motor = 1; motor <= MOTORES_TOTALES; motor++) bucles.push(bucleDeMotor(motor));
   }
   if (ROLES.includes("listening")) bucles.push(bucleDeEscucha());
 

@@ -25,9 +25,12 @@ export const MOTORES_TOTALES = 5;
  */
 export const MOTORES_POR_DEFECTO = 3;
 
-/** Lee `WORKER_ENGINES` y lo deja dentro de lo que la UI sabe dibujar. */
-export function motoresConfigurados(raw: string | undefined): number {
-  if (raw === undefined || raw.trim() === "") return MOTORES_POR_DEFECTO;
+/**
+ * Lee `WORKER_ENGINES` (o lo que se haya elegido en /ajustes) y lo deja dentro
+ * de lo que la UI sabe dibujar.
+ */
+export function motoresConfigurados(raw: string | number | undefined | null): number {
+  if (raw === undefined || raw === null || String(raw).trim() === "") return MOTORES_POR_DEFECTO;
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 1) return MOTORES_POR_DEFECTO;
   return Math.min(Math.floor(n), MOTORES_TOTALES);

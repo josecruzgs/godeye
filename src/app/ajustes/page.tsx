@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, RotateCcw, Upload, Trash2 } from "lucide-react";
+import { Check, RotateCcw, Upload, Trash2, Gauge } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import Card from "@/components/Card";
 import { useSession } from "@/lib/session";
 import { CITIES, findCity } from "@/lib/timezones";
 import { BRAND_NAME } from "@/lib/brand";
+import { MOTORES_TOTALES } from "@/lib/motores";
 
 const HOUSE_ACCENT = "#8a6a28";
 const HOUSE_TITLE = BRAND_NAME;
@@ -253,6 +254,8 @@ export default function AjustesPage() {
         </button>
         {saved && <span className="text-[13px] text-ok">Guardado. Ya se ve aplicado.</span>}
       </div>
+
+      {session?.role === "admin" && <MotoresCard />}
     </form>
   );
 }
@@ -311,4 +314,106 @@ function LiveTime({ timeZone }: { timeZone: string }) {
   }, [timeZone]);
 
   return <>{now ?? "--:--"}</>;
+}
+
+type EstadoMotores = {
+  online: boolean;
+  engines?: { total: number; active: number; wanted: number | null };
+};
+
+/**
+ * Cuántos motores corre el worker de tareas. A diferencia del resto de la
+ * página no es personal ni espera al botón de guardar: cambia la capacidad de
+ * la máquina para todos, y se aplica al tocarlo.
+ *
+ * Lo que se pinta encendido sale del latido del worker, no de lo pedido: así
+ * la tarjeta no dice "5" hasta que el worker de verdad prendió los cinco.
+ */
+function MotoresCard() {
+  const [estado, setEstado] = useState<EstadoMotores | null>(null);
+  const [pidiendo, setPidiendo] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function traer() {
+    try {
+      setEstado(await apiFetch<EstadoMotores>("/api/worker/status"));
+    } catch {
+      // Un poll que falla deja lo que ya se veía.
+    }
+  }
+
+  useEffect(() => {
+    traer();
+    const id = setInterval(traer, 4000);
+    return () => clearInterval(id);
+  }, []);
+
+  async function elegir(n: number) {
+    setPidiendo(n);
+    setError(null);
+    try {
+      await apiFetch("/api/worker/engines", { method: "PUT", body: JSON.stringify({ engines: n }) });
+      await traer();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPidiendo(null);
+    }
+  }
+
+  const online = estado?.online ?? false;
+  const activos = estado?.engines?.active ?? 0;
+  const pedido = estado?.engines?.wanted ?? null;
+  const aplicando = online && pedido !== null && pedido !== activos;
+
+  return (
+    <Card className="flex flex-col gap-4 p-5">
+      <div>
+        <h2 className="flex items-center gap-2 font-display text-lg font-semibold text-ink">
+          <Gauge className="h-4 w-4 text-primary" /> Motores
+        </h2>
+        <p className="mt-1 text-[13px] text-ink-secondary">
+          Cuántas tareas corren a la vez. Afecta a todo el sistema, no solo a vos, y se aplica al
+          tocarlo. Cada motor abre un navegador más en AdsPower sobre el VPS: más motores es más RAM y
+          más disco. Apagar uno no corta la tarea que tenga en curso; solo deja de tomar la siguiente.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {Array.from({ length: MOTORES_TOTALES }, (_, i) => i + 1).map((n) => {
+          const encendido = online && n <= activos;
+          const elegido = (pedido ?? activos) === n;
+          return (
+            <button
+              key={n}
+              type="button"
+              disabled={pidiendo !== null}
+              onClick={() => elegir(n)}
+              title={`Encender ${n} motor${n === 1 ? "" : "es"}`}
+              aria-pressed={elegido}
+              className={`grid h-11 w-11 place-items-center rounded-lg border font-mono text-sm font-semibold transition-colors disabled:opacity-50 ${
+                encendido
+                  ? "border-primary bg-primary text-primary-fg"
+                  : "border-hairline bg-surface text-ink-muted hover:bg-page hover:text-ink"
+              } ${elegido ? "ring-2 ring-primary ring-offset-2 ring-offset-page" : ""}`}
+            >
+              {n}
+            </button>
+          );
+        })}
+      </div>
+
+      <p className="font-mono text-[11px] text-ink-muted">
+        {!estado
+          ? "Consultando al worker..."
+          : !online
+            ? "El worker de tareas no está latiendo: el cambio se aplica cuando vuelva."
+            : aplicando
+              ? `Aplicando: ${activos} → ${pedido} (el worker lo toma en unos segundos)...`
+              : `${activos} de ${MOTORES_TOTALES} encendidos`}
+      </p>
+
+      {error && <p className="rounded-xl bg-critical/10 p-3 text-sm text-critical">{error}</p>}
+    </Card>
+  );
 }

@@ -60,9 +60,11 @@ module.exports = {
       // que es lo que lo llenó el 28/8 y otra vez el 3/9. El tope que la sala
       // sabe dibujar son 5 (src/lib/motores.ts).
       //
-      // Cambiar el número acá NO alcanza: PM2 se queda con el env con el que
-      // arrancó el proceso, así que después del deploy hay que correr
-      // `pm2 restart godeye-tasks --update-env` para que lo lea.
+      // Este número es solo el punto de partida: el admin lo cambia en caliente
+      // desde /ajustes (queda en Mongo, colección WorkerConfig) y eso manda
+      // sobre el env sin reiniciar nada. Cambiarlo acá NO alcanza: PM2 se queda
+      // con el env con el que arrancó el proceso (`pm2 restart godeye-tasks
+      // --update-env`), y además solo rige mientras nadie eligió en /ajustes.
       env: { NODE_ENV: "production", WORKER_TASKS: "1", WORKER_LISTENING: "0", WORKER_ENGINES: "3" },
       kill_timeout: 30_000,
     },
