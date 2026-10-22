@@ -11,6 +11,11 @@ type Step = { action: string; selector?: string; value?: string; url?: string; k
 // `button[name="login"]` es el botón real del formulario clásico de
 // Facebook, estable desde hace años. Optional porque si ya hay sesión
 // iniciada este paso no encuentra nada y no debe romper la tarea.
+//
+// En Facebook el runner no clickea este selector tal cual: lo toma como la
+// señal para `ensureFacebookSession`, que mira la cookie de sesión, prueba
+// también la pantalla de "cuenta guardada" y corta la tarea con un mensaje
+// claro si no logra entrar. Así lo aprovechan también las tareas ya creadas.
 export function loginIfNeededSteps(): Step[] {
   return [
     { action: "click", selector: 'button[name="login"]', optional: true, ms: 4000 },
