@@ -1,0 +1,33 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { withAuth } from "@/lib/apiHandler";
+import { cuestionarioActivo, resultadosLlamadas, respuestasDe, telefonoVisible, ESTADOS_LLAMADA } from "@/lib/encuestas/llamadas";
+import { ZONA } from "@/lib/encuestas/fechas";
+
+/** Las encuestas hechas en un archivo que abre Excel: una fila por llamada; de la campaña, solo los últimos 4 dígitos del teléfono. */
+export const GET = withAuth(async (_user, req: NextRequest) => {
+  const c = await cuestionarioActivo();
+  if (!c) return NextResponse.json({ error: "Sin cuestionario" }, { status: 404 });
+  // Con ?pruebas=1 (lo que se esté viendo en el tablero) entran también las de prueba, marcadas en su columna.
+  const r = await resultadosLlamadas(c, { conPruebas: req.nextUrl.searchParams.get("pruebas") === "1" });
+  const celda = (x: string | number | null | undefined) => `"${String(x ?? "").replace(/"/g, '""')}"`;
+  const filas = [
+    ["#", "Fecha", "Hora", "Teléfono", "Resultado", "Prueba", "Duración (s)", "Versión del guion", ...c.preguntas.map((p) => p.corto ?? p.clave)],
+    ...r.llamadas.filter((l) => l.estado !== "EN_CURSO").reverse().map((l, i) => [
+      i + 1,
+      l.inicio.toLocaleDateString("es-MX", { timeZone: ZONA }),
+      l.inicio.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", timeZone: ZONA }),
+      telefonoVisible(l) ?? "",
+      ESTADOS_LLAMADA[l.estado]?.label ?? l.estado,
+      l.prueba ? "Sí" : "",
+      l.segundos ?? "",
+      l.versionGuion ?? 1,
+      ...respuestasDe(l, c),
+    ]),
+  ];
+  // Con BOM y punto y coma: así Excel en español lo abre con acentos y en columnas, sin pasos extra.
+  const csv = "﻿" + filas.map((f) => f.map(celda).join(";")).join("\r\n");
+  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: ZONA });
+  return new NextResponse(csv, {
+    headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="encuestas-ojodedios-${hoy}.csv"`, "Cache-Control": "no-store" },
+  });
+});

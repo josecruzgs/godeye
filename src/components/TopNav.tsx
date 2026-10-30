@@ -18,6 +18,8 @@ import {
   MessageCircleHeart,
   MessageSquare,
   MonitorPlay,
+  PencilLine,
+  PhoneCall,
   Radar,
   ShieldCheck,
   SlidersHorizontal,
@@ -81,9 +83,19 @@ const NAV: NavSection[] = [
     items: [{ href: "/scrapping", label: "Escucha", hint: "Menciones y conversación en redes", icon: Radar }],
   },
   {
+    key: "encuestas",
+    label: "Encuestas",
+    code: "SEC-04",
+    items: [
+      { href: "/encuestas", label: "Tablero", hint: "Llamadas con la asistente de voz y resultados", icon: PhoneCall },
+      { href: "/encuestas/base", label: "Base de teléfonos", hint: "La lista a la que llama la asistente", icon: Users, adminOnly: true },
+      { href: "/encuestas/guion", label: "Guion", hint: "Lo que dice la asistente, palabra por palabra", icon: PencilLine, adminOnly: true },
+    ],
+  },
+  {
     key: "recursos",
     label: "Recursos",
-    code: "SEC-04",
+    code: "SEC-05",
     items: [
       { href: "/profiles", label: "Perfiles", hint: "Perfiles de AdsPower", icon: Users },
       { href: "/groups", label: "Grupos", hint: "Grupos y sincronización", icon: FolderKanban },
@@ -387,7 +399,10 @@ export default function TopNav() {
                   onMouseEnter={() => setOpen(null)}
                 >
                   <item.icon className="h-3.5 w-3.5" />
-                  {item.label}
+                  {/* Si quedó de un ítem porque al rol no le tocan los demás
+                      (Encuestas para un operador), la pestaña lleva el nombre de
+                      la sección: "Tablero" a secas no dice de qué. */}
+                  {(NAV.find((s) => s.key === section.key)?.items.length ?? 1) > 1 ? section.label : item.label}
                 </Link>
               );
             }

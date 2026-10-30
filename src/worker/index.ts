@@ -12,6 +12,7 @@ import { MOTORES_TOTALES, motoresConfigurados } from "@/lib/motores";
 import { findDueProjects, ingestProject } from "@/lib/listening/ingest";
 import { analyzeMentions } from "@/lib/listening/analyze";
 import { generateNextBriefWindow } from "@/lib/listening/briefSchedule";
+import { hayAgenteDeVoz, importarLlamadasDelAgente, seguirTanda } from "@/lib/encuestas/agente_voz";
 
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS ?? 5000);
 
@@ -388,6 +389,36 @@ async function bucleDeMotor(motor: number) {
   }
 }
 
+/**
+ * Encuestas: cada 2 minutos registra las llamadas que ya colgaron y marca a los
+ * siguientes de la tanda en las líneas libres. Es lo que en el sistema original
+ * hacía el cron de Vercel, y mantiene viva la tanda aunque nadie tenga el
+ * tablero abierto (el tablero abierto hace lo mismo cada 15 s).
+ *
+ * Va con la escucha y no con los motores porque solo necesita salida a
+ * internet: no toca AdsPower. Sin agente de voz configurado no hace nada.
+ */
+const ENCUESTAS_CADA_MS = 2 * 60_000;
+
+async function bucleDeEncuestas() {
+  while (!stopping) {
+    if (hayAgenteDeVoz()) {
+      try {
+        const r = await importarLlamadasDelAgente({ limite: 40 });
+        const t = await seguirTanda();
+        if ((r.ok && r.nuevas > 0) || t.marcadas > 0) {
+          console.log(`[encuestas] ${r.ok ? r.nuevas : 0} registradas, ${t.marcadas} marcadas, ${t.restante} en la tanda`);
+        }
+        if (!r.ok) console.error(`[encuestas] ${r.error}`);
+      } catch (err) {
+        console.error("[encuestas] error en la pasada:", err);
+      }
+    }
+    // En pedazos cortos, para que un SIGTERM no espere los dos minutos completos.
+    for (let espera = 0; espera < ENCUESTAS_CADA_MS && !stopping; espera += POLL_INTERVAL_MS) await esperar(POLL_INTERVAL_MS);
+  }
+}
+
 /** La escucha, en su propio bucle: no comparte ritmo con los motores. */
 async function bucleDeEscucha() {
   while (!stopping) {
@@ -441,7 +472,7 @@ async function main() {
   if (ROLES.includes("tasks")) {
     for (let motor = 1; motor <= MOTORES_TOTALES; motor++) bucles.push(bucleDeMotor(motor));
   }
-  if (ROLES.includes("listening")) bucles.push(bucleDeEscucha());
+  if (ROLES.includes("listening")) bucles.push(bucleDeEscucha(), bucleDeEncuestas());
 
   try {
     await Promise.all(bucles);
