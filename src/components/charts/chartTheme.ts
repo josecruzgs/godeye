@@ -3,7 +3,7 @@
 // Recharts: todo lo numérico va en mono, chico y en el gris apagado, y solo
 // el dato en sí usa el color de su serie.
 
-export const MONO = "var(--font-plex-mono), ui-monospace, monospace";
+export const MONO = "var(--font-jetbrains), ui-monospace, monospace";
 
 export const AXIS_TICK = { fill: "var(--text-muted)", fontSize: 10, fontFamily: MONO } as const;
 

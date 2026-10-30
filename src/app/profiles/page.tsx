@@ -34,7 +34,7 @@ const PAGE_SIZE = 20;
 // El alta de perfiles está oculta a pedido: los perfiles se crean en AdsPower
 // y entran acá por sincronización. El formulario y `createProfile` siguen
 // enteros y funcionando —igual que las páginas que se sacaron del menú en
-// components/Sidebar.tsx—; poner esto en `true` los devuelve a la pantalla.
+// components/TopNav.tsx—; poner esto en `true` los devuelve a la pantalla.
 const MOSTRAR_ALTA_DE_PERFIL: boolean = false;
 
 async function requestProfileDelete(id: string, localOnly = false) {

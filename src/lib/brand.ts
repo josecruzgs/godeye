@@ -5,7 +5,7 @@
  * títulos de pestaña, panel público—, así que cambiarla implicaba encontrarlos
  * todos y no olvidarse de ninguno.
  */
-export const BRAND_NAME = "Profiles Net";
+export const BRAND_NAME = "Ojo de Dios";
 
 /**
  * La marca es de una sola línea, así que por defecto no hay subtítulo.

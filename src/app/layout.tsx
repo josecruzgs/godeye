@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Fraunces, Inter, IBM_Plex_Mono } from "next/font/google";
+import { Space_Grotesk, Inter, JetBrains_Mono } from "next/font/google";
 import ThemeScript from "@/components/ThemeScript";
 import AppShell from "@/components/AppShell";
 import { currentUser } from "@/lib/auth/dal";
@@ -8,16 +8,12 @@ import { accentStyle } from "@/lib/theme";
 import { BRAND_NAME } from "@/lib/brand";
 import "./globals.css";
 
-// Tres familias con roles fijos, como la sala de inteligencia: Fraunces
-// (display) para titulares, Inter para UI y cuerpo, IBM Plex Mono para
-// etiquetas de instrumentación y cifras.
-const fraunces = Fraunces({
-  variable: "--font-fraunces",
+// Tres familias con roles fijos, en registro técnico: Space Grotesk (display)
+// para titulares, Inter para UI y cuerpo, JetBrains Mono para etiquetas de
+// instrumento y cifras.
+const display = Space_Grotesk({
+  variable: "--font-space",
   subsets: ["latin"],
-  // Fraunces es variable en dos ejes; `opsz` es el que hace que a 42px las
-  // astas se afinen en vez de verse como el mismo dibujo escalado. Sin
-  // pedirlo explícitamente, next/font solo trae `wght`.
-  axes: ["opsz"],
 });
 
 const inter = Inter({
@@ -25,11 +21,9 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
-const plexMono = IBM_Plex_Mono({
-  variable: "--font-plex-mono",
+const mono = JetBrains_Mono({
+  variable: "--font-jetbrains",
   subsets: ["latin"],
-  // IBM Plex Mono no es variable: hay que enumerar los pesos que se usan.
-  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
@@ -37,9 +31,10 @@ export const metadata: Metadata = {
   description: "Panel para automatizar cuentas de redes sociales",
   // Apunta directo a public/media/*.png en vez de mantener una copia en
   // src/app/icon.png: así el favicon nunca se puede desincronizar del logo
-  // cuando se reemplacen esos archivos. logo.png es blanco (para navegador
-  // en modo oscuro) y logoblack.png es negro (para modo claro) — el
-  // navegador elige según la preferencia de color del sistema operativo.
+  // cuando se reemplacen esos archivos. logo.png es para navegador en modo
+  // oscuro y logoblack.png para modo claro — el navegador elige según la
+  // preferencia de color del sistema operativo. Hoy el logo de Ojo de Dios
+  // tiene fondo transparente y sirve en ambos, así que los dos son iguales.
   icons: {
     icon: [
       { url: "/media/logoblack.png", media: "(prefers-color-scheme: light)" },
@@ -72,7 +67,7 @@ export default async function RootLayout({
     <html
       lang="es"
       style={accentStyle(session?.preferences.accentColor)}
-      className={`${inter.variable} ${fraunces.variable} ${plexMono.variable} h-full antialiased`}
+      className={`${inter.variable} ${display.variable} ${mono.variable} h-full antialiased`}
       // ThemeScript toggles the "dark" class on this element before React
       // hydrates (to avoid a flash of the wrong theme); that intentional,
       // out-of-band mutation is exactly what this flag exists to allow.

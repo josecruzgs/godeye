@@ -4,7 +4,7 @@ import ElementIcon from "@/components/ui/ElementIcon";
 /**
  * Módulo todavía no habilitado. En vez de un cartel de "próximamente", se
  * presenta con la misma cortinilla que la sala usa al entrar a un elemento
- * —anillos expandiéndose, ícono grande, nombre en Fraunces y el lema en
+ * —anillos expandiéndose, ícono grande, nombre en display y el lema en
  * cursiva— y recién abajo aclara que no está activo.
  */
 export default function DisabledModule({ element }: { element: ElementKey }) {

@@ -6,16 +6,16 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ============================================================================
-   SISTEMA VISUAL "SALA DE INTELIGENCIA"
+   SISTEMA VISUAL "CENTRO DE MANDO" (Ojo de Dios)
    ----------------------------------------------------------------------------
-   Paleta y tipografía calcadas de la sala de inteligencia de Sonora
-   (ojo-de-dios-livid.vercel.app): azul marino casi negro, acento oro, tres
-   familias tipográficas con roles fijos —Fraunces para display, Inter para
-   texto/UI, IBM Plex Mono para etiquetas y números de instrumentación.
+   Azul marino casi negro, acento cian, retícula
+   de fondo y tarjetas de esquinas rectas con corchetes de mira. Tres familias
+   con roles fijos —Space Grotesk para display, Inter para texto/UI, JetBrains
+   Mono para etiquetas y cifras de instrumento.
 
-   El modo oscuro son los valores EXACTOS de esa referencia; el claro es la
-   adaptación "de día" del mismo lenguaje (pergamino cálido + oro profundo),
-   para que el ThemeToggle que ya existía siga sirviendo.
+   Reemplaza al sistema anterior ("sala de inteligencia", oro sobre gris y
+   menú lateral). El modo claro es la versión "de día": mismo lenguaje sobre
+   gris claro.
    ========================================================================= */
 
 :root {
@@ -42,12 +42,13 @@
   --border-hi: rgba(20, 24, 31, 0.22);
 
   /* --- Acento de marca ---
-     El oro es la identidad de la sala. En claro se baja de luminancia
-     (#8a6a28) para que pase contraste como texto sobre pergamino (5.4:1);
-     en oscuro vuelve al #cbb074 original de la referencia. */
-  --gold: #8a6a28;
-  --gold-vivid: #b3903f;
-  --primary: #8a6a28;
+     El cian del documento ejecutivo. Los tokens siguen llamándose "gold"
+     porque la app entera los usa con ese nombre. En claro se baja a azul
+     petróleo (#0e7490) para que el texto blanco encima pase contraste
+     (5.4:1); en oscuro es el cian de la referencia. */
+  --gold: #0e7490;
+  --gold-vivid: #0891b2;
+  --primary: #0e7490;
   --primary-fg: #ffffff;
 
   /* --- Los cuatro elementos ---
@@ -97,37 +98,37 @@
   --series-8: #b8404e;
 
   /* --- Rampa secuencial (magnitud) --- */
-  --seq-100: #e7ddc4;
-  --seq-250: #d3c091;
-  --seq-400: #b3903f;
-  --seq-450: #8a6a28;
-  --seq-550: #63491a;
+  --seq-100: #cff3f9;
+  --seq-250: #8fdfee;
+  --seq-400: #22b8d6;
+  --seq-450: #0e7490;
+  --seq-550: #0b4f63;
 }
 
 :root.dark {
   color-scheme: dark;
 
-  /* Valores literales de la sala de inteligencia. */
-  --surface-1: #10151e;
-  --surface-2: #151c27;
-  --page-plane: #090c12;
-  --card-from: #131b28;
-  --card-to: #0d131c;
+  /* El azul marino del documento ejecutivo: el plano casi negro con un tinte
+     azul, y las tarjetas un escalón más claras con el mismo matiz. */
+  --surface-1: #0d1a2d;
+  --surface-2: #122238;
+  --page-plane: #06101e;
+  --card-from: #0f1f35;
+  --card-to: #0a1626;
 
   --text-primary: #eef2f8;
-  --text-secondary: #8a98ab;
-  --text-muted: #5a6678;
-  --gridline: #19212c;
-  --baseline: #212b39;
-  --border-hairline: #212b39;
-  --border-hi: #33415488;
+  --text-secondary: #8fa3bf;
+  --text-muted: #5d7391;
+  --gridline: #15263d;
+  --baseline: #1d3350;
+  --border-hairline: #1d3350;
+  --border-hi: #2b4a7088;
 
-  --gold: #cbb074;
-  --gold-vivid: #e0c68d;
-  --primary: #cbb074;
-  /* Tinta oscura sobre oro — el mismo par que la referencia usa en
-     ::selection. Con blanco encima, el oro no pasa contraste. */
-  --primary-fg: #0a0d14;
+  --gold: #22d3ee;
+  --gold-vivid: #67e8f9;
+  --primary: #22d3ee;
+  /* Tinta oscura sobre el cian: con blanco encima no pasa contraste. */
+  --primary-fg: #04121f;
 
   /* Igual que en claro: los cuatro elementos son el acento (ver :root). */
   --el-viento: var(--gold);
@@ -222,12 +223,13 @@
   --color-serious: var(--status-serious);
   --color-critical: var(--status-critical);
 
-  /* Tres roles tipográficos fijos, como la referencia:
-     display (Fraunces) para titulares, sans (Inter) para UI y cuerpo,
-     mono (IBM Plex Mono) para etiquetas de instrumentación y cifras. */
+  /* Tres roles tipográficos fijos: display (Space Grotesk) para titulares,
+     sans (Inter) para UI y cuerpo, mono (JetBrains Mono) para etiquetas de
+     instrumento y cifras. Las fuentes cargan con nombres propios
+     (--font-space, --font-jetbrains) para no pisar estas variables. */
   --font-sans: var(--font-inter);
-  --font-mono: var(--font-plex-mono);
-  --font-display: var(--font-fraunces);
+  --font-mono: var(--font-jetbrains);
+  --font-display: var(--font-space);
 }
 
 /* ============================================================================
@@ -246,25 +248,46 @@ body {
   transition: background-color 0.25s ease, color 0.25s ease;
 }
 
-/* Solo en oscuro: los tres focos radiales de la referencia (oro arriba a la
-   derecha, azul arriba a la izquierda, fuego abajo al centro). Van en
-   position:fixed para que no se muevan al hacer scroll dentro de <main>.
+/* Fondo de centro de mando: una retícula fina de líneas cada 32px, con una
+   de cada cuatro un poco más marcada, y dos halos del acento. Va en
+   position:fixed para que no se mueva al hacer scroll dentro de <main>.
 
-   En claro el plano queda gris liso a propósito —sin lavados de color y sin
-   imagen de fondo—: sobre una base clara esos degradados se leen como
-   manchas sucias, no como atmósfera. */
-:root.dark body::before {
+   La retícula se desvanece hacia abajo con una máscara: a pantalla completa
+   y pareja se vuelve ruido; concentrada arriba se lee como el plano de una
+   consola. En claro va mucho más tenue. */
+body::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -2;
   pointer-events: none;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--gold) 9%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--gold) 9%, transparent) 1px, transparent 1px),
+    linear-gradient(color-mix(in srgb, var(--gold) 4%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--gold) 4%, transparent) 1px, transparent 1px);
+  background-size: 128px 128px, 128px 128px, 32px 32px, 32px 32px;
+  mask-image: radial-gradient(ellipse 120% 80% at 50% 0%, #000 30%, transparent 85%);
+  opacity: 0.55;
+}
+
+:root.dark body::before {
+  opacity: 1;
+}
+
+/* Halos y líneas de barrido: solo en oscuro, donde el brillo tiene sentido.
+   Sobre gris claro un halo se lee como mancha. */
+:root.dark body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -3;
+  pointer-events: none;
   background:
-    radial-gradient(1000px 600px at 84% -12%, color-mix(in srgb, var(--gold) 9%, transparent), transparent 60%),
-    radial-gradient(820px 520px at 2% 0%, color-mix(in srgb, var(--blue) 7%, transparent), transparent 60%),
-    /* Era el naranja de Fuego; ahora el acento, para que el halo siga el color
-       elegido en vez de traer de vuelta un elemento por la ventana. */
-    radial-gradient(900px 700px at 50% 120%, color-mix(in srgb, var(--gold) 6%, transparent), transparent 60%);
+    radial-gradient(900px 520px at 85% -10%, color-mix(in srgb, var(--gold) 13%, transparent), transparent 60%),
+    radial-gradient(760px 480px at 0% 10%, color-mix(in srgb, var(--blue) 10%, transparent), transparent 60%),
+    radial-gradient(1000px 600px at 50% 120%, color-mix(in srgb, var(--gold) 7%, transparent), transparent 60%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
 }
 
 /* En @layer base para que las utilidades de Tailwind (@layer utilities,
@@ -278,7 +301,7 @@ body {
 
 ::selection {
   background: var(--gold);
-  color: #0a0d14;
+  color: var(--primary-fg);
 }
 
 /* Barra de scroll delgada y del color del chasis, igual que la referencia. */
@@ -287,9 +310,9 @@ body {
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--baseline);
-  border-radius: 6px;
-  border: 2px solid var(--page-plane);
+  background: color-mix(in srgb, var(--gold) 35%, var(--baseline));
+  border-radius: 2px;
+  border: 3px solid var(--page-plane);
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -307,7 +330,7 @@ body {
    ========================================================================= */
 
 .font-display {
-  font-family: var(--font-fraunces), Georgia, serif;
+  font-family: var(--font-space), ui-sans-serif, sans-serif;
 }
 
 /* Solo h1 —el título de la vista— hereda el display. Los h2/h3 son títulos
@@ -315,15 +338,15 @@ body {
    editorial, no cualquier encabezado. */
 @layer base {
   h1 {
-    font-family: var(--font-fraunces), Georgia, serif;
-    letter-spacing: -0.02em;
+    font-family: var(--font-space), ui-sans-serif, sans-serif;
+    letter-spacing: -0.025em;
   }
 }
 
 /* Etiqueta mono en versalitas: el "9px con tracking ancho" que la referencia
    usa encima de cada cifra. */
 .label-mono {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 9px;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -331,7 +354,7 @@ body {
 }
 
 .label-mono-sm {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 8.5px;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -340,21 +363,31 @@ body {
 
 /* Cifra grande tabular — nunca "baila" cuando el número cambia en vivo. */
 .stat-value {
-  font-family: var(--font-inter), ui-sans-serif, sans-serif;
-  font-size: 28px;
+  font-family: var(--font-space), ui-sans-serif, sans-serif;
+  font-size: 30px;
   font-weight: 700;
   line-height: 1;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.02em;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
 
+/* La cifra "enciende" en oscuro, como un display de instrumento. */
+:root.dark .stat-value {
+  text-shadow: 0 0 18px color-mix(in srgb, currentColor 35%, transparent);
+}
+
 .overline {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 9.5px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--gold);
+}
+
+.overline::before {
+  content: "▸ ";
+  opacity: 0.7;
 }
 
 /* ============================================================================
@@ -374,16 +407,64 @@ body {
 .card-surface {
   position: relative;
   background:
-    linear-gradient(90deg, var(--edge-c, var(--gold)), transparent 70%) top left / 100% 1.5px no-repeat,
-    linear-gradient(168deg, var(--card-from), var(--card-to));
+    linear-gradient(90deg, var(--edge-c, var(--gold)), transparent 70%) top left / 100% 1px no-repeat,
+    linear-gradient(168deg, color-mix(in srgb, var(--card-from) 92%, transparent), color-mix(in srgb, var(--card-to) 92%, transparent));
   border: 1px solid var(--border-hairline);
-  border-radius: 14px;
+  border-radius: 4px;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 20px 40px -30px rgba(0, 0, 0, 0.9);
+  backdrop-filter: blur(6px);
   transition: transform 0.18s, border-color 0.18s, box-shadow 0.18s;
 }
 
+/* Corchetes de mira en dos esquinas opuestas: es la firma visual de las
+   tarjetas. Van como pseudo-elementos con borde parcial, así que
+   no agregan markup ni recortan dropdowns montados dentro de la tarjeta. */
+.card-surface::before,
+.card-surface::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+  border-color: var(--edge-c, var(--gold));
+  opacity: 0.75;
+  transition: width 0.2s, height 0.2s, opacity 0.2s;
+}
+
+.card-surface::before {
+  top: -1px;
+  left: -1px;
+  border-top: 1.5px solid;
+  border-left: 1.5px solid;
+  border-top-color: var(--edge-c, var(--gold));
+  border-left-color: var(--edge-c, var(--gold));
+}
+
+.card-surface::after {
+  right: -1px;
+  bottom: -1px;
+  border-right: 1.5px solid;
+  border-bottom: 1.5px solid;
+  border-right-color: var(--edge-c, var(--gold));
+  border-bottom-color: var(--edge-c, var(--gold));
+}
+
 .card-surface:hover {
-  border-color: var(--border-hi);
+  border-color: color-mix(in srgb, var(--edge-c, var(--gold)) 35%, var(--border-hairline));
+}
+
+:root.dark .card-surface:hover {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 0 0 1px color-mix(in srgb, var(--edge-c, var(--gold)) 8%, transparent),
+    0 0 28px -10px color-mix(in srgb, var(--edge-c, var(--gold)) 35%, transparent);
+}
+
+.card-surface:hover::before,
+.card-surface:hover::after {
+  width: 16px;
+  height: 16px;
+  opacity: 1;
 }
 
 /* Solo las tarjetas navegables levantan al pasar el mouse; las de datos
@@ -398,7 +479,7 @@ body {
 .card-flat {
   background: var(--surface-2);
   border: 1px solid var(--border-hairline);
-  border-radius: 10px;
+  border-radius: 3px;
 }
 
 /* ============================================================================
@@ -443,43 +524,29 @@ body {
 .kpi-solid {
   position: relative;
   overflow: hidden;
-  border-radius: 14px;
-  border: 1px solid transparent;
-  color: #fff;
-  background: color-mix(in srgb, var(--kpi-c, var(--gold)) 74%, #0b0f16);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.16) inset,
-    0 18px 34px -26px color-mix(in srgb, var(--kpi-c, var(--gold)) 75%, transparent);
-  transition: transform 0.18s, box-shadow 0.18s;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--kpi-c, var(--gold)) 38%, var(--border-hairline));
+  color: var(--text-primary);
+  background:
+    linear-gradient(90deg, var(--kpi-c, var(--gold)), transparent 75%) top left / 100% 2px no-repeat,
+    linear-gradient(160deg, color-mix(in srgb, var(--kpi-c, var(--gold)) 13%, var(--card-from)), var(--card-to));
+  box-shadow: 0 18px 34px -28px color-mix(in srgb, var(--kpi-c, var(--gold)) 70%, transparent);
+  transition: transform 0.18s, box-shadow 0.18s, border-color 0.18s;
 }
 
-@supports (color: oklch(from red l c h)) {
-  .kpi-solid {
-    color: oklch(from var(--kpi-c, var(--gold)) clamp(0, (0.62 - l) * 1000, 1) 0 0);
-    background:
-      radial-gradient(115% 130% at 92% 4%, rgba(255, 255, 255, 0.14), transparent 62%),
-      linear-gradient(
-        146deg,
-        oklch(
-            from var(--kpi-c, var(--gold))
-              calc(
-                clamp(0, (0.62 - l) * 1000, 1) * clamp(0.4, l, 0.52) + (1 - clamp(0, (0.62 - l) * 1000, 1)) *
-                  clamp(0.74, l, 0.88)
-              )
-              c h
-          )
-          0%,
-        oklch(
-            from var(--kpi-c, var(--gold))
-              calc(
-                clamp(0, (0.62 - l) * 1000, 1) * clamp(0.4, l, 0.52) + (1 - clamp(0, (0.62 - l) * 1000, 1)) *
-                  clamp(0.74, l, 0.88) - 0.06
-              )
-              c h
-          )
-          100%
-      );
-  }
+/* La cifra lleva el color del indicador, encendida como un display de
+   instrumento, y la tarjeta se queda oscura. (Antes la tarjeta entera se
+   pintaba del color, y eso se leía como bloques chillones.) */
+.kpi-solid .kpi-number {
+  color: var(--kpi-c, var(--gold));
+}
+
+:root.dark .kpi-solid .kpi-number {
+  text-shadow: 0 0 16px color-mix(in srgb, var(--kpi-c, var(--gold)) 55%, transparent);
+}
+
+.kpi-solid .kpi-glyph {
+  color: var(--kpi-c, var(--gold));
 }
 
 /* Ícono de fondo: grande, en la tinta al 16% y recortado por la esquina. El
@@ -504,13 +571,13 @@ body {
   width: 160px;
   height: 160px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.15), transparent 62%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--kpi-c, var(--gold)) 22%, transparent), transparent 62%);
   pointer-events: none;
 }
 
 .kpi-label {
   position: relative;
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 9px;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -519,7 +586,7 @@ body {
 
 .kpi-number {
   position: relative;
-  font-family: var(--font-inter), ui-sans-serif, sans-serif;
+  font-family: var(--font-space), ui-sans-serif, sans-serif;
   font-size: 30px;
   font-weight: 700;
   line-height: 1;
@@ -533,7 +600,7 @@ body {
 .kpi-delta {
   position: relative;
   display: inline-block;
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 10px;
   font-weight: 600;
   padding: 2px 7px;
@@ -548,9 +615,8 @@ body {
 
 .kpi-lift:hover {
   transform: translateY(-2px);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.24) inset,
-    0 26px 46px -24px color-mix(in srgb, var(--kpi-c, var(--gold)) 85%, transparent);
+  border-color: var(--kpi-c, var(--gold));
+  box-shadow: 0 0 26px -10px color-mix(in srgb, var(--kpi-c, var(--gold)) 70%, transparent);
 }
 
 /* Encabezado de panel: ícono + título + tag a la izquierda, acciones a la
@@ -575,7 +641,7 @@ body {
 }
 
 .panel-tag {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 8.5px;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -670,7 +736,7 @@ body {
   }
 }
 
-/* Separador de sección: etiqueta mono en oro + línea que se desvanece. */
+/* Separador de sección: etiqueta mono entre corchetes + línea con marcas. */
 .subhead {
   grid-column: span 12;
   display: flex;
@@ -681,7 +747,7 @@ body {
 }
 
 .subhead .subhead-label {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 9.5px;
   letter-spacing: 0.2em;
   color: var(--gold);
@@ -689,10 +755,23 @@ body {
   white-space: nowrap;
 }
 
+.subhead .subhead-label::before {
+  content: "[ ";
+  opacity: 0.6;
+}
+
+.subhead .subhead-label::after {
+  content: " ]";
+  opacity: 0.6;
+}
+
 .subhead .subhead-line {
   flex: 1;
-  height: 1px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--gold) 40%, transparent), transparent);
+  height: 5px;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--gold) 45%, transparent), transparent) center / 100% 1px no-repeat,
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--gold) 30%, transparent) 0 1px, transparent 1px 24px);
+  mask-image: linear-gradient(90deg, #000, transparent);
 }
 
 /* ============================================================================
@@ -700,7 +779,7 @@ body {
    ========================================================================= */
 
 .pill-mono {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 10px;
   font-weight: 600;
   padding: 2px 7px;
@@ -726,9 +805,13 @@ body {
   border-color: transparent;
 }
 
+:root.dark .accent-fill {
+  box-shadow: 0 0 16px -4px color-mix(in srgb, var(--primary) 60%, transparent);
+}
+
 /* Sello de clasificación de la topbar ("USO INTERNO"). */
 .classchip {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 8.5px;
   letter-spacing: 0.12em;
   color: var(--amber);
@@ -744,7 +827,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 9px;
   letter-spacing: 0.1em;
   color: var(--ok);
@@ -769,23 +852,33 @@ body {
   animation: blink 1.6s infinite;
 }
 
-/* Botón fantasma de la topbar: el borde se pone oro al pasar el mouse. */
+/* Botón fantasma: mayúsculas mono, esquinas rectas y un brillo del acento al
+   pasar el mouse. */
 .tbtn {
-  font-family: var(--font-inter), sans-serif;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-weight: 600;
-  font-size: 12px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--text-primary);
-  background: transparent;
+  background: color-mix(in srgb, var(--surface-2) 60%, transparent);
   border: 1px solid var(--border-hairline);
-  border-radius: 9px;
+  border-radius: 3px;
   padding: 8px 13px;
   cursor: pointer;
   transition: all 0.15s;
 }
 
-.tbtn:hover {
+.tbtn:hover:not(:disabled) {
   border-color: var(--gold);
   color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 8%, transparent);
+  box-shadow: 0 0 18px -6px color-mix(in srgb, var(--gold) 60%, transparent);
+}
+
+.tbtn:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 /* Botón de navegación por elemento (chips de la barra superior). */
@@ -1077,7 +1170,7 @@ body {
 }
 
 .splash-name {
-  font-family: var(--font-fraunces), Georgia, serif;
+  font-family: var(--font-space), Georgia, serif;
   font-size: 56px;
   font-weight: 700;
   letter-spacing: -0.025em;
@@ -1086,7 +1179,7 @@ body {
 }
 
 .splash-tag {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-jetbrains), ui-monospace, monospace;
   font-size: 12px;
   letter-spacing: 0.24em;
   text-transform: uppercase;
@@ -1094,7 +1187,7 @@ body {
 }
 
 .splash-lead {
-  font-family: var(--font-fraunces), Georgia, serif;
+  font-family: var(--font-space), Georgia, serif;
   font-size: 18px;
   font-style: italic;
   color: var(--text-secondary);
@@ -1144,7 +1237,7 @@ body {
    ========================================================================= */
 
 .hero-h1 {
-  font-family: var(--font-fraunces), Georgia, serif;
+  font-family: var(--font-space), Georgia, serif;
   font-size: 42px;
   font-weight: 600;
   margin: 10px 0 6px;
@@ -1257,5 +1350,289 @@ body {
     animation: none !important;
     opacity: 0.9 !important;
     transform: none !important;
+  }
+}
+
+
+/* ============================================================================
+   NAVEGACIÓN SUPERIOR (TopNav)
+   Dos pisos: la franja de estado (marca, worker, reloj, usuario) y el menú
+   por secciones, con submenú al pasar el mouse. Una línea de barrido recorre
+   el borde inferior: es lo único animado en reposo, y es lento a propósito.
+   ========================================================================= */
+
+/* En @layer components y no suelto: sin capa, el `display` de .hud-iconbtn o
+   .hud-readout le ganaría a cualquier utilidad responsive de Tailwind
+   (`lg:hidden`, `md:inline-flex`), que viven en una capa de menor prioridad
+   que el CSS sin capa. */
+@layer components {
+  .hud-header {
+    position: sticky;
+    background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+    border-bottom: 1px solid var(--border-hairline);
+    backdrop-filter: blur(14px);
+  }
+
+  .hud-header::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    background-size: 40% 100%;
+    background-repeat: no-repeat;
+    animation: hud-sweep 7s linear infinite;
+    opacity: 0.8;
+  }
+
+  @keyframes hud-sweep {
+    from {
+      background-position: -40% 0;
+    }
+    to {
+      background-position: 140% 0;
+    }
+  }
+
+  .hud-logo::after {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+    border-radius: 50%;
+    animation: hud-ping 3.2s ease-out infinite;
+  }
+
+  @keyframes hud-ping {
+    0% {
+      transform: scale(0.85);
+      opacity: 0.9;
+    }
+    70%,
+    100% {
+      transform: scale(1.35);
+      opacity: 0;
+    }
+  }
+
+  .hud-brand {
+    font-family: var(--font-space), ui-sans-serif, sans-serif;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    line-height: 1.1;
+    color: var(--text-primary);
+  }
+
+  @media (max-width: 640px) {
+    .hud-brand {
+      font-size: 15px;
+      letter-spacing: 0.06em;
+    }
+  }
+
+  :root.dark .hud-brand {
+    text-shadow: 0 0 14px color-mix(in srgb, var(--gold) 45%, transparent);
+  }
+
+  .hud-readout {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-jetbrains), ui-monospace, monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.05em;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-hairline);
+    border-radius: 3px;
+    padding: 4px 8px;
+    background: color-mix(in srgb, var(--page-plane) 50%, transparent);
+    white-space: nowrap;
+  }
+
+  .hud-iconbtn {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--border-hairline);
+    border-radius: 3px;
+    color: var(--text-secondary);
+    transition: all 0.15s;
+  }
+
+  .hud-iconbtn:hover {
+    color: var(--gold);
+    border-color: var(--gold);
+    box-shadow: 0 0 14px -5px color-mix(in srgb, var(--gold) 70%, transparent);
+  }
+
+  .hud-nav {
+    border-top: 1px solid color-mix(in srgb, var(--border-hairline) 70%, transparent);
+  }
+
+  .hud-tab {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 40px;
+    padding: 0 14px;
+    font-family: var(--font-jetbrains), ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    transition: color 0.15s, background 0.15s;
+    white-space: nowrap;
+  }
+
+  .hud-tab::after {
+    content: "";
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: -1px;
+    height: 2px;
+    background: var(--gold);
+    transform: scaleX(0);
+    transition: transform 0.2s;
+    box-shadow: 0 0 10px var(--gold);
+  }
+
+  .hud-tab:hover,
+  .hud-tab.is-open {
+    color: var(--text-primary);
+    background: color-mix(in srgb, var(--gold) 6%, transparent);
+  }
+
+  .hud-tab.is-open::after,
+  .hud-tab:hover::after {
+    transform: scaleX(0.5);
+  }
+
+  .hud-tab.is-active {
+    color: var(--gold);
+  }
+
+  .hud-tab.is-active::after {
+    transform: scaleX(1);
+  }
+
+  .hud-dropdown {
+    position: absolute;
+    top: calc(100% + 1px);
+    left: 0;
+    z-index: 40;
+    width: min(560px, calc(100vw - 32px));
+    padding: 10px;
+    background: var(--surface-1);
+    border: 1px solid color-mix(in srgb, var(--gold) 30%, var(--border-hairline));
+    border-top: 2px solid var(--gold);
+    border-radius: 0 0 4px 4px;
+    box-shadow: 0 24px 48px -20px rgba(0, 0, 0, 0.8), 0 0 30px -14px color-mix(in srgb, var(--gold) 50%, transparent);
+    backdrop-filter: blur(16px);
+    animation: hud-drop 0.16s ease-out;
+  }
+
+  @keyframes hud-drop {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .hud-dropdown-head {
+    display: flex;
+    gap: 10px;
+    padding: 2px 6px 8px;
+    margin-bottom: 6px;
+    border-bottom: 1px dashed var(--border-hairline);
+    font-family: var(--font-jetbrains), ui-monospace, monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .hud-dropdown-head span:first-child {
+    color: var(--gold);
+  }
+
+  .hud-menuitem {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    transition: all 0.12s;
+  }
+
+  .hud-menuitem:hover {
+    border-color: color-mix(in srgb, var(--gold) 35%, transparent);
+    background: color-mix(in srgb, var(--gold) 7%, transparent);
+  }
+
+  .hud-menuitem.is-active {
+    border-color: color-mix(in srgb, var(--gold) 55%, transparent);
+    background: color-mix(in srgb, var(--gold) 11%, transparent);
+  }
+
+  .hud-menuitem-ic {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    border: 1px solid color-mix(in srgb, var(--gold) 35%, var(--border-hairline));
+    border-radius: 3px;
+    color: var(--gold);
+    background: color-mix(in srgb, var(--gold) 6%, transparent);
+  }
+
+  .hud-menuitem:hover .hud-menuitem-ic,
+  .hud-menuitem.is-active .hud-menuitem-ic {
+    background: var(--primary);
+    color: var(--primary-fg);
+    border-color: transparent;
+  }
+
+  .hud-path {
+    align-self: center;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-jetbrains), ui-monospace, monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--gold);
+  }
+
+  .hud-mobile {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: calc(100vh - 64px);
+    overflow-y: auto;
+    padding: 4px 16px 16px;
+    border-top: 1px solid var(--border-hairline);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-header::after,
+  .hud-logo::after,
+  .hud-dropdown {
+    animation: none;
   }
 }

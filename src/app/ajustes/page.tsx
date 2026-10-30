@@ -10,7 +10,7 @@ import { CITIES, findCity } from "@/lib/timezones";
 import { BRAND_NAME } from "@/lib/brand";
 import { MOTORES_TOTALES } from "@/lib/motores";
 
-const HOUSE_ACCENT = "#8a6a28";
+const HOUSE_ACCENT = "#0e7490";
 const HOUSE_TITLE = BRAND_NAME;
 
 const AVATAR_SIZE = 256;
@@ -139,10 +139,10 @@ export default function AjustesPage() {
         />
 
         <ColorField
-          label="Color del menú lateral"
+          label="Color de la barra de navegación"
           value={sidebarColor}
           onChange={setSidebarColor}
-          fallback="#0d131c"
+          fallback="#0d1a2d"
           hint="Se pinta sólido. El texto y los bordes se ajustan solos para seguir legibles."
         />
       </Card>

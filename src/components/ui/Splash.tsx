@@ -11,7 +11,7 @@ const UNMOUNT_MS = 2350;
 
 /**
  * Cortinilla de entrada: anillos que se expanden desde el centro, ícono que
- * entra rotando y el nombre en Fraunces. Se muestra una sola vez por
+ * entra rotando y el nombre en display. Se muestra una sola vez por
  * pestaña —la marca vive en sessionStorage— y se puede saltar con un clic.
  */
 export default function Splash({

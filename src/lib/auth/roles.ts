@@ -5,7 +5,7 @@ import type { UserRole } from "@/lib/models/User";
  *
  * Es un rol de mirar: entra, cae en el resumen de campañas y ahí se queda. No
  * crea, no edita, no borra, y no tiene a dónde navegar — ni siquiera se le
- * dibuja el menú lateral (ver AppShell).
+ * dibuja el menú (ver TopNav).
  *
  * Este archivo es la ÚNICA lista de lo que se le permite, y lo usan tres
  * lugares a la vez: `proxy.ts` para mandarlo de vuelta cuando escribe una URL
@@ -43,8 +43,8 @@ function under(pathname: string, prefix: string): boolean {
  *
  * Es una sola y va exacta, no como prefijo: `/campanas/compartir` es el armador
  * de dashboards públicos —crea, edita y borra enlaces— y no tiene nada que
- * hacer acá. Al cliente ni siquiera se le dibuja el menú lateral (ver
- * AppShell): entra, ve su resumen, y no hay a dónde navegar.
+ * hacer acá. Al cliente ni siquiera se le dibuja el menú (ver
+ * TopNav): entra, ve su resumen, y no hay a dónde navegar.
  */
 export function clienteCanOpenPage(pathname: string): boolean {
   return pathname === "/campanas";

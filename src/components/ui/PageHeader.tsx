@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 /**
  * Encabezado de vista: cuadro de ícono relleno con el acento, título en
- * Fraunces y una línea mono de contexto, todo sobre una regla que separa del
+ * display y una línea mono de contexto, todo sobre una regla que separa del
  * contenido. Es el mismo bloque con el que la sala abre cada módulo.
  *
  * Ya no recibe `accent`: desde que los cuatro elementos se pintan con el color
