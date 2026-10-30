@@ -5,6 +5,7 @@ import UserModel, { USER_ROLES, toPublicUser, type UserRole } from "@/lib/models
 import { withAdmin } from "@/lib/apiHandler";
 import { hashPassword, passwordProblem } from "@/lib/auth/password";
 import { knownGroupIds } from "@/lib/auth/groups";
+import { normalizeUsername, usernameProblem } from "@/lib/auth/username";
 
 // Nunca se devuelve passwordHash: no le sirve a la interfaz y sacarlo del
 // servidor solo abre la puerta a que termine en un log o en el caché del
@@ -32,16 +33,12 @@ export const GET = withAdmin(async () => {
 
 export const POST = withAdmin(async (_admin, req: NextRequest) => {
   const body = await req.json();
-  const username = typeof body.username === "string" ? body.username.trim().toLowerCase() : "";
+  const username = normalizeUsername(body.username);
   const password = typeof body.password === "string" ? body.password : "";
   const role: UserRole = USER_ROLES.includes(body.role) ? body.role : "operador";
 
-  if (!/^[a-z0-9._-]{3,32}$/.test(username)) {
-    return NextResponse.json(
-      { error: "El usuario debe tener entre 3 y 32 caracteres: letras, números, punto, guion o guion bajo" },
-      { status: 400 },
-    );
-  }
+  const badName = usernameProblem(username);
+  if (badName) return NextResponse.json({ error: badName }, { status: 400 });
 
   const problem = passwordProblem(password);
   if (problem) return NextResponse.json({ error: problem }, { status: 400 });

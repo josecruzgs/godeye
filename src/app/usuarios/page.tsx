@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, ShieldCheck, KeyRound, Trash2, MapPin } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Plus, ShieldCheck, KeyRound, Pencil, Trash2, MapPin } from "lucide-react";
 import { apiFetch, ApiError } from "@/lib/api";
 import Card from "@/components/Card";
 import { useSession } from "@/lib/session";
@@ -29,6 +30,7 @@ type Group = { _id: string; adsPowerGroupId: string; name: string };
 
 export default function UsersPage() {
   const session = useSession();
+  const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,6 +101,16 @@ export default function UsersPage() {
       ? user.groupIds.filter((g) => g !== groupId)
       : [...user.groupIds, groupId];
     return patch(user._id, { groupIds: next });
+  }
+
+  async function rename(user: User) {
+    const value = window.prompt(`Nuevo nombre de usuario para "${user.username}"`, user.username);
+    const next = value?.trim().toLowerCase();
+    if (!next || next === user.username) return;
+    await patch(user._id, { username: next });
+    // El nombre propio se muestra en la barra de arriba, que viene de la sesión
+    // del servidor: sin refrescar seguiría diciendo el viejo.
+    if (session?.id === user._id) router.refresh();
   }
 
   async function resetPassword(user: User) {
@@ -311,6 +323,14 @@ export default function UsersPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => rename(u)}
+                          title="Cambiar nombre de usuario"
+                          className="flex h-7 w-7 items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-page hover:text-ink"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
                         <button
                           type="button"
                           onClick={() => resetPassword(u)}

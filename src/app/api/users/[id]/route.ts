@@ -11,6 +11,7 @@ import ListeningProjectModel from "@/lib/models/ListeningProject";
 import { withAdmin } from "@/lib/apiHandler";
 import { hashPassword, passwordProblem } from "@/lib/auth/password";
 import { knownGroupIds } from "@/lib/auth/groups";
+import { normalizeUsername, usernameProblem } from "@/lib/auth/username";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -62,6 +63,18 @@ export const PATCH = withAdmin(async (_admin, req: NextRequest, { params }: Para
   }
 
   if (typeof body.active === "boolean") user.active = body.active;
+
+  // Renombrar no toca nada más: sesiones, campañas y tareas apuntan al _id, no
+  // al nombre. Lo único que cambia es con qué se entra al login.
+  if (typeof body.username === "string") {
+    const username = normalizeUsername(body.username);
+    const badName = usernameProblem(username);
+    if (badName) return NextResponse.json({ error: badName }, { status: 400 });
+    if (username !== user.username && (await UserModel.exists({ username, _id: { $ne: user._id } }))) {
+      return NextResponse.json({ error: "Ese usuario ya existe" }, { status: 409 });
+    }
+    user.username = username;
+  }
 
   if ("groupIds" in body) {
     user.groupIds = await knownGroupIds(body.groupIds);
