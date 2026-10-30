@@ -130,7 +130,7 @@ Y ahí cambiá estas cuatro:
 
 ```bash
 SESSION_SECRET=                      # firma las sesiones — generarla, ver abajo
-NEXT_PUBLIC_SHARE_BASE_URL=https://yoconjulieta.iagent.mx
+NEXT_PUBLIC_SHARE_BASE_URL=https://ojodedios.net
 ADSPOWER_API_BASE_URL=http://127.0.0.1:50325   # AdsPower corre acá — sección 6
 ADSPOWER_API_KEY=                    # vacío si dejás la verificación apagada
 ```
@@ -192,7 +192,8 @@ pm2 logs godeye-listening --lines 50
 
 Apuntá un registro **A** de tu dominio a la IP del VPS y esperá a que propague.
 
-El archivo ya viene con `yoconjulieta.iagent.mx`; si usás otro dominio, cambialo ahí.
+El archivo ya viene con `ojodedios.net` y `www.ojodedios.net`; si usás otro
+dominio, cambialo ahí.
 
 ```bash
 sudo cp deploy/nginx.conf /etc/nginx/sites-available/godeye
@@ -201,7 +202,7 @@ sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
 
 sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d yoconjulieta.iagent.mx
+sudo certbot --nginx --cert-name ojodedios.net -d ojodedios.net -d www.ojodedios.net
 ```
 
 Certbot deja la renovación automática configurada.
@@ -228,6 +229,30 @@ curl -I https://NUEVO.dominio.mx     # 200 o 307, nunca 301 al mismo host
 Después, como `godeye`, actualizá `NEXT_PUBLIC_SHARE_BASE_URL` y **rebuildeá** —
 se inyecta en el build, no al arrancar. Y borrá el certificado viejo o su
 renovación empieza a fallar en silencio: `certbot delete --cert-name VIEJO.dominio.mx`.
+
+**Agregar un dominio sin quitar el viejo** es más simple, y fue como entró
+`ojodedios.net`: se suman los nombres nuevos a las dos líneas `server_name` y se
+amplía el mismo certificado. Como el 443 sigue nombrando al dominio viejo,
+certbot encuentra el bloque y no hay riesgo del bucle de redirecciones.
+
+```bash
+sed -i 's/server_name yoconjulieta\.iagent\.mx;/server_name yoconjulieta.iagent.mx ojodedios.net www.ojodedios.net;/' /etc/nginx/sites-available/godeye
+nginx -t && systemctl reload nginx
+certbot --nginx --expand -d yoconjulieta.iagent.mx -d ojodedios.net -d www.ojodedios.net
+```
+
+Así convivieron los dos un tiempo. Para dar de baja el viejo (2026-10-30): se
+quitó de las dos `server_name` junto con su `if ($host = ...)` de certbot, se
+sacó un certificado propio con `--cert-name ojodedios.net`, se borró el viejo
+con `certbot delete`, y se cambió la Payload URL del webhook de GitHub. Los
+enlaces de dashboards compartidos con el dominio viejo dejaron de abrir.
+
+Como el dominio viejo sigue apuntando a esta IP, `/etc/nginx/sites-available/rechazar-otros`
+es el `default_server` de 80 y 443: corta todo lo que no sea `ojodedios.net`
+(`return 444` y `ssl_reject_handshake on`) en vez de servir el panel con un
+certificado que no corresponde.
+
+El DNS de `ojodedios.net` lo atiende whois.com (`ns1`–`ns4.whois.com`), no Neubox.
 
 ## 6. AdsPower en el VPS
 
@@ -372,7 +397,7 @@ sudo mv /tmp/novnc-locations.conf /etc/nginx/snippets/godeye-vnc.conf
 
 # El include va en TODOS los server blocks del sitio: certbot dejó dos
 # (el 80 que redirige y el 443 que sirve), y cada uno tiene su server_name.
-sudo sed -i '/server_name .*iagent\.mx/a\    include snippets/godeye-vnc.conf;'   /etc/nginx/sites-available/godeye
+sudo sed -i '/server_name .*ojodedios.net/a\    include snippets/godeye-vnc.conf;'   /etc/nginx/sites-available/godeye
 
 grep -n "include snippets/godeye-vnc" /etc/nginx/sites-available/godeye   # debe salir 2 veces
 sudo nginx -t && sudo systemctl reload nginx
@@ -384,7 +409,7 @@ el módulo: `sudo apt install nginx-extras`.
 Comprobación, desde cualquier lado:
 
 ```bash
-curl -sI https://yoconjulieta.iagent.mx/novnc/vnc.html | head -1
+curl -sI https://ojodedios.net/novnc/vnc.html | head -1
 ```
 
 `302` a `/login` es lo correcto sin sesión — significa que nginx ya lo está
@@ -528,7 +553,7 @@ En GitHub → Settings → Webhooks → Add webhook:
 
 | Campo | Valor |
 |---|---|
-| Payload URL | `https://yoconjulieta.iagent.mx/_deploy/github` |
+| Payload URL | `https://ojodedios.net/_deploy/github` |
 | Content type | `application/json` |
 | Secret | el mismo de `/etc/godeye-webhook.env` |
 | Events | Just the push event |
