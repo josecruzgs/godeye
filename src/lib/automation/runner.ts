@@ -912,7 +912,7 @@ type PostLikeProbe = {
 async function markFacebookPostLike(page: Page): Promise<PostLikeProbe> {
   await defineEsbuildNameHelper(page);
   return page.evaluate(
-    ({ likeMark, likedMark, likePatterns, unlikePatterns, rowLabels }): PostLikeProbe => {
+    ({ likeMark, likedMark, likePatterns, unlikePatterns, rowLabels, replyLabels }): PostLikeProbe => {
       // Sin acentos y en minúsculas: "Gefällt mir" y "gefallt mir" son el mismo
       // botón, y el rótulo no siempre respeta el capitalizado entre layouts.
       const normalizar = (valor: string) =>
@@ -942,26 +942,53 @@ async function markFacebookPostLike(page: Page): Promise<PostLikeProbe> {
       const textOf = (el: Element) => (el.textContent ?? "").replace(/\s+/g, " ").trim();
       const nombreDe = (el: Element) => ariaOf(el) || textOf(el);
 
+      // "Responder" o "Responder a Juan", nunca como subcadena suelta: un post
+      // puede llevar la palabra en el texto de un botón cualquiera.
+      const esRespuesta = (valor: string) => {
+        const limpio = normalizar(valor);
+        return replyLabels.some((r) => {
+          const rotulo = normalizar(r);
+          return limpio === rotulo || limpio.startsWith(`${rotulo} `);
+        });
+      };
+
+      const visible = (el: Element) => {
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
+      const botonesDe = (root: ParentNode) =>
+        (Array.from(root.querySelectorAll('[role="button"], button')) as HTMLElement[]).filter(visible);
+
       // El post abierto en dialog manda: en esa vista la página de atrás sigue
       // montada con su propio feed, y sus botones son los de otras publicaciones.
-      const root: ParentNode = document.querySelector('div[role="dialog"]') ?? document;
-      const botones = (Array.from(root.querySelectorAll('[role="button"], button')) as HTMLElement[]).filter(
-        (el) => {
-          const rect = el.getBoundingClientRect();
-          return rect.width > 0 && rect.height > 0;
-        },
-      );
+      // Pero Facebook tiene varios `role="dialog"` montados —vacíos, ocultos, el
+      // de una notificación— y quedarse con el primero del DOM era buscar en uno
+      // que no tenía el post: "0 match(es)" con el botón a la vista. Vale el
+      // dialog visible que tenga barra de acciones, el de más arriba primero.
+      // Si ninguno la tiene, el post no está en un dialog y se busca en la página.
+      const dialogs = (Array.from(document.querySelectorAll('div[role="dialog"]')) as HTMLElement[])
+        .filter(visible)
+        .filter((d) => botonesDe(d).some((b) => contiene(nombreDe(b), rowLabels)))
+        .reverse();
+      const root: ParentNode = dialogs[0] ?? document;
+      const botones = botonesDe(root);
 
       // La compañía es lo que distingue al botón del post del de un comentario:
       // el del post comparte fila con "Comentar…" y "Compartir…", el de un
       // comentario vive al lado de "Responder". Por subcadena porque esos
       // vecinos también traen la frase larga ("Comentar la publicación de X").
+      //
+      // Sube hasta 8 niveles porque en el layout de nota larga la fila queda más
+      // arriba que en el de foto. Lo que impide que de tanto subir el "Me gusta"
+      // de un comentario alcance la barra del post es cortar en cuanto aparece
+      // un "Responder": ese ancestro ya es el de un comentario.
       const enBarraDeAcciones = (el: HTMLElement) => {
         let nodo: HTMLElement | null = el;
-        for (let i = 0; i < 4; i += 1) {
+        for (let i = 0; i < 8; i += 1) {
           nodo = nodo?.parentElement ?? null;
-          if (!nodo) return false;
+          if (!nodo || nodo === root) return false;
           const vecinos = Array.from(nodo.querySelectorAll('[role="button"], button')) as HTMLElement[];
+          if (vecinos.some((v) => v !== el && esRespuesta(nombreDe(v)))) return false;
           if (vecinos.some((v) => v !== el && contiene(nombreDe(v), rowLabels))) return true;
         }
         return false;
@@ -976,7 +1003,8 @@ async function markFacebookPostLike(page: Page): Promise<PostLikeProbe> {
 
       const boton = botones.filter((el) => coincide(nombreDe(el), likePatterns)).find(enBarraDeAcciones) ?? null;
       if (!boton) {
-        return { status: "not_found", detail: `${botones.length} boton(es) mirados` };
+        const donde = dialogs.length ? "en el dialog del post" : "en la página (sin dialog con barra de acciones)";
+        return { status: "not_found", detail: `${botones.length} boton(es) mirados ${donde}` };
       }
 
       // Hay builds donde el rótulo no cambia al reaccionar: sigue diciendo
@@ -1000,6 +1028,7 @@ async function markFacebookPostLike(page: Page): Promise<PostLikeProbe> {
       likePatterns: FACEBOOK_LIKE_ARIA_PATTERNS,
       unlikePatterns: FACEBOOK_UNLIKE_ARIA_PATTERNS,
       rowLabels: FACEBOOK_ACTION_ROW_LABELS,
+      replyLabels: FACEBOOK_REPLY_LABELS,
     },
   );
 }
@@ -1034,7 +1063,7 @@ async function scrollFacebookPost(page: Page) {
     .catch(() => {});
 }
 
-const BUSCAR_LIKE_INTENTOS = 4;
+const BUSCAR_LIKE_INTENTOS = 6;
 
 /**
  * Deja la publicación en condiciones de que se pueda reaccionar.
@@ -1061,8 +1090,10 @@ async function prepareFacebookLike(page: Page, ctx: StepContext) {
   // Hasta acá se buscó por `aria-label`. Lo que sigue es el sondeo por fila de
   // acciones, que además baja dentro del post: la barra suele estar debajo de
   // la imagen, y en el dialog eso es scroll interno.
+  let ultimo = "";
   for (let intento = 1; intento <= BUSCAR_LIKE_INTENTOS; intento += 1) {
     const probe = await markFacebookPostLike(page);
+    ultimo = probe.detail;
 
     if (probe.status === "ready") {
       await log(ctx.taskId, "info", `Botón de reaccionar localizado por ${probe.detail}.`);
@@ -1078,6 +1109,8 @@ async function prepareFacebookLike(page: Page, ctx: StepContext) {
       await page.waitForTimeout(900);
     }
   }
+
+  await log(ctx.taskId, "warn", `No se encontró el botón de reaccionar en la barra de acciones (${ultimo}).`);
 }
 
 /**
