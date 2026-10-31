@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
-import { BRAND_NAME } from "@/lib/brand";
+import { BRAND_LOGO, BRAND_NAME } from "@/lib/brand";
 import {
   RefreshCw,
   ListChecks,
@@ -211,8 +211,7 @@ export default function PublicDashboardView({
     <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Image src="/media/logoblack.png" alt={BRAND_NAME} width={36} height={36} className="object-contain dark:hidden" />
-          <Image src="/media/logo.png" alt={BRAND_NAME} width={36} height={36} className="hidden object-contain dark:block" />
+          <Image src={BRAND_LOGO} alt={BRAND_NAME} width={36} height={36} className="object-contain" />
           <div>
             <h1 className="text-2xl font-semibold text-ink">{name}</h1>
             <p className="label-mono-sm mt-1 normal-case tracking-normal">

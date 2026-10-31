@@ -5,7 +5,7 @@ import AppShell from "@/components/AppShell";
 import { currentUser } from "@/lib/auth/dal";
 import { SessionProvider, type ClientSession } from "@/lib/session";
 import { accentStyle } from "@/lib/theme";
-import { BRAND_NAME } from "@/lib/brand";
+import { BRAND_LOGO, BRAND_NAME } from "@/lib/brand";
 import "./globals.css";
 
 // Tres familias con roles fijos, en registro técnico: Space Grotesk (display)
@@ -29,18 +29,9 @@ const mono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: BRAND_NAME,
   description: "Panel para automatizar cuentas de redes sociales",
-  // Apunta directo a public/media/*.png en vez de mantener una copia en
-  // src/app/icon.png: así el favicon nunca se puede desincronizar del logo
-  // cuando se reemplacen esos archivos. logo.png es para navegador en modo
-  // oscuro y logoblack.png para modo claro — el navegador elige según la
-  // preferencia de color del sistema operativo. Hoy el logo de Ojo de Dios
-  // tiene fondo transparente y sirve en ambos, así que los dos son iguales.
-  icons: {
-    icon: [
-      { url: "/media/logoblack.png", media: "(prefers-color-scheme: light)" },
-      { url: "/media/logo.png", media: "(prefers-color-scheme: dark)" },
-    ],
-  },
+  // Apunta directo al logo de lib/brand.ts en vez de mantener una copia en
+  // src/app/icon.png: así el favicon nunca se puede desincronizar del logo.
+  icons: { icon: BRAND_LOGO },
 };
 
 export default async function RootLayout({

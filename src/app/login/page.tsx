@@ -4,7 +4,7 @@ import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Lock } from "lucide-react";
 import Image from "next/image";
-import { BRAND_NAME } from "@/lib/brand";
+import { BRAND_LOGO, BRAND_NAME } from "@/lib/brand";
 
 export default function LoginPage() {
   return (
@@ -67,8 +67,7 @@ function LoginForm() {
         className="card-surface animate-fade-in-up relative z-10 flex w-full max-w-sm flex-col gap-4 p-7"
       >
         <div className="flex flex-col items-center gap-2 text-center">
-          <Image src="/media/logoblack.png" alt={BRAND_NAME} width={44} height={44} className="object-contain dark:hidden" />
-          <Image src="/media/logo.png" alt={BRAND_NAME} width={44} height={44} className="hidden object-contain dark:block" />
+          <Image src={BRAND_LOGO} alt={BRAND_NAME} width={44} height={44} className="object-contain" />
           <h1 className="font-display mt-1 text-2xl font-semibold tracking-[-0.02em] text-ink">{BRAND_NAME}</h1>
           <p className="mt-2 flex items-center gap-1.5 text-[13px] text-ink-secondary">
             <Lock className="h-3.5 w-3.5" /> Ingresa con tu usuario para continuar

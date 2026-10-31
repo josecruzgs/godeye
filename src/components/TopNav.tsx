@@ -35,7 +35,7 @@ import { useSession } from "@/lib/session";
 import { isClienteRole, ROLE_LABELS } from "@/lib/auth/roles";
 import { findCity } from "@/lib/timezones";
 import { sidebarStyle } from "@/lib/theme";
-import { BRAND_NAME, BRAND_SUBTITLE } from "@/lib/brand";
+import { BRAND_LOGO, BRAND_NAME, BRAND_SUBTITLE } from "@/lib/brand";
 
 // `adminOnly` solo esconde el enlace: quien lo adivine igual choca contra el
 // 403 de withAdmin en la API. La seguridad está allá, esto es prolijidad.
@@ -157,19 +157,6 @@ function useClock(timeZone: string) {
   return now;
 }
 
-/** ThemeToggle cambia la clase "dark" por DOM; esto se entera sin un provider. */
-function useIsDark() {
-  const [isDark, setIsDark] = useState(true);
-  useEffect(() => {
-    const root = document.documentElement;
-    setIsDark(root.classList.contains("dark"));
-    const observer = new MutationObserver(() => setIsDark(root.classList.contains("dark")));
-    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
-    return () => observer.disconnect();
-  }, []);
-  return isDark;
-}
-
 function useWorkerStatus() {
   const [status, setStatus] = useState<Status>(null);
   useEffect(() => {
@@ -196,7 +183,6 @@ function useWorkerStatus() {
 export default function TopNav() {
   const pathname = usePathname() ?? "/";
   const session = useSession();
-  const isDark = useIsDark();
   const status = useWorkerStatus();
   const city = findCity(session?.preferences.city);
   const clock = useClock(city.timeZone);
@@ -290,7 +276,7 @@ export default function TopNav() {
               <img src={avatar} alt={title} className="h-8 w-8 rounded-[3px] object-cover" />
             ) : (
               <Image
-                src={isDark ? "/media/logo.png" : "/media/logoblack.png"}
+                src={BRAND_LOGO}
                 alt={title}
                 width={32}
                 height={32}
