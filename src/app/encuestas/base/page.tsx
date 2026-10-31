@@ -16,7 +16,7 @@ export const metadata = { title: `Base de teléfonos · ${BRAND_NAME}` };
 
 /**
  * LA BASE, CON NOMBRE Y NÚMERO. Es la lista que se subió para llamar: quién está, cómo le fue y cuántas veces se le marcó.
- * Solo administración. Aquí no se enseña qué contestó cada quien: eso vive en las encuestas, sin nombre.
+ * Admin y operador. Aquí no se enseña qué contestó cada quien: eso vive en las encuestas, sin nombre.
  */
 const POR_PAGINA = 50;
 const ROTULO: Record<string, string> = { PENDIENTE: "Sin llamar", NO_LLAMAR: "Pidió que no le llamen", ...Object.fromEntries(Object.entries(ESTADOS_LLAMADA).map(([k, v]) => [k, v.label])) };

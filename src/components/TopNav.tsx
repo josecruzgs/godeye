@@ -88,8 +88,8 @@ const NAV: NavSection[] = [
     code: "SEC-04",
     items: [
       { href: "/encuestas", label: "Tablero", hint: "Llamadas con la asistente de voz y resultados", icon: PhoneCall },
-      { href: "/encuestas/base", label: "Base de teléfonos", hint: "La lista a la que llama la asistente", icon: Users, adminOnly: true },
-      { href: "/encuestas/guion", label: "Guion", hint: "Lo que dice la asistente, palabra por palabra", icon: PencilLine, adminOnly: true },
+      { href: "/encuestas/base", label: "Base de teléfonos", hint: "La lista a la que llama la asistente", icon: Users },
+      { href: "/encuestas/guion", label: "Guion", hint: "Lo que dice la asistente, palabra por palabra", icon: PencilLine },
     ],
   },
   {

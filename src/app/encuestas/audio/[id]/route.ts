@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { Types } from "mongoose";
-import { withAdmin } from "@/lib/apiHandler";
+import { withAuth } from "@/lib/apiHandler";
 import { dbConnect } from "@/lib/mongodb";
 import EncuestaLlamadaModel from "@/lib/models/EncuestaLlamada";
 
@@ -8,10 +8,11 @@ type Params = { params: Promise<{ id: string }> };
 
 /**
  * LA GRABACIÓN DE UNA LLAMADA. ElevenLabs guarda el audio de cada plática; aquí se pide con la llave del servidor (que nunca
- * llega al navegador) y se entrega al reproductor del tablero. Solo administración: es la voz de una persona real.
+ * llega al navegador) y se entrega al reproductor del tablero. Admin y operador, los mismos que operan Encuestas: es la
+ * voz de una persona real, y el cliente no llega (withAuth lo frena).
  * Responde por pedazos (Range) para que el reproductor pueda adelantar y regresar.
  */
-export const GET = withAdmin(async (_admin, req: NextRequest, { params }: Params) => {
+export const GET = withAuth(async (_user, req: NextRequest, { params }: Params) => {
   const { id } = await params;
   if (!Types.ObjectId.isValid(id)) return NextResponse.json({ error: "Esa llamada no existe." }, { status: 404 });
   await dbConnect();
