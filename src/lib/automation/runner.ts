@@ -483,6 +483,10 @@ async function knownPlatformBlocker(page: Page): Promise<string | null> {
     const porTexto = blocker.text.some((pattern) => bodyText.includes(pattern) || normalizedUrl.includes(pattern));
     const porUrl = (blocker.url ?? []).some((pattern) => normalizedUrl.includes(pattern));
     if (porTexto || porUrl) {
+      // La pantalla de login no es un bloqueo de la cuenta: el perfil solo
+      // perdió la sesión. "detuvo este perfil" además hace que la pantalla de
+      // campañas ofrezca eliminarlo.
+      if (blocker.label === "sesion requerida") return USUARIO_NO_LOGEADO;
       return `${plataforma.nombre} detuvo este perfil por ${blocker.label}. Requiere accion manual en la cuenta antes de volver a usarla.`;
     }
   }
@@ -2758,6 +2762,13 @@ async function followFacebookProfile(page: Page, ctx: StepContext) {
 }
 
 /**
+ * El error de una tarea cuyo perfil no tiene sesión de Facebook. Dice
+ * "no logeado" y no "cerró la sesión" para que no se lea como que se cerró
+ * la cuenta.
+ */
+const USUARIO_NO_LOGEADO = "Usuario no logeado";
+
+/**
  * La sesión de Facebook se cayó y no se pudo recuperar.
  *
  * Tiene clase propia porque el paso que la detecta es opcional, y un error de
@@ -2769,17 +2780,6 @@ async function followFacebookProfile(page: Page, ctx: StepContext) {
 class SesionCaidaError extends Error {}
 
 const FACEBOOK_LOGIN_SUBMIT_SELECTOR = 'button[name="login"]';
-
-/**
- * El botón de la pantalla "elige tu cuenta guardada", que es la que aparece
- * cuando la sesión se cayó pero el navegador recuerda la cuenta. No trae
- * `name` ni nada estable, así que va por el rótulo, que cambia con el idioma
- * que Facebook elige por la IP del proxy (sin sesión no manda el de la cuenta).
- */
-const FACEBOOK_SAVED_ACCOUNT_LABEL =
-  /continuar con la cuenta guardada|continue with saved account|continuer avec le compte enregistr|continuar com a conta salva|continua con l'account salvato|mit gespeichertem konto fortfahren|متابعة باستخدام الحساب المحفوظ/i;
-
-const FACEBOOK_SESSION_RECOVERY_WAIT_MS = 6000;
 
 /**
  * Si el perfil tiene sesión de Facebook, mirando la cookie `c_user`.
@@ -2799,60 +2799,24 @@ async function hasFacebookSession(page: Page) {
   }
 }
 
-async function clickIfVisible(locator: Locator) {
-  const count = await locator.count().catch(() => 0);
-  for (let i = 0; i < count; i += 1) {
-    const candidate = locator.nth(i);
-    if (!(await candidate.isVisible().catch(() => false))) continue;
-    await candidate.click({ timeout: 3000 }).catch(() => {});
-    return true;
-  }
-  return false;
-}
-
 /**
  * El paso `button[name="login"]` de `loginIfNeededSteps`, hecho bien.
  *
- * Antes solo clickeaba el botón del formulario clásico, que AdsPower deja
- * autocompletado. Pero cuando la cuenta está guardada en el navegador Facebook
- * muestra otra pantalla, la de "Continuar con la cuenta guardada", sin ese
- * botón: el paso no aplicaba y la tarea seguía como si hubiera sesión.
+ * Antes clickeaba el botón del formulario clásico, que Facebook ya casi no
+ * muestra: el paso "no aplicaba" y la tarea seguía como si hubiera sesión,
+ * hasta morir con un timeout que no decía nada de la sesión.
  *
- * Ahora: si hay sesión, nada. Si no, prueba los dos caminos para entrar y,
- * si alguno funciona, vuelve a la publicación (Facebook suele dejarte en el
- * inicio). Si ninguno funciona, corta con un mensaje que dice lo que pasa.
+ * Ahora: si hay sesión (cookie `c_user`), nada. Si no, corta la tarea con un
+ * mensaje que dice lo que pasa.
  */
-async function ensureFacebookSession(page: Page, ctx: StepContext) {
+async function ensureFacebookSession(page: Page) {
   if (await hasFacebookSession(page)) return;
-
-  await log(ctx.taskId, "warn", "Facebook no tiene la sesión iniciada en este perfil; se intenta volver a entrar.");
-
-  const clicked =
-    (await clickIfVisible(page.locator(FACEBOOK_LOGIN_SUBMIT_SELECTOR))) ||
-    (await clickIfVisible(page.getByRole("button", { name: FACEBOOK_SAVED_ACCOUNT_LABEL }))) ||
-    (await clickIfVisible(page.locator('form[action*="device-based"] [role="button"]')));
-
-  if (clicked) {
-    const deadline = Date.now() + FACEBOOK_SESSION_RECOVERY_WAIT_MS;
-    while (Date.now() < deadline) {
-      await page.waitForTimeout(1000);
-      if (await hasFacebookSession(page)) break;
-    }
-  }
-
-  if (!(await hasFacebookSession(page))) {
-    await assertNoKnownBlocker(page);
-    throw new SesionCaidaError(
-      "Facebook cerró la sesión de este perfil y no se pudo volver a entrar solo. Hay que iniciar sesión a mano " +
-        "en el perfil de AdsPower (y revisar el proxy: si sale por otro país, Facebook la vuelve a cerrar).",
-    );
-  }
-
-  await log(ctx.taskId, "info", "Se volvió a iniciar sesión en Facebook.");
-  if (ctx.targetUrl && new URL(page.url()).pathname !== new URL(ctx.targetUrl).pathname) {
-    await gotoPage(page, ctx.targetUrl, DEFAULT_GOTO_TIMEOUT_MS, ctx);
-    await page.waitForTimeout(2000);
-  }
+  // No se intenta volver a entrar: sin sesión Facebook pide 2FA, y mandar el
+  // formulario desde la IP del proxy solo suma intentos de login sospechosos
+  // a la cuenta. Se corta la tarea; los demás bloqueos (checkpoint, cuenta
+  // bloqueada) se informan con su propio mensaje.
+  await assertNoKnownBlocker(page);
+  throw new SesionCaidaError(USUARIO_NO_LOGEADO);
 }
 
 async function runStep(page: Page, step: Step, ctx: StepContext) {
@@ -2872,7 +2836,7 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
         return;
       }
       if (step.selector === FACEBOOK_LOGIN_SUBMIT_SELECTOR && page.url().includes("facebook.com")) {
-        await ensureFacebookSession(page, ctx);
+        await ensureFacebookSession(page);
         return;
       }
       {
