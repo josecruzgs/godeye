@@ -17,8 +17,10 @@ import {
   GitBranch,
   UsersRound,
   UserPlus,
+  RotateCcw,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { esRelanzamientoDeLike } from "@/lib/tasks/relanzar";
 import { useSession } from "@/lib/session";
 import StatusBadge from "@/components/StatusBadge";
 import Pagination from "@/components/Pagination";
@@ -206,6 +208,16 @@ function TasksContent() {
     } finally {
       setBusyId(null);
     }
+  }
+
+  async function relaunchTask(t: Task) {
+    if (
+      !confirm(
+        `¿Relanzar el like de ${t.profileId?.name ?? "este perfil"}? Úsalo si la tarea salió exitosa pero el like no quedó en la publicación. Si ya estaba puesto, la tarea lo detecta y no lo quita.`,
+      )
+    )
+      return;
+    await runTask(t._id);
   }
 
   async function deleteTask(id: string) {
@@ -445,13 +457,28 @@ function TasksContent() {
                             {enlace.label}
                           </a>
                         ))}
-                        <button
-                          disabled={busyId === t._id || t.status === "running" || t.status === "queued"}
-                          onClick={() => runTask(t._id)}
-                          className="rounded-lg border border-hairline px-2.5 py-1 text-xs font-medium transition-colors hover:bg-page disabled:opacity-40"
-                        >
-                          Ejecutar
-                        </button>
+                        {esRelanzamientoDeLike(t) ? (
+                          // Like exitoso: relanzarlo es para revisar un falso
+                          // positivo y solo lo hace un admin (la API lo exige).
+                          esAdmin && (
+                            <button
+                              disabled={busyId === t._id}
+                              onClick={() => relaunchTask(t)}
+                              title="Volver a dar el like si la tarea fue un falso positivo"
+                              className="inline-flex items-center gap-1 rounded-lg border border-warning/30 px-2.5 py-1 text-xs font-medium text-warning transition-colors hover:bg-warning/10 disabled:opacity-40"
+                            >
+                              <RotateCcw className="h-3 w-3" /> Relanzar
+                            </button>
+                          )
+                        ) : (
+                          <button
+                            disabled={busyId === t._id || t.status === "running" || t.status === "queued"}
+                            onClick={() => runTask(t._id)}
+                            className="rounded-lg border border-hairline px-2.5 py-1 text-xs font-medium transition-colors hover:bg-page disabled:opacity-40"
+                          >
+                            Ejecutar
+                          </button>
+                        )}
                         <button
                           disabled={busyId === t._id}
                           onClick={() => deleteTask(t._id)}
