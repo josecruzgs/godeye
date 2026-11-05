@@ -27,6 +27,7 @@ import {
   UserPlus,
   Users,
   UsersRound,
+  Newspaper,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -72,6 +73,7 @@ const NAV: NavSection[] = [
       { href: "/tasks/comment", label: "Comentar", hint: "Comentarios desde el banco", icon: MessageSquare },
       { href: "/tasks/ramificacion", label: "Ramificaciones", hint: "Hilos de respuestas", icon: GitBranch },
       { href: "/tasks/unirse-grupo", label: "Unirse a grupos", hint: "Solicitudes a grupos de Facebook", icon: UsersRound },
+      { href: "/tasks/publicar-grupo", label: "Publicar en grupos", hint: "Una publicación con imagen por perfil", icon: Newspaper },
       { href: "/tasks/follow", label: "Seguir perfiles", hint: "Seguir cuentas de Facebook", icon: UserPlus },
       { href: "/tasks/post", label: "Publicar", hint: "Publicaciones desde perfiles", icon: Megaphone },
     ],
