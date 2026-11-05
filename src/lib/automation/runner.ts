@@ -10,6 +10,7 @@ import {
   INSTAGRAM_COMMENT_BOX_SELECTOR,
   INSTAGRAM_COMMENT_OPEN_SELECTOR,
   INSTAGRAM_DISMISS_SELECTOR,
+  platformFromUrl,
 } from "./socialSelectors";
 import { parseFacebookCommentTarget } from "@/lib/commentLinks";
 import { leerNombreGrupo, unirseAlGrupo, type JoinGroupResult, type Persona } from "./groupJoin";
@@ -451,6 +452,8 @@ type StepContext = {
   targetUrl?: string;
   /** Quién es el perfil: con esto "joinGroup" contesta las preguntas del grupo en su voz. */
   persona?: Persona;
+  /** El envío del comentario escrito, escuchado en la red. Ver vigilarEnvioComentario. */
+  envioComentario?: EnvioComentario;
 };
 
 function normalizePageText(value: string) {
@@ -802,7 +805,112 @@ function esTareaDeComentario(taskType: string) {
  * el timeout de la caja de texto —"0 match(es)"—, que manda a buscar un
  * selector roto cuando el problema es que la cuenta no está logueada.
  */
-async function prepareInstagramCommentBox(page: Page, ctx: StepContext) {
+const INSTAGRAM_COMMENT_BOX_MARK = "data-lotificadora-ig-comment-box";
+const INSTAGRAM_COMMENT_BOX_MARKED = `[${INSTAGRAM_COMMENT_BOX_MARK}]`;
+
+/**
+ * Busca el composer de Instagram por forma y no por atributos, y lo marca.
+ *
+ * El panel de comentarios del visor de reels muestra "Agrega un comentario…"
+ * pero el selector por atributos daba "0 match(es)": ese composer no trae el
+ * rótulo en `placeholder`/`aria-label` del propio editable (lo pinta en un
+ * elemento hermano, al estilo Lexical), o directamente no es editable hasta
+ * que se lo clickea. Se reconoce entonces cualquier editable visible cuyo
+ * rótulo propio o el texto de su contenedor inmediato hable de comentar; y si
+ * no hay editable, se clickea el texto "Agrega un comentario…" para que monte.
+ *
+ * Devuelve si quedó una caja marcada.
+ */
+async function markInstagramCommentBox(page: Page) {
+  await defineEsbuildNameHelper(page);
+  const marcar = () =>
+    page
+      .evaluate((mark) => {
+        const habla = (t: string | null | undefined) => /coment|comment/i.test(t ?? "");
+        const visible = (el: Element) => {
+          const r = el.getBoundingClientRect();
+          return r.width > 1 && r.height > 1 && getComputedStyle(el).visibility !== "hidden";
+        };
+        // Una vez escrito el texto el placeholder desaparece y la caja ya no
+        // se reconoce por rótulo: la marcada antes sigue siendo la buena.
+        const previas = Array.from(document.querySelectorAll(`[${mark}]`));
+        if (previas.some(visible)) return true;
+        for (const el of previas) el.removeAttribute(mark);
+
+        const editables = Array.from(
+          document.querySelectorAll(
+            'textarea, input[type="text"], input:not([type]), [contenteditable="true"], [contenteditable=""], [role="textbox"]',
+          ),
+        ).filter(visible);
+
+        const rotulado = (el: Element) => {
+          if (
+            ["aria-label", "placeholder", "aria-placeholder", "data-placeholder", "title"].some((a) =>
+              habla(el.getAttribute(a)),
+            )
+          )
+            return true;
+          // El placeholder pintado aparte vive en un ancestro cercano.
+          let p: Element | null = el.parentElement;
+          for (let i = 0; p && i < 4; i += 1, p = p.parentElement) {
+            const texto = (p as HTMLElement).innerText ?? "";
+            if (texto.length < 120 && habla(texto)) return true;
+          }
+          return false;
+        };
+
+        // Preferir la del panel de comentarios, si hay dialog abierto.
+        const ordenados = editables.sort(
+          (a, b) => Number(!!b.closest('[role="dialog"]')) - Number(!!a.closest('[role="dialog"]')),
+        );
+        const caja = ordenados.find(rotulado) ?? (ordenados.length === 1 ? ordenados[0] : null);
+        if (!caja) return false;
+        caja.setAttribute(mark, "1");
+        return true;
+      }, INSTAGRAM_COMMENT_BOX_MARK)
+      .catch(() => false);
+
+  if (await marcar()) return true;
+
+  // Composer perezoso: un texto "Agrega un comentario…" que recién al
+  // clickearlo se vuelve editable.
+  const disparador = page
+    .locator("span, div, p")
+    .filter({ hasText: /^\s*((agrega|añade) un comentario|add a comment)/i })
+    .last();
+  if (await disparador.isVisible().catch(() => false)) {
+    await disparador.click({ timeout: 2500 }).catch(() => {});
+    await page.waitForTimeout(800);
+    return marcar();
+  }
+  return false;
+}
+
+/** Los editables visibles de la página, para el log cuando no se encuentra la caja. */
+async function describeEditables(page: Page) {
+  await defineEsbuildNameHelper(page);
+  const items = await page
+    .evaluate(() =>
+      Array.from(document.querySelectorAll('textarea, input, [contenteditable], [role="textbox"]'))
+        .filter((el) => {
+          const r = el.getBoundingClientRect();
+          return r.width > 1 && r.height > 1;
+        })
+        .slice(0, 10)
+        .map((el) => {
+          const attrs = ["role", "contenteditable", "aria-label", "placeholder", "aria-placeholder", "type"]
+            .map((a) => (el.hasAttribute(a) ? `${a}="${el.getAttribute(a)}"` : ""))
+            .filter(Boolean)
+            .join(" ");
+          return `<${el.tagName.toLowerCase()} ${attrs}>`;
+        }),
+    )
+    .catch(() => [] as string[]);
+  return items.length ? items.join(", ") : "(ninguno)";
+}
+
+/** Devuelve el selector de la caja marcada, o `null` para usar el del paso. */
+async function prepareInstagramCommentBox(page: Page, ctx: StepContext): Promise<string | null> {
   await ensureOnTargetUrl(page, ctx);
   await freezeReelPlayback(page);
 
@@ -810,7 +918,15 @@ async function prepareInstagramCommentBox(page: Page, ctx: StepContext) {
   // los intentos de abrir el panel se comen el error de a uno con `.catch`.
   await assertNoKnownBlocker(page);
 
-  if (await hasVisibleLocator(page, INSTAGRAM_COMMENT_BOX_SELECTOR)) return;
+  // `undefined` = todavía no hay caja; `null` = la encuentra el selector del
+  // paso; string = la caja que se marcó a mano.
+  const lista = async (): Promise<string | null | undefined> => {
+    if (await hasVisibleLocator(page, INSTAGRAM_COMMENT_BOX_SELECTOR)) return null;
+    return (await markInstagramCommentBox(page)) ? INSTAGRAM_COMMENT_BOX_MARKED : undefined;
+  };
+
+  let encontrada = await lista();
+  if (encontrada !== undefined) return encontrada;
 
   if (page.url().includes("/accounts/login") || (await hasVisibleLocator(page, 'input[name="password"]'))) {
     throw new Error(
@@ -822,14 +938,16 @@ async function prepareInstagramCommentBox(page: Page, ctx: StepContext) {
   for (let intento = 1; intento <= ABRIR_COMENTARIOS_INTENTOS; intento += 1) {
     await ensureOnTargetUrl(page, ctx);
     await dismissInstagramOverlays(page, ctx);
-    if (await hasVisibleLocator(page, INSTAGRAM_COMMENT_BOX_SELECTOR)) return;
+    encontrada = await lista();
+    if (encontrada !== undefined) return encontrada;
 
     const target = await firstClickableLocator(page, INSTAGRAM_COMMENT_OPEN_SELECTOR, 2500).catch(() => null);
     if (target) {
       await log(ctx.taskId, "info", "Abriendo el panel de comentarios de Instagram.");
       await target.locator.click({ position: target.position, timeout: 2500 }).catch(() => {});
-      await page.waitForTimeout(1000);
-      if (await hasVisibleLocator(page, INSTAGRAM_COMMENT_BOX_SELECTOR)) return;
+      await page.waitForTimeout(1500);
+      encontrada = await lista();
+      if (encontrada !== undefined) return encontrada;
     }
 
     if (intento < ABRIR_COMENTARIOS_INTENTOS) {
@@ -845,8 +963,10 @@ async function prepareInstagramCommentBox(page: Page, ctx: StepContext) {
   await log(
     ctx.taskId,
     "warn",
-    `No se encontró la caja de comentario de Instagram. Botones visibles en la página: ${await describeVisibleButtons(page)}`,
+    `No se encontró la caja de comentario de Instagram. Editables visibles: ${await describeEditables(page)}. ` +
+      `Botones visibles en la página: ${await describeVisibleButtons(page)}`,
   );
+  return null;
 }
 
 /** Cierra las capas de Instagram que tapan el composer. Devuelve si cerró alguna. */
@@ -1659,8 +1779,7 @@ async function prepareSelectorTarget(page: Page, rawSelector: string, ctx: StepC
   if (!esTareaDeComentario(ctx.taskType)) return null;
 
   if (isInstagramCommentBoxSelector(rawSelector)) {
-    await prepareInstagramCommentBox(page, ctx);
-    return null;
+    return prepareInstagramCommentBox(page, ctx);
   }
 
   if (!isFacebookCommentBoxSelector(rawSelector)) return null;
@@ -2053,6 +2172,10 @@ async function findPublishedComment(page: Page, texto: string): Promise<CommentP
       break;
     }
 
+    // Lo que se encontró es el texto todavía en la caja, sin enviar: eso no
+    // es un comentario publicado.
+    if (comentario.closest('[contenteditable="true"], [contenteditable=""], textarea')) return ausente;
+
     // Los enlaces del comentario están fuera del texto (son hermanos, no
     // descendientes), así que se sube hasta el primer contenedor que tenga
     // alguno con `comment_id`.
@@ -2154,18 +2277,190 @@ async function findPublishedComment(page: Page, texto: string): Promise<CommentP
  * después de enviarlo, y cuánto depende de la red y de lo cargada que esté la
  * publicación. Un timeout fijo sería o muy corto o desperdicio de tiempo.
  */
-async function waitForPublishedComment(page: Page, texto: string, timeoutMs: number): Promise<CommentProbe> {
+async function waitForPublishedComment(
+  page: Page,
+  texto: string,
+  timeoutMs: number,
+  opciones: { alNoEncontrar?: () => Promise<unknown>; sinEnlace?: boolean } = {},
+): Promise<CommentProbe> {
   const limite = Date.now() + timeoutMs;
   let ultimo: CommentProbe = { encontrado: false, url: null, perfilUrl: null };
   for (;;) {
     ultimo = await findPublishedComment(page, texto);
     // Con el comentario ya encontrado se sigue esperando un poco por su
     // enlace, que aparece después — pero sin dejar que la falta de enlace
-    // consuma todo el tiempo restante.
-    if (ultimo.url) return ultimo;
+    // consuma todo el tiempo restante. Donde la red nunca da ese enlace
+    // (Instagram), esperarlo es tiempo perdido.
+    if (ultimo.url || (ultimo.encontrado && opciones.sinEnlace)) return ultimo;
     if (Date.now() >= limite) return ultimo;
+    if (!ultimo.encontrado) await opciones.alNoEncontrar?.();
     await page.waitForTimeout(VISIBLE_POLL_MS * 4);
   }
+}
+
+/**
+ * Lo que respondió el servidor de la red al envío del comentario.
+ *
+ * `ok` es que lo creó; `error`, que lo rechazó y por qué (perfil limitado,
+ * spam, publicación sin comentarios). `id`/`url`/`perfilUrl` salen de la propia
+ * respuesta cuando vienen.
+ */
+type ConfirmacionDeEnvio =
+  | { ok: true; id: string | null; url: string | null; perfilUrl: string | null }
+  | { ok: false; error: string };
+
+type EnvioComentario = {
+  /** Se resuelve con la respuesta del servidor, o `null` si no se vio ningún envío. */
+  esperar: (timeoutMs: number) => Promise<ConfirmacionDeEnvio | null>;
+  cancelar: () => void;
+  /** Los POST a la red que pasaron mientras se escuchaba; para el log si no se reconoció ninguno. */
+  vistos: string[];
+};
+
+const ENVIO_ESCUCHA_MAX_MS = 120_000;
+
+/**
+ * Escucha en la red el envío del comentario que se acaba de escribir.
+ *
+ * Buscar el comentario en pantalla daba falsos "no apareció": Instagram lo
+ * mete en el medio de la lista y el panel solo renderiza lo scrolleado, y el
+ * operador relanzaba una tarea que ya había publicado — comentario duplicado.
+ * El servidor, en cambio, contesta en el acto si lo creó.
+ *
+ * El envío se reconoce por contenido y no por dirección, porque Facebook e
+ * Instagram cambian los endpoints seguido: un POST a un endpoint de graphql o
+ * de comentarios cuyo cuerpo lleva el texto. Para contarlo como creado, la
+ * respuesta tiene que traer el texto de vuelta (las dos redes devuelven el
+ * comentario creado); eso descarta pedidos que solo lo mencionan, como los de
+ * telemetría. Se arranca a escuchar después de escribir, así no entran las
+ * búsquedas de menciones que salen mientras se tipea.
+ */
+function vigilarEnvioComentario(page: Page, texto: string): EnvioComentario {
+  const normalizar = (valor: string) =>
+    valor
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim();
+  const buscado = normalizar(texto);
+
+  const decodificarCuerpo = (crudo: string) => {
+    let valor = crudo;
+    try {
+      valor = decodeURIComponent(crudo.replace(/\+/g, " "));
+    } catch {
+      // No era form-urlencoded: se compara tal cual.
+    }
+    return desescaparJson(valor);
+  };
+
+  let resolver: (r: ConfirmacionDeEnvio | null) => void = () => {};
+  const resultado = new Promise<ConfirmacionDeEnvio | null>((r) => (resolver = r));
+  let terminado = false;
+  const vistos: string[] = [];
+
+  const terminar = (r: ConfirmacionDeEnvio | null) => {
+    if (terminado) return;
+    terminado = true;
+    page.off("response", alResponder);
+    clearTimeout(tope);
+    resolver(r);
+  };
+
+  const alResponder = async (response: import("playwright-core").Response) => {
+    if (terminado || !buscado) return;
+    const request = response.request();
+    if (request.method() !== "POST") return;
+    const url = request.url();
+    if (/(facebook|instagram)\.com/i.test(url) && vistos.length < 15) {
+      vistos.push(`${url.replace(/^https:\/\/(www\.)?/, "").split("?")[0]} ${response.status()}`);
+    }
+    if (!/(facebook|instagram)\.com/i.test(url) || !/graphql|comment/i.test(url)) return;
+    const enviado = request.postData();
+    if (!enviado || !normalizar(decodificarCuerpo(enviado)).includes(buscado)) return;
+
+    const cuerpo = desescaparJson(await response.text().catch(() => ""));
+    // Facebook manda avisos en `errors` aun en respuestas exitosas, así que el
+    // eco del texto manda: si el comentario volvió creado, está creado.
+    const creado =
+      response.status() < 400 && !/"status"\s*:\s*"fail"/.test(cuerpo) && normalizar(cuerpo).includes(buscado);
+    if (creado) {
+      terminar({ ok: true, ...datosDelComentarioCreado(cuerpo, page.url()) });
+      return;
+    }
+    const rechazo = rechazoDeLaRed(response.status(), cuerpo);
+    if (rechazo) terminar({ ok: false, error: rechazo });
+  };
+
+  page.on("response", alResponder);
+  const tope = setTimeout(() => terminar(null), ENVIO_ESCUCHA_MAX_MS);
+
+  return {
+    esperar: (timeoutMs) =>
+      Promise.race([resultado, new Promise<null>((r) => setTimeout(() => r(null), timeoutMs))]),
+    cancelar: () => terminar(null),
+    vistos,
+  };
+}
+
+/** Deshace los escapes de JSON que traen las respuestas de Facebook (`á`, `\/`). */
+function desescaparJson(valor: string) {
+  return valor
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/\\\//g, "/");
+}
+
+/** El motivo, si la respuesta es un rechazo explícito del comentario. */
+function rechazoDeLaRed(status: number, cuerpo: string): string | null {
+  const mensaje =
+    cuerpo.match(/"status"\s*:\s*"fail"[\s\S]{0,400}?"message"\s*:\s*"([^"]{1,200})"/)?.[1] ??
+    cuerpo.match(/"message"\s*:\s*"([^"]{1,200})"[\s\S]{0,400}?"status"\s*:\s*"fail"/)?.[1] ??
+    cuerpo.match(/"errors"\s*:\s*\[\s*\{[\s\S]{0,400}?"(?:message|description|summary)"\s*:\s*"([^"]{1,200})"/)?.[1] ??
+    null;
+  if (mensaje) return mensaje;
+  if (/"status"\s*:\s*"fail"/.test(cuerpo)) return "la red rechazó el comentario sin dar motivo";
+  if (status >= 400) return `la red respondió ${status} al enviar el comentario`;
+  return null;
+}
+
+/** El id, el permalink y el perfil del autor, de la respuesta de creación. */
+function datosDelComentarioCreado(cuerpo: string, paginaUrl: string) {
+  // Facebook: la respuesta trae el permalink entero con `comment_id`.
+  const urlFacebook = cuerpo.match(/"url"\s*:\s*"(https:\/\/www\.facebook\.com[^"]*[?&]comment_id=[^"]+)"/)?.[1] ?? null;
+
+  // Instagram: solo el id, para el log. La respuesta trae también ids y
+  // usuarios de la publicación y de su dueño, y armar con eso un permalink o
+  // un perfil es arriesgar uno equivocado, que es peor que ninguno.
+  if (/instagram\.com/i.test(paginaUrl)) {
+    return { id: cuerpo.match(/"id"\s*:\s*"(\d{10,})"/)?.[1] ?? null, url: null, perfilUrl: null };
+  }
+
+  return { id: urlFacebook?.match(/comment_id=([^&]+)/)?.[1] ?? null, url: urlFacebook, perfilUrl: null };
+}
+
+/**
+ * Avanza el scroll del panel de comentarios de Instagram.
+ *
+ * Instagram no pone el comentario recién enviado arriba de la lista: lo mete
+ * más abajo, entre los demás, y el panel solo renderiza lo que se fue
+ * scrolleando. La verificación miraba el DOM sin moverse, no lo encontraba, y
+ * la tarea fallaba con el comentario ya publicado; al relanzarla salía
+ * duplicado. Se baja de a una pantalla y al llegar al fondo se vuelve arriba.
+ */
+async function scrollInstagramComments(page: Page) {
+  await defineEsbuildNameHelper(page);
+  await page
+    .evaluate(() => {
+      const raiz = document.querySelector('[role="dialog"]') ?? document.body;
+      for (const el of Array.from(raiz.querySelectorAll("div, ul"))) {
+        const h = el as HTMLElement;
+        if (h.scrollHeight <= h.clientHeight + 20 || h.clientHeight < 80) continue;
+        const overflow = getComputedStyle(h).overflowY;
+        if (overflow !== "auto" && overflow !== "scroll") continue;
+        const alFondo = h.scrollTop + h.clientHeight >= h.scrollHeight - 5;
+        h.scrollTop = alFondo ? 0 : h.scrollTop + h.clientHeight * 0.8;
+      }
+    })
+    .catch(() => {});
 }
 
 /**
@@ -2983,11 +3278,83 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
       const texto = step.value?.trim();
       if (!texto) throw new Error("Step 'captureComment' requiere 'value' con el texto publicado");
 
-      const probe = await waitForPublishedComment(page, texto, step.ms ?? DEFAULT_ACTION_TIMEOUT_MS);
+      const esperaMs = step.ms ?? DEFAULT_ACTION_TIMEOUT_MS;
+      const enInstagram = platformFromUrl(page.url()) === "instagram";
+      const red = enInstagram ? "Instagram" : "Facebook";
+      const opcionesIg = enInstagram ? { alNoEncontrar: () => scrollInstagramComments(page), sinEnlace: true } : {};
+
+      // Primero, lo que contestó el servidor al envío: es inmediato y no
+      // depende de que el comentario se vea. La pantalla queda de respaldo
+      // para cuando no se detectó ningún envío en la red.
+      const envio = ctx.envioComentario;
+      ctx.envioComentario = undefined;
+      const confirmacion = envio ? await envio.esperar(15000) : null;
+      envio?.cancelar();
+
+      if (confirmacion?.ok) {
+        // En Facebook el permalink hace falta (las ramificaciones responden
+        // sobre él) y el perfil del autor solo se lee en pantalla: se los
+        // busca un rato, pero la tarea ya está cumplida los encuentre o no.
+        let url = confirmacion.url;
+        let perfilUrl = confirmacion.perfilUrl;
+        if (!enInstagram) {
+          const enPantalla = await waitForPublishedComment(page, texto, Math.min(esperaMs, 8000));
+          url = url ?? enPantalla.url;
+          perfilUrl = perfilUrl ?? enPantalla.perfilUrl;
+        }
+
+        if (ctx.targetUrl && url && rutaDePublicacion(url) !== rutaDePublicacion(ctx.targetUrl)) {
+          throw new Error(
+            `El comentario se publicó en otra publicación (${url}) en vez de la pedida. El visor se movió ` +
+              `durante la tarea. Hay que borrarlo a mano.`,
+          );
+        }
+
+        ctx.onResult?.({ url, perfilUrl });
+        await log(
+          ctx.taskId,
+          "info",
+          `Comentario publicado: ${red} confirmó la creación` +
+            (url ? ` (${url}).` : confirmacion.id ? ` (id ${confirmacion.id}).` : "."),
+        );
+        return;
+      }
+
+      if (confirmacion && !confirmacion.ok) {
+        await log(ctx.taskId, "warn", `${red} respondió con un rechazo al envío: ${confirmacion.error}. Se revisa en pantalla.`);
+      } else {
+        await log(
+          ctx.taskId,
+          "info",
+          envio
+            ? `No se reconoció el envío en la red; se verifica el comentario en pantalla. POST vistos: ${envio.vistos.join(", ") || "(ninguno)"}`
+            : "No se escuchó el envío en la red; se verifica el comentario en pantalla.",
+        );
+      }
+
+      let probe = await waitForPublishedComment(page, texto, esperaMs, opcionesIg);
+
+      // Último intento antes de declararlo perdido: recargar y volver a abrir
+      // el panel. Un falso "no apareció" es caro —el operador relanza y el
+      // comentario queda duplicado—, así que se busca a fondo.
+      if (!probe.encontrado && enInstagram && ctx.targetUrl) {
+        await log(ctx.taskId, "info", "El comentario no se ve en el panel; se recarga la publicación para buscarlo.");
+        await gotoPage(page, ctx.targetUrl, DEFAULT_GOTO_TIMEOUT_MS, ctx);
+        await page.waitForTimeout(2500);
+        await prepareInstagramCommentBox(page, ctx).catch(() => null);
+        await page.waitForTimeout(1500);
+        probe = await waitForPublishedComment(page, texto, esperaMs, opcionesIg);
+      }
+
+      if (!probe.encontrado && confirmacion && !confirmacion.ok) {
+        throw new Error(`${red} rechazó el comentario: ${confirmacion.error}`);
+      }
+
       if (!probe.encontrado) {
         throw new Error(
-          "El comentario no apareció en la publicación después de enviarlo. Puede que Facebook lo haya " +
-            "descartado, que el perfil esté limitado, o que la publicación no permita comentar.",
+          `El comentario no apareció en la publicación después de enviarlo. Puede que ${red} lo haya ` +
+            "descartado, que el perfil esté limitado, o que la publicación no permita comentar." +
+            (enInstagram ? " Antes de relanzar, revisá la publicación: si sí salió, relanzar lo duplica." : ""),
         );
       }
 
@@ -3134,6 +3501,8 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
           (isFacebookCommentBoxSelector(step.selector) || isInstagramCommentBoxSelector(step.selector))
         ) {
           await escribirEnCaja(page, target, step.value ?? "", ctx);
+          ctx.envioComentario?.cancelar();
+          ctx.envioComentario = vigilarEnvioComentario(page, step.value ?? "");
         } else {
           await target.click({ timeout: 5000 }).catch(() => {});
           await target.type(step.value ?? "", { delay: 60, timeout: step.ms ?? DEFAULT_ACTION_TIMEOUT_MS });
@@ -3368,27 +3737,38 @@ export async function runTask(taskId: string) {
     browser = connection.browser;
     page = connection.page;
 
+    // El contexto se arma de nuevo en cada paso (targetUrl puede cambiar tras
+    // navegar), pero la escucha del envío nace en "type" y se lee en
+    // "captureComment": tiene que pasar de un paso al otro.
+    let envioComentario: EnvioComentario | undefined;
+
     for (const [i, step] of task.steps.entries()) {
       const s = step as Step;
       await log(taskId, "info", `Step ${i + 1}/${task.steps.length}: ${s.action}${s.optional ? " (opcional)" : ""}`);
+      const ctx: StepContext = {
+        envioComentario,
+        taskId,
+        profileName: profile.name,
+        taskType: task.type,
+        targetUrl,
+        persona: { name: profile.name, age: profile.age, gender: profile.gender },
+        onResult: ({ url, perfilUrl }) => {
+          if (url) task.resultUrl = url;
+          if (perfilUrl) task.resultProfileUrl = perfilUrl;
+        },
+        onJoinState: (state) => {
+          task.joinState = state;
+        },
+        onGroupName: (name) => {
+          task.groupName = name;
+        },
+      };
       try {
-        await runStep(page, s, {
-          taskId,
-          profileName: profile.name,
-          taskType: task.type,
-          targetUrl,
-          persona: { name: profile.name, age: profile.age, gender: profile.gender },
-          onResult: ({ url, perfilUrl }) => {
-            if (url) task.resultUrl = url;
-            if (perfilUrl) task.resultProfileUrl = perfilUrl;
-          },
-          onJoinState: (state) => {
-            task.joinState = state;
-          },
-          onGroupName: (name) => {
-            task.groupName = name;
-          },
-        });
+        try {
+          await runStep(page, s, ctx);
+        } finally {
+          envioComentario = ctx.envioComentario;
+        }
 
         // Después de navegar manda la URL que quedó, no la que se pidió.
         // Facebook reescribe los enlaces —los de "compartir" a la forma
