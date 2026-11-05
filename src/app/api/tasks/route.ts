@@ -6,9 +6,9 @@ import TaskModel from "@/lib/models/Task";
 // cargó /api/profiles antes.
 import "@/lib/models/Profile";
 import { withAuth } from "@/lib/apiHandler";
-import { allowedOwnerFilter, isAdmin, requestedOwnerFilter } from "@/lib/auth/dal";
+import { isAdmin } from "@/lib/auth/dal";
 import { findUsableProfile } from "@/lib/auth/profiles";
-import { escapeRegex } from "@/lib/regex";
+import { filtroDeTareas } from "@/lib/tasks/filtroDeTareas";
 
 export const GET = withAuth(async (user, req: NextRequest) => {
   const sp = req.nextUrl.searchParams;
@@ -22,17 +22,7 @@ export const GET = withAuth(async (user, req: NextRequest) => {
 
   await dbConnect();
 
-  // El admin ve las tareas de todos los operadores; el operador, las suyas.
-  // El `ownerId` de la query es el filtro opcional de la interfaz —"ver solo
-  // las de fulano"— y solo se le hace caso al admin.
-  const filter: Record<string, unknown> = {
-    ...allowedOwnerFilter(user),
-    ...requestedOwnerFilter(user, ownerId),
-  };
-  if (status) filter.status = status;
-  if (type) filter.type = type;
-  if (profileId) filter.profileId = profileId;
-  if (search) filter.name = { $regex: escapeRegex(search), $options: "i" };
+  const filter = filtroDeTareas(user, { status, type, profileId, ownerId, search });
 
   // El dueño solo viaja cuando mira el admin: para un operador todas las
   // filas son suyas y el nombre sobraría en cada una.
