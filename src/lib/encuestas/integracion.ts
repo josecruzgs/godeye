@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
 import EncuestaLlamadaModel from "@/lib/models/EncuestaLlamada";
+import { huella } from "./cifrado";
 
 /**
  * LA PUERTA PARA OTRA PLATAFORMA (/api/encuestas/v1/*): se entra con `Authorization: Bearer <INTEGRACION_TOKEN>`.
@@ -23,9 +24,11 @@ export function noAutorizado(req: NextRequest) {
  */
 export async function frenoPorNumero(diez: string) {
   await dbConnect();
+  // Las llamadas de verdad no guardan el número: se cuentan por su huella.
+  const deEse = { huella: huella(diez) };
   const [reciente, enElDia] = await Promise.all([
-    EncuestaLlamadaModel.countDocuments({ telefono: diez, inicio: { $gte: new Date(Date.now() - 10 * 60_000) }, estado: { $ne: "NO_SALIO" } }),
-    EncuestaLlamadaModel.countDocuments({ telefono: diez, inicio: { $gte: new Date(Date.now() - 24 * 3600_000) }, estado: { $ne: "NO_SALIO" } }),
+    EncuestaLlamadaModel.countDocuments({ ...deEse, inicio: { $gte: new Date(Date.now() - 10 * 60_000) }, estado: { $ne: "NO_SALIO" } }),
+    EncuestaLlamadaModel.countDocuments({ ...deEse, inicio: { $gte: new Date(Date.now() - 24 * 3600_000) }, estado: { $ne: "NO_SALIO" } }),
   ]);
   if (reciente) return "A ese número ya se le llamó hace menos de 10 minutos.";
   if (enElDia >= 3) return "A ese número ya se le llamó 3 veces en las últimas 24 horas.";

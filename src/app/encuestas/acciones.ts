@@ -10,7 +10,7 @@ import {
   importarLlamadasDelAgente, llamarConAgente, iniciarTanda, seguirTanda, detenerTanda,
   fijarMetaDeContacto, quitarMetaDeContacto, metaDeContacto, horarioDeLlamadas, simultaneas,
 } from "@/lib/encuestas/agente_voz";
-import { cargarFilas, textoAFilas } from "@/lib/encuestas/base";
+import { cargarFilas, textoAFilas, filtroVisible } from "@/lib/encuestas/base";
 import { leerXlsx } from "@/lib/encuestas/xlsx";
 
 function volver(msg: string, ok = true, ancla = "", base = "/encuestas"): never {
@@ -107,7 +107,7 @@ export async function traerLlamadas() {
 
 /** SUBIR LA BASE: Excel, CSV o la columna de teléfonos pegada. */
 export async function subirBase(formData: FormData) {
-  await requireAdmin();
+  const s = await requireAdmin();
   const archivo = formData.get("archivo");
   const pegado = String(formData.get("pegado") ?? "");
   let filas: string[][] = [];
@@ -124,23 +124,28 @@ export async function subirBase(formData: FormData) {
     unstable_rethrow(e); // el redirect de volver() no es un error
     volver(e instanceof Error ? e.message : "No pude leer el archivo.", false, "#base");
   }
-  const r = await cargarFilas(filas, origen);
+  // Quien la sube es su dueño: solo él ve los nombres y los números (ver lib/encuestas/cifrado.ts).
+  const r = await cargarFilas(filas, origen, s.id);
   revalidatePath("/encuestas");
   if (!r.cargadas && !r.repetidas) volver(`No encontré teléfonos válidos (${n(r.leidas)} renglones leídos). Revisa que la columna traiga celulares de 10 dígitos.`, false, "#base");
   const partes = [`${n(r.cargadas)} ${r.cargadas === 1 ? "teléfono nuevo cargado" : "teléfonos nuevos cargados"} de ${n(r.leidas)} renglones.`];
   if (r.repetidas) partes.push(`${n(r.repetidas)} ${r.repetidas === 1 ? "ya estaba" : "ya estaban"} y no se duplicaron.`);
+  partes.push("Se guardaron cifrados: solo tú ves los nombres y los números.");
   if (r.sinTelefono) partes.push(`${n(r.sinTelefono)} sin celular válido quedaron fuera.`);
   volver(partes.join(" "), true, "", "/encuestas/base"); // directo a la lista, para ver lo que se cargó con nombre y número
 }
 
-/** Vaciar la lista. Las llamadas hechas y sus respuestas se quedan: lo que se va es la lista de teléfonos. */
+/**
+ * Vaciar la lista. Las llamadas hechas y sus respuestas se quedan: lo que se va es la lista de teléfonos.
+ * Cada quien vacía lo suyo (y lo compartido): la base que subió otro usuario no se le puede borrar desde aquí.
+ */
 export async function vaciarBase() {
-  await requireAdmin();
+  const s = await requireAdmin();
   await dbConnect();
   if (await EncuestaLlamadaModel.exists({ estado: "EN_CURSO" })) volver("Hay llamadas en la línea: deténlas y espera a que cuelguen antes de vaciar la base.", false, "#base");
   await detenerTanda();
   // Quien pidió que no le llamen se queda apuntado: vaciar la lista no puede volver a ponerlo a tiro.
-  const r = await EncuestaContactoModel.deleteMany({ estado: { $ne: "NO_LLAMAR" } });
+  const r = await EncuestaContactoModel.deleteMany({ estado: { $ne: "NO_LLAMAR" }, ...filtroVisible(s.id) });
   revalidatePath("/encuestas");
   volver(`Base vaciada: ${n(r.deletedCount)} teléfonos. Las encuestas hechas siguen guardadas, y quien pidió que no le llamen sigue apuntado.`, true, "#base");
 }

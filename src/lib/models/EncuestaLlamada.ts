@@ -21,7 +21,13 @@ const RespuestaSchema = new Schema(
 const EncuestaLlamadaSchema = new Schema(
   {
     cuestionarioId: { type: Schema.Types.ObjectId, ref: "EncuestaCuestionario", required: true },
+    /**
+     * El número en claro, SOLO en las de prueba (son los celulares del propio equipo). Las de verdad guardan su huella y
+     * los últimos 4 dígitos: una opinión ligada a un número es un dato personal (ver src/lib/encuestas/cifrado.ts).
+     */
     telefono: { type: String, default: null },
+    huella: { type: String, default: null },
+    telFin: { type: String, default: null },
     estado: { type: String, default: "EN_CURSO" },
     prueba: { type: Boolean, default: false },
     canal: { type: String, default: "AGENTE_IA" },
@@ -47,5 +53,6 @@ EncuestaLlamadaSchema.index({ cuestionarioId: 1, estado: 1 });
 EncuestaLlamadaSchema.index({ inicio: -1 });
 EncuestaLlamadaSchema.index({ prueba: 1, inicio: -1 });
 EncuestaLlamadaSchema.index({ telefono: 1, inicio: -1 });
+EncuestaLlamadaSchema.index({ huella: 1, inicio: -1 });
 
 export default models.EncuestaLlamada ?? model("EncuestaLlamada", EncuestaLlamadaSchema);

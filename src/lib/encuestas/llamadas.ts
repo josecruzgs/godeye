@@ -131,7 +131,9 @@ export async function cuestionarioActivo(): Promise<CuestionarioActivo | null> {
 
 export type Llamada = {
   id: string;
+  /** En claro solo en las de prueba; las de verdad traen los últimos 4 dígitos en `telFin`. */
   telefono: string | null;
+  telFin: string | null;
   estado: string;
   prueba: boolean;
   contactoId: string | null;
@@ -155,6 +157,7 @@ export function aLlamada(d: LlamadaDoc): Llamada {
   return {
     id: String(d._id),
     telefono: d.telefono ?? null,
+    telFin: d.telFin ?? null,
     estado: d.estado,
     prueba: !!d.prueba,
     contactoId: d.contactoId ? String(d.contactoId) : null,
@@ -256,10 +259,11 @@ export async function resultadosLlamadas(c: CuestionarioActivo, { conPruebas = f
  * solo se enseñan los últimos 4 dígitos, que bastan para distinguir cada llamada sin exponer a la persona. Las de prueba
  * son los celulares del propio equipo (los que se escriben en «Llamarme») y van completos.
  */
-export function telefonoVisible(l: { telefono: string | null; prueba: boolean }) {
+export function telefonoVisible(l: { telefono: string | null; telFin?: string | null; prueba: boolean }) {
   const t = (l.telefono ?? "").replace(/\D/g, "").slice(-10);
-  if (t.length < 10) return null;
-  return l.prueba ? `${t.slice(0, 3)} ${t.slice(3, 6)} ${t.slice(6)}` : `••• ••• ${t.slice(6)}`;
+  if (l.prueba && t.length === 10) return `${t.slice(0, 3)} ${t.slice(3, 6)} ${t.slice(6)}`;
+  const fin = l.telFin ?? (t.length === 10 ? t.slice(6) : null);
+  return fin ? `••• ••• ${fin}` : null;
 }
 
 /** Lo que contestó una persona, pregunta por pregunta. Sin nombre ni teléfono: la encuesta es anónima. */

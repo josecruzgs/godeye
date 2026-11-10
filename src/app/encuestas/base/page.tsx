@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { Users } from "lucide-react";
+import { Lock, Users } from "lucide-react";
 import EncuestaContactoModel from "@/lib/models/EncuestaContacto";
 import { dbConnect } from "@/lib/mongodb";
 import { requireAdmin } from "@/lib/encuestas/acceso";
 import { ESTADOS_LLAMADA } from "@/lib/encuestas/llamadas";
-import { estadoBase } from "@/lib/encuestas/base";
+import { estadoBase, contactoVisible, filtroVisible, type ContactoDoc } from "@/lib/encuestas/base";
 import { fechaHoraCorta } from "@/lib/encuestas/fechas";
 import { Carta, Pastilla, Aviso, n, INPUT, LABEL, BTN, BTN_PRIMARY } from "@/components/encuestas/ui";
 import PageHeader from "@/components/ui/PageHeader";
@@ -15,43 +15,46 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: `Base de teléfonos · ${BRAND_NAME}` };
 
 /**
- * LA BASE, CON NOMBRE Y NÚMERO. Es la lista que se subió para llamar: quién está, cómo le fue y cuántas veces se le marcó.
- * Admin y operador. Aquí no se enseña qué contestó cada quien: eso vive en las encuestas, sin nombre.
+ * LA BASE, CON NOMBRE Y NÚMERO, PERO SOLO PARA QUIEN LA SUBIÓ. Cada contacto se guarda cifrado y con dueño
+ * (lib/encuestas/cifrado.ts): aquí cada quien ve en claro lo suyo y lo compartido; lo que subió otro usuario sale con los
+ * últimos 4 dígitos y cómo le fue, sin nombre. Admin y operador. Lo que contestó cada quien no se enseña aquí: eso vive en
+ * las encuestas, sin nombre.
  */
 const POR_PAGINA = 50;
 const ROTULO: Record<string, string> = { PENDIENTE: "Sin llamar", NO_LLAMAR: "Pidió que no le llamen", ...Object.fromEntries(Object.entries(ESTADOS_LLAMADA).map(([k, v]) => [k, v.label])) };
 const COLOR: Record<string, string> = { PENDIENTE: "var(--primary)", NO_LLAMAR: "var(--status-critical)", ...Object.fromEntries(Object.entries(ESTADOS_LLAMADA).map(([k, v]) => [k, v.color])) };
 const tel = (t: string) => `${t.slice(0, 3)} ${t.slice(3, 6)} ${t.slice(6)}`;
-/** Lo que se escribe en el buscador va a una expresión regular: se escapa para que «(» o «.» se busquen tal cual. */
-const literal = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-type Fila = { _id: unknown; telefono: string; nombre: string | null; colonia: string | null; origen: string | null; estado: string; intentos: number; ultimoIntento: Date | null };
+const sinAcentos = (x: string) => x.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+const CAMPOS = "telefono telCifrado telFin nombreCifrado coloniaCifrada origenCifrado subidoPor estado intentos ultimoIntento createdAt";
 
 export default async function Base({ searchParams }: { searchParams: Promise<{ q?: string; estado?: string; p?: string; ok?: string; error?: string }> }) {
   const { q = "", estado = "", p = "1", ok, error } = await searchParams;
-  await requireAdmin();
+  const s = await requireAdmin();
   await dbConnect();
   const pagina = Math.max(1, parseInt(p) || 1);
   const busca = q.trim();
-  const digitos = busca.replace(/\D/g, "");
-  const where: Record<string, unknown> = {
-    ...(estado ? { estado } : {}),
-    ...(busca
-      ? {
-          $or: [
-            { nombre: { $regex: literal(busca), $options: "i" } },
-            { colonia: { $regex: literal(busca), $options: "i" } },
-            ...(digitos.length >= 3 ? [{ telefono: { $regex: digitos } }] : []),
-          ],
-        }
-      : {}),
-  };
-  const [base, total, filas] = await Promise.all([
-    estadoBase(),
-    EncuestaContactoModel.countDocuments(where),
-    EncuestaContactoModel.find(where).sort({ createdAt: -1, _id: 1 }).skip((pagina - 1) * POR_PAGINA).limit(POR_PAGINA).lean<Fila[]>(),
-  ]);
+  const porEstado = estado ? { estado } : {};
+  const base = await estadoBase();
+  const misContactos = await EncuestaContactoModel.countDocuments({ subidoPor: s.id });
+
+  // Sin búsqueda se pagina en Mongo. Con búsqueda no se puede: nombre, teléfono y colonia están cifrados. Se busca entonces
+  // solo en lo que este usuario puede ver en claro, descifrándolo aquí; lo de otros nunca aparece en una búsqueda (si
+  // apareciera, confirmaría que ese número o ese nombre está en una base ajena).
+  let total: number, filas: ReturnType<typeof contactoVisible>[];
+  if (busca) {
+    const t = sinAcentos(busca), digitos = busca.replace(/\D/g, "");
+    const todos = (await EncuestaContactoModel.find({ ...porEstado, ...filtroVisible(s.id) }).sort({ createdAt: -1, _id: 1 }).select(CAMPOS).lean<ContactoDoc[]>())
+      .map((c) => contactoVisible(c, s.id))
+      .filter((c) => (c.nombre && sinAcentos(c.nombre).includes(t)) || (c.colonia && sinAcentos(c.colonia).includes(t)) || (digitos.length >= 3 && c.telefono?.includes(digitos)));
+    total = todos.length;
+    filas = todos.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA);
+  } else {
+    total = await EncuestaContactoModel.countDocuments(porEstado);
+    filas = (await EncuestaContactoModel.find(porEstado).sort({ createdAt: -1, _id: 1 }).skip((pagina - 1) * POR_PAGINA).limit(POR_PAGINA).select(CAMPOS).lean<ContactoDoc[]>())
+      .map((c) => contactoVisible(c, s.id));
+  }
   const paginas = Math.max(1, Math.ceil(total / POR_PAGINA));
+  const ajenas = base.total - (await EncuestaContactoModel.countDocuments(filtroVisible(s.id)));
   const liga = (cambio: Record<string, string>) => {
     const u = new URLSearchParams({ ...(busca ? { q: busca } : {}), ...(estado ? { estado } : {}), ...cambio });
     for (const [k, v] of [...u.entries()]) if (!v) u.delete(k);
@@ -64,16 +67,25 @@ export default async function Base({ searchParams }: { searchParams: Promise<{ q
       <PageHeader
         icon={<Users className="h-4 w-4" />}
         title="La base de teléfonos"
-        subtitle={`${n(base.total)} personas cargadas · la lista a la que llama la asistente, con cómo le fue a cada quien`}
+        subtitle={`${n(base.total)} personas cargadas · ${n(misContactos)} las subiste tú · la lista a la que llama la asistente, con cómo le fue a cada quien`}
         right={<Link href="/encuestas" className={BTN}>← Volver al tablero</Link>}
       />
 
       <Aviso ok={ok} error={error} />
 
+      <div className="flex items-start gap-2.5 rounded-lg border border-hairline bg-surface-2 px-4 py-3 text-[13px] text-ink-muted">
+        <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+        <p>
+          Los nombres, teléfonos y colonias se guardan cifrados. <b className="text-ink">Cada quien ve en claro solo lo que subió</b>; de las bases de otros
+          usuarios (también los administradores) solo se ven los últimos 4 dígitos y cómo le fue a cada persona.
+          {ajenas > 0 && ` Aquí hay ${n(ajenas)} ${ajenas === 1 ? "persona" : "personas"} de bases ajenas: no salen en las búsquedas.`}
+        </p>
+      </div>
+
       <Carta>
         <form className="flex flex-wrap items-end gap-3" action="/encuestas/base">
           <div className="min-w-[220px] flex-1">
-            <label className={LABEL} htmlFor="q">Buscar por nombre, teléfono o colonia</label>
+            <label className={LABEL} htmlFor="q">Buscar en tu base por nombre, teléfono o colonia</label>
             <input id="q" name="q" defaultValue={busca} placeholder="Ej. García · 686 123 · Pueblo Nuevo" className={INPUT} />
           </div>
           {estado && <input type="hidden" name="estado" value={estado} />}
@@ -94,25 +106,29 @@ export default async function Base({ searchParams }: { searchParams: Promise<{ q
         {filas.length ? (
           <div className="-mx-1 overflow-x-auto px-1">
             <table className="enc-tabla">
-              <thead><tr><th className="num">#</th><th>Nombre</th><th>Teléfono</th><th>Colonia</th><th>Cómo va</th><th className="num">Llamadas</th><th>Última llamada</th><th>Archivo</th></tr></thead>
+              <thead><tr><th className="num">#</th><th>Nombre</th><th>Teléfono</th><th>Colonia</th><th>Cómo va</th><th className="num">Llamadas</th><th>Última llamada</th><th>Archivo</th><th>De quién</th></tr></thead>
               <tbody>
                 {filas.map((x, i) => (
-                  <tr key={String(x._id)}>
+                  <tr key={x.id}>
                     <td className="num text-ink-muted">{(pagina - 1) * POR_PAGINA + i + 1}</td>
-                    <td className="font-medium">{x.nombre ?? <span className="font-normal text-ink-muted">sin nombre</span>}</td>
-                    <td className="whitespace-nowrap font-mono text-[12.5px]">{tel(x.telefono)}</td>
+                    <td className="font-medium">
+                      {!x.abierto ? <span className="inline-flex items-center gap-1 font-normal text-ink-muted"><Lock className="h-3 w-3" /> privado</span>
+                        : x.nombre ?? <span className="font-normal text-ink-muted">sin nombre</span>}
+                    </td>
+                    <td className="whitespace-nowrap font-mono text-[12.5px]">{x.telefono ? tel(x.telefono) : <span className="text-ink-muted">••• ••• {x.telFin ?? "????"}</span>}</td>
                     <td>{x.colonia ?? <span className="text-ink-muted">—</span>}</td>
                     <td className="whitespace-nowrap"><Pastilla color={COLOR[x.estado] ?? "var(--text-muted)"}>{ROTULO[x.estado] ?? x.estado}</Pastilla></td>
                     <td className="num">{x.intentos}</td>
                     <td className="whitespace-nowrap text-[13px] text-ink-muted">{x.ultimoIntento ? fechaHoraCorta(new Date(x.ultimoIntento)) : "—"}</td>
                     <td className="max-w-[180px] truncate text-[12.5px] text-ink-muted" title={x.origen ?? ""}>{x.origen ?? "—"}</td>
+                    <td className="whitespace-nowrap text-[12.5px] text-ink-muted">{x.de === "mio" ? "Tú" : x.de === "compartida" ? "Compartida" : "Otro usuario"}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <p className="py-8 text-center text-[14px] text-ink-muted">{base.total ? "Nadie coincide con esa búsqueda." : "Todavía no hay nadie en la base. Súbela abajo."}</p>
+          <p className="py-8 text-center text-[14px] text-ink-muted">{base.total ? "Nadie de tu base coincide con esa búsqueda." : "Todavía no hay nadie en la base. Súbela abajo."}</p>
         )}
         {paginas > 1 && (
           <div className="mt-4 flex items-center justify-center gap-2 text-[14px] font-semibold">
@@ -123,7 +139,7 @@ export default async function Base({ searchParams }: { searchParams: Promise<{ q
         )}
       </Carta>
 
-      <Carta titulo="Subir más personas" subtitulo="Excel o CSV con columnas de nombre (o nombre y apellidos), teléfono y, si hay, colonia. Lo repetido no se duplica.">
+      <Carta titulo="Subir más personas" subtitulo="Excel o CSV con una columna de teléfono y, si hay, nombre (o nombre y apellidos) y colonia. Se guarda cifrado y solo tú lo ves en claro. Lo repetido no se duplica.">
         <form action={subirBase} className="flex flex-wrap items-end gap-3">
           <input name="archivo" type="file" accept=".xlsx,.csv,.txt,.tsv" className={`${INPUT} !w-auto min-w-[240px] flex-1 !py-1.5`} />
           <button className={BTN_PRIMARY}>Subir a la base</button>

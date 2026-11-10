@@ -1,5 +1,8 @@
+import { Types } from "mongoose";
 import { dbConnect } from "@/lib/mongodb";
 import EncuestaContactoModel from "@/lib/models/EncuestaContacto";
+import EncuestaLlamadaModel from "@/lib/models/EncuestaLlamada";
+import { cifrar, descifrar, huella, finDe, esHuella } from "./cifrado";
 
 /**
  * LA BASE A LA QUE SE LE VA A LLAMAR.
@@ -7,6 +10,9 @@ import EncuestaContactoModel from "@/lib/models/EncuestaContacto";
  * Entra como venga: Excel, CSV (con coma, punto y coma o tabulador) o la columna de teléfonos copiada y pegada. Lo que no
  * trae un celular válido no entra, y lo repetido no se duplica (se cuenta y se dice): un número que aparece dos veces se
  * llama dos veces, y eso es lo que hace que la gente cuelgue.
+ *
+ * Todo entra cifrado y con dueño (ver cifrado.ts y el modelo EncuestaContacto): solo quien subió la base ve los nombres
+ * y los números; los demás, admins incluidos, ven los últimos 4 dígitos y cómo le fue a cada quien.
  */
 export function celularValido(entrada: string | null | undefined): string | null {
   const t = (entrada ?? "").replace(/\D/g, "").replace(/^521(?=\d{10}$)/, "").replace(/^52(?=\d{10}$)/, "");
@@ -50,7 +56,7 @@ export function textoAFilas(texto: string): string[][] {
 
 export type ResumenCarga = { leidas: number; cargadas: number; repetidas: number; sinTelefono: number; columna: string | null };
 
-export async function cargarFilas(filas: string[][], origen: string): Promise<ResumenCarga> {
+export async function cargarFilas(filas: string[][], origen: string, subidoPor: string | null): Promise<ResumenCarga> {
   if (!filas.length) return { leidas: 0, cargadas: 0, repetidas: 0, sinTelefono: 0, columna: null };
   // ¿El primer renglón es encabezado? Si trae una columna que se llama «teléfono» (o parecido), sí.
   const enc = filas[0].map(limpio);
@@ -74,19 +80,26 @@ export async function cargarFilas(filas: string[][], origen: string): Promise<Re
   const iPat = conEncabezado ? idx("paterno") : -1, iMat = conEncabezado ? idx("materno") : -1, iAps = conEncabezado ? idx("apellidos") : -1;
   const nombreDe = (f: string[]) => [iNom, iAps, iPat, iMat].filter((k) => k >= 0).map((k) => (f[k] ?? "").trim()).filter(Boolean).join(" ").replace(/\s+/g, " ").slice(0, 160) || null;
 
+  await dbConnect();
+  await migrarACifrado();
+  const dueno = subidoPor && Types.ObjectId.isValid(subidoPor) ? new Types.ObjectId(subidoPor) : null;
+  const origenCifrado = cifrar(origen);
   const vistos = new Set<string>();
-  const nuevos: { telefono: string; nombre: string | null; colonia: string | null; origen: string }[] = [];
+  const nuevos: { telefono: string; [k: string]: unknown }[] = [];
   let repetidas = 0, sinTelefono = 0;
   for (const f of cuerpo) {
     const tel = celularValido(f[iTel]);
     if (!tel) { sinTelefono++; continue; }
     if (vistos.has(tel)) { repetidas++; continue; }
     vistos.add(tel);
-    nuevos.push({ telefono: tel, nombre: nombreDe(f), colonia: iCol >= 0 ? f[iCol] || null : null, origen });
+    nuevos.push({
+      telefono: huella(tel), telCifrado: cifrar(tel), telFin: finDe(tel),
+      nombreCifrado: cifrar(nombreDe(f)), coloniaCifrada: cifrar(iCol >= 0 ? (f[iCol] ?? "").trim() : null),
+      origenCifrado, subidoPor: dueno,
+    });
   }
   // Lo que ya estaba de una carga anterior no se toca: lo que ya se llamó, ya se llamó. Por eso es $setOnInsert y
-  // no un insert a secas: el número que ya existe se queda como estaba y solo cuenta como repetido.
-  await dbConnect();
+  // no un insert a secas: el número que ya existe se queda como estaba (y con su dueño) y solo cuenta como repetido.
   let cargadas = 0;
   for (let k = 0; k < nuevos.length; k += 500) {
     const r = await EncuestaContactoModel.bulkWrite(
@@ -101,11 +114,88 @@ export async function cargarFilas(filas: string[][], origen: string): Promise<Re
   return { leidas: cuerpo.length, cargadas, repetidas, sinTelefono, columna: conEncabezado ? filas[0][iTel] : null };
 }
 
+export type ContactoDoc = {
+  _id: Types.ObjectId; telefono: string; telCifrado?: string | null; telFin?: string | null;
+  nombreCifrado?: string | null; coloniaCifrada?: string | null; origenCifrado?: string | null; subidoPor?: Types.ObjectId | null;
+  estado: string; intentos: number; ultimoIntento: Date | null; createdAt?: Date;
+};
+
+/** De quién es un contacto, visto por `yo`: «mio», «compartida» (sin dueño) o «ajena» (la subió otro usuario). */
+export function duenoDe(c: Pick<ContactoDoc, "subidoPor">, yo: string): "mio" | "compartida" | "ajena" {
+  if (!c.subidoPor) return "compartida";
+  return String(c.subidoPor) === yo ? "mio" : "ajena";
+}
+
+/** Un contacto como lo puede ver `yo`: en claro si es suyo (o compartido), y si no, solo los últimos 4 dígitos. */
+export function contactoVisible(c: ContactoDoc, yo: string) {
+  const de = duenoDe(c, yo);
+  const abierto = de !== "ajena";
+  const tel = abierto ? descifrar(c.telCifrado) : null;
+  return {
+    id: String(c._id), de, abierto,
+    telefono: tel,
+    telFin: c.telFin ?? (tel ? finDe(tel) : null),
+    nombre: abierto ? descifrar(c.nombreCifrado) : null,
+    colonia: abierto ? descifrar(c.coloniaCifrada) : null,
+    origen: abierto ? descifrar(c.origenCifrado) : null,
+    estado: c.estado, intentos: c.intentos, ultimoIntento: c.ultimoIntento,
+  };
+}
+
+/** Lo que un usuario puede ver en claro: lo suyo y lo compartido. */
+export const filtroVisible = (yo: string) => ({ subidoPor: { $in: [null, ...(Types.ObjectId.isValid(yo) ? [new Types.ObjectId(yo)] : [])] } });
+
 /** Cómo va la base. */
 export async function estadoBase() {
   await dbConnect();
+  await migrarACifrado();
   const g = await EncuestaContactoModel.aggregate<{ _id: string; n: number }>([{ $group: { _id: "$estado", n: { $sum: 1 } } }]);
   const porEstado = Object.fromEntries(g.map((x) => [x._id, x.n])) as Record<string, number>;
   const total = g.reduce((a, x) => a + x.n, 0);
   return { total, porEstado };
+}
+
+/**
+ * PASAR A CIFRADO LO QUE YA ESTABA. Las bases cargadas antes de cifrar tienen el número, el nombre y la colonia en claro;
+ * aquí se cifran y quedan como base compartida (sin dueño: ya no se sabe quién las subió). Las llamadas de verdad se
+ * quedan con su huella y sus últimos 4 dígitos. Corre una vez por proceso y no hace nada si ya no queda nada en claro.
+ */
+let migrando: Promise<void> | null = null;
+export function migrarACifrado() {
+  migrando ??= hacerMigracion().catch((e) => { migrando = null; throw e; });
+  return migrando;
+}
+async function hacerMigracion() {
+  await dbConnect();
+  type Viejo = { _id: Types.ObjectId; telefono: string; nombre?: string | null; colonia?: string | null; origen?: string | null; estado: string };
+  const viejos = (await EncuestaContactoModel.collection
+    .find({ telefono: { $not: /^h1:/ } }, { projection: { telefono: 1, nombre: 1, colonia: 1, origen: 1, estado: 1 } })
+    .toArray()) as unknown as Viejo[];
+  for (const v of viejos) {
+    const tel = (v.telefono ?? "").replace(/\D/g, "").slice(-10);
+    if (tel.length !== 10 || esHuella(v.telefono)) continue;
+    const campos = {
+      telefono: huella(tel), telCifrado: cifrar(tel), telFin: finDe(tel),
+      nombreCifrado: cifrar(v.nombre ?? null), coloniaCifrada: cifrar(v.colonia ?? null), origenCifrado: cifrar(v.origen ?? null),
+      subidoPor: null,
+    };
+    try {
+      await EncuestaContactoModel.collection.updateOne({ _id: v._id }, { $set: campos, $unset: { nombre: "", colonia: "", origen: "" } });
+    } catch (e) {
+      if ((e as { code?: number }).code !== 11000) throw e;
+      // Ese número ya se volvió a subir cifrado: se queda el nuevo, y si el viejo pidió no ser llamado, el nuevo también.
+      if (v.estado === "NO_LLAMAR") await EncuestaContactoModel.collection.updateOne({ telefono: campos.telefono }, { $set: { estado: "NO_LLAMAR" } });
+      await EncuestaContactoModel.collection.deleteOne({ _id: v._id });
+    }
+  }
+  const llamadas = (await EncuestaLlamadaModel.collection
+    .find({ telefono: { $ne: null }, huella: null }, { projection: { telefono: 1, prueba: 1 } })
+    .toArray()) as unknown as { _id: Types.ObjectId; telefono: string; prueba?: boolean }[];
+  for (let k = 0; k < llamadas.length; k += 500) {
+    await EncuestaLlamadaModel.collection.bulkWrite(llamadas.slice(k, k + 500).map((l) => {
+      const tel = (l.telefono ?? "").replace(/\D/g, "").slice(-10);
+      return { updateOne: { filter: { _id: l._id }, update: { $set: { huella: huella(tel), telFin: finDe(tel), telefono: l.prueba ? tel : null } } } };
+    }), { ordered: false });
+  }
+  if (viejos.length || llamadas.length) console.log(`[encuestas] cifrado: ${viejos.length} contactos y ${llamadas.length} llamadas pasados a cifrado.`);
 }

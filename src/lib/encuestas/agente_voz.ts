@@ -5,6 +5,8 @@ import EncuestaContactoModel from "@/lib/models/EncuestaContacto";
 import EncuestaConfigModel from "@/lib/models/EncuestaConfig";
 import { cuestionarioActivo, leerOpciones, esDemo } from "./llamadas";
 import { ZONA } from "./fechas";
+import { huella, descifrar, cifrar, finDe, telefonoDeLlamada } from "./cifrado";
+import { migrarACifrado } from "./base";
 
 /**
  * LA ENCUESTA QUE LEVANTA LA ASISTENTE VIRTUAL.
@@ -58,7 +60,7 @@ type Detalle = {
   transcript?: { role?: string; message?: string | null }[];
 };
 
-type LlamadaAbierta = { _id: Types.ObjectId; estado: string; inicio: Date; contactoId: Types.ObjectId | null; telefono: string | null; respuestas?: { preguntaId: Types.ObjectId; valor: string }[] };
+type LlamadaAbierta = { _id: Types.ObjectId; estado: string; inicio: Date; contactoId: Types.ObjectId | null; telefono: string | null; huella?: string | null; respuestas?: { preguntaId: Types.ObjectId; valor: string }[] };
 
 /** Normaliza un texto para casar lo que dijo el agente con una opción de la lista («María José Núñez» = «maria jose nunez»). */
 export const clavear = (x: string) =>
@@ -69,6 +71,7 @@ export async function importarLlamadasDelAgente({ limite = 30 } = {}) {
   if (!hayAgenteDeVoz()) return { ok: false as const, error: "Falta la llave de ElevenLabs o el identificador del agente." };
   const c = await cuestionarioActivo();
   if (!c) return { ok: false as const, error: "No hay cuestionario cargado." };
+  await migrarACifrado();
 
   const lista = await fetch(`${API}/conversations?agent_id=${encodeURIComponent(agenteId())}&page_size=${limite}`, { headers: llaves(), cache: "no-store" });
   if (!lista.ok) return { ok: false as const, error: `ElevenLabs contestó ${lista.status} al pedir las pláticas.` };
@@ -113,7 +116,7 @@ export async function importarLlamadasDelAgente({ limite = 30 } = {}) {
     if (numeroNoPermitido && st === "failed") {
       const nota = "La línea telefónica no permite llamar a este número (permisos de Twilio).";
       if (ya) await EncuestaLlamadaModel.updateOne({ _id: ya._id }, { $set: { estado: "NO_SALIO", fin: new Date(), segundos: 0, notas: nota } });
-      else await EncuestaLlamadaModel.create({ cuestionarioId: c.id, prueba: true, estado: "NO_SALIO", externoId: id, telefono: tel, inicio: new Date(arranco), fin: new Date(), segundos: 0, notas: nota });
+      else await EncuestaLlamadaModel.create({ cuestionarioId: c.id, prueba: true, estado: "NO_SALIO", externoId: id, ...telefonoDeLlamada(tel, true), inicio: new Date(arranco), fin: new Date(), segundos: 0, notas: nota });
       if (tel) await apartarNumero(tel);
       nuevas++;
       continue;
@@ -121,9 +124,9 @@ export async function importarLlamadasDelAgente({ limite = 30 } = {}) {
     const noSalio = !sinRespuesta && ((st === "failed" && fallaDeSistema) || (st === "initiated" && Date.now() - arranco > 10 * 60_000));
     if (noSalio) {
       const nota = "No salió: la llamada no se pudo conectar.";
-      const contactoId = ya?.contactoId ?? (tel ? (await EncuestaContactoModel.findOne({ telefono: tel, estado: "EN_CURSO" }).select("_id").lean<{ _id: Types.ObjectId }>())?._id ?? null : null);
+      const contactoId = ya?.contactoId ?? (tel ? (await EncuestaContactoModel.findOne({ telefono: huella(tel), estado: "EN_CURSO" }).select("_id").lean<{ _id: Types.ObjectId }>())?._id ?? null : null);
       if (ya) await EncuestaLlamadaModel.updateOne({ _id: ya._id }, { $set: { estado: "NO_SALIO", fin: new Date(), segundos: 0, notas: nota } });
-      else await EncuestaLlamadaModel.create({ cuestionarioId: c.id, prueba: !contactoId, estado: "NO_SALIO", externoId: id, telefono: tel, contactoId, inicio: new Date(arranco), fin: new Date(), segundos: 0, notas: nota });
+      else await EncuestaLlamadaModel.create({ cuestionarioId: c.id, prueba: !contactoId, estado: "NO_SALIO", externoId: id, ...telefonoDeLlamada(tel, !contactoId), contactoId, inicio: new Date(arranco), fin: new Date(), segundos: 0, notas: nota });
       if (contactoId) await devolverContacto(contactoId);
       if (fallaDeSistema) await avisarFallaDeVoz(pago ? "PAGO" : "SERVICIO", motivo);
       nuevas++;
@@ -175,21 +178,27 @@ export async function importarLlamadasDelAgente({ limite = 30 } = {}) {
     const todas = [...porPregunta].map(([preguntaId, v]) => ({ preguntaId: new Types.ObjectId(preguntaId), valor: v }));
 
     // La que se abrió al marcar se llena; la que no (marcada desde la consola de ElevenLabs), se reconoce por el número.
-    const deLaBase = !ya && tel ? await EncuestaContactoModel.findOne({ telefono: tel, estado: "EN_CURSO" }).select("_id").lean<{ _id: Types.ObjectId }>() : null;
-    let llamadaId: Types.ObjectId, contactoId: Types.ObjectId | null, telefono: string | null;
+    const deLaBase = !ya && tel ? await EncuestaContactoModel.findOne({ telefono: huella(tel), estado: "EN_CURSO" }).select("_id").lean<{ _id: Types.ObjectId }>() : null;
+    // De la llamada que se abrió al marcar solo queda la huella (las de verdad no guardan el número en claro).
+    let llamadaId: Types.ObjectId, contactoId: Types.ObjectId | null, laHuella: string | null;
     if (ya) {
       await EncuestaLlamadaModel.updateOne({ _id: ya._id }, { $set: { ...datos, respuestas: todas } });
-      llamadaId = ya._id; contactoId = ya.contactoId ?? null; telefono = ya.telefono ?? null;
+      llamadaId = ya._id; contactoId = ya.contactoId ?? null; laHuella = ya.huella ?? (ya.telefono ? huella(ya.telefono) : tel ? huella(tel) : null);
     } else {
-      const l = await EncuestaLlamadaModel.create({ ...datos, respuestas: todas, cuestionarioId: c.id, prueba: !deLaBase, externoId: id, telefono: tel, contactoId: deLaBase?._id ?? null, versionGuion: c.version });
-      llamadaId = l._id; contactoId = deLaBase?._id ?? null; telefono = tel;
+      const l = await EncuestaLlamadaModel.create({ ...datos, respuestas: todas, cuestionarioId: c.id, prueba: !deLaBase, externoId: id, ...telefonoDeLlamada(tel, !deLaBase), contactoId: deLaBase?._id ?? null, versionGuion: c.version });
+      llamadaId = l._id; contactoId = deLaBase?._id ?? null; laHuella = tel ? huella(tel) : null;
     }
 
     await cerrarContacto(contactoId, noLlamar ? "NO_LLAMAR" : estado, llamadaId);
     // Quien pidió que no le llamen queda apuntado aunque su número no viniera de la base (lo mandó el panel o la API):
     // así ninguna llamada futura le vuelve a marcar.
-    if (noLlamar && !contactoId && telefono)
-      await EncuestaContactoModel.updateOne({ telefono }, { $set: { estado: "NO_LLAMAR" }, $setOnInsert: { origen: "pidió no llamar" } }, { upsert: true }).catch(() => null);
+    // Se apunta por la huella; sin dueño, porque no salió de la base de nadie.
+    if (noLlamar && !contactoId && laHuella)
+      await EncuestaContactoModel.updateOne(
+        { telefono: laHuella },
+        { $set: { estado: "NO_LLAMAR" }, $setOnInsert: { telCifrado: cifrar(tel), telFin: tel ? finDe(tel) : null, origenCifrado: cifrar("pidió no llamar"), subidoPor: null } },
+        { upsert: true },
+      ).catch(() => null);
     nuevas++;
   }
   return { ok: true as const, nuevas, saltadas, revisadas: ids.length, problemas };
@@ -235,7 +244,7 @@ async function avisarFallaDeVoz(tipo: string, motivo = "") {
 const esNumeroNoPermitido = (motivo: string) => /not authorized to call \+?\d|is not a valid phone number|invalid ['"]?to['"]? phone/i.test(motivo);
 /** Ese número no se puede marcar: sale de la fila como número malo (no cuenta en el total de la meta). */
 async function apartarNumero(tel: string) {
-  await EncuestaContactoModel.updateMany({ telefono: tel.slice(-10), estado: { $in: ["PENDIENTE", "NO_CONTESTO", "BUZON", "EN_CURSO"] } }, { $set: { estado: "NUMERO_MALO" } });
+  await EncuestaContactoModel.updateMany({ telefono: huella(tel), estado: { $in: ["PENDIENTE", "NO_CONTESTO", "BUZON", "EN_CURSO"] } }, { $set: { estado: "NUMERO_MALO" } });
 }
 async function quitarAvisoDeVoz(siConectoEn?: number) {
   if (siConectoEn !== undefined) {
@@ -263,7 +272,9 @@ export async function llamarConAgente(telefono: string, { prueba = true, operado
   if (!prueba && !horarioDeLlamadas().abierto) return { ok: false as const, error: fueraDeHorario() };
   const diez = digitos.slice(-10);
   // Quien pidió que no le llamen no recibe ninguna llamada, tampoco de prueba.
-  if (await EncuestaContactoModel.exists({ telefono: diez, estado: "NO_LLAMAR" }))
+  await migrarACifrado();
+  const laHuella = huella(diez);
+  if (await EncuestaContactoModel.exists({ telefono: laHuella, estado: "NO_LLAMAR" }))
     return { ok: false as const, error: "Esa persona pidió que no le volvieran a llamar." };
 
   const r = await fetch(`${API}/twilio/outbound-call`, {
@@ -278,12 +289,12 @@ export async function llamarConAgente(telefono: string, { prueba = true, operado
 
   // La llamada se abre en cuanto sale: cuenta como intento aunque no contesten y al colgar se llena sola. A la base solo se
   // liga lo real: una prueba a un número de la base no le gasta su intento.
-  const contacto = prueba ? null : await EncuestaContactoModel.findOne({ telefono: diez }).select("_id").lean<{ _id: Types.ObjectId }>();
+  const contacto = prueba ? null : await EncuestaContactoModel.findOne({ telefono: laHuella }).select("_id").lean<{ _id: Types.ObjectId }>();
   const l = await EncuestaLlamadaModel.create({
     cuestionarioId: c.id, prueba, estado: "EN_CURSO",
     // undefined y no null: el índice único de externoId es disperso, y dos null chocarían.
     externoId: cuerpo.conversation_id ?? undefined,
-    telefono: diez, contactoId: contacto?._id ?? null,
+    ...telefonoDeLlamada(diez, prueba), contactoId: contacto?._id ?? null,
     operadorId: operadorId && Types.ObjectId.isValid(operadorId) ? operadorId : null,
     versionGuion: c.version,
   });
@@ -300,7 +311,7 @@ export const simultaneas = () => Math.max(1, parseInt(process.env.ELEVENLABS_SIM
 const timbreSeg = () => Math.max(10, parseInt(process.env.LLAMADAS_TIMBRE_SEG ?? "") || 20);
 const lineasOcupadas = () => EncuestaLlamadaModel.countDocuments({ estado: "EN_CURSO", inicio: { $gte: new Date(Date.now() - 15 * 60_000) } });
 
-type ContactoFila = { _id: Types.ObjectId; telefono: string };
+type ContactoFila = { _id: Types.ObjectId; telefono: string; telCifrado?: string | null; telFin?: string | null };
 
 /** MARCAR EN LOTE DESDE LA BASE: primero los que nunca se llamaron y después los reintentos, con sus reglas. */
 export async function marcarEnLote({ cuantas = 10, operadorId = null }: { cuantas?: number; operadorId?: string | null } = {}) {
@@ -310,11 +321,11 @@ export async function marcarEnLote({ cuantas = 10, operadorId = null }: { cuanta
   const libres = Math.max(0, simultaneas() - (await lineasOcupadas()));
   const cupo = Math.min(cuantas, libres);
 
-  const primero = await EncuestaContactoModel.find({ estado: "PENDIENTE" }).sort({ intentos: 1, createdAt: 1 }).limit(Math.max(cupo, 1)).select("telefono").lean<ContactoFila[]>();
+  const primero = await EncuestaContactoModel.find({ estado: "PENDIENTE" }).sort({ intentos: 1, createdAt: 1 }).limit(Math.max(cupo, 1)).select("telefono telCifrado telFin").lean<ContactoFila[]>();
   const reglas = await reglasDeReintento();
   const reintentos = primero.length >= cupo ? [] : await EncuestaContactoModel.find({
     estado: { $in: ["NO_CONTESTO", "BUZON"] }, intentos: { $lt: reglas.intentosMax }, ultimoIntento: { $lt: new Date(Date.now() - reglas.esperaMin * 60_000) },
-  }).sort({ intentos: 1, ultimoIntento: 1 }).limit(Math.max(cupo, 1)).select("telefono").lean<ContactoFila[]>();
+  }).sort({ intentos: 1, ultimoIntento: 1 }).limit(Math.max(cupo, 1)).select("telefono telCifrado telFin").lean<ContactoFila[]>();
   const porMarcar = [...primero, ...reintentos];
 
   const marcadas: string[] = [];
@@ -323,13 +334,21 @@ export async function marcarEnLote({ cuantas = 10, operadorId = null }: { cuanta
   const tope = (await avisoDeVoz()) ? Math.min(1, cupo) : cupo;
   for (const c of porMarcar) {
     if (marcadas.length >= tope) break;
-    const r = await llamarConAgente(c.telefono, { prueba: false, operadorId });
-    if (!r.ok) {
-      if (esNumeroNoPermitido(r.error)) { await apartarNumero(c.telefono); saltadas.push({ telefono: c.telefono, porQue: "la línea no permite este número" }); continue; }
-      saltadas.push({ telefono: c.telefono, porQue: r.error.slice(0, 300) });
+    // El número se descifra aquí, para marcar, y no sale de esta vuelta: lo que se reporta son los últimos 4 dígitos.
+    const visible = `••• ${c.telFin ?? "????"}`;
+    const tel = descifrar(c.telCifrado);
+    if (!tel) {
+      await EncuestaContactoModel.updateOne({ _id: c._id }, { $set: { estado: "NUMERO_MALO" } });
+      saltadas.push({ telefono: visible, porQue: "no se pudo descifrar el número (¿cambió ENCUESTAS_CLAVE?)" });
       continue;
     }
-    marcadas.push(c.telefono);
+    const r = await llamarConAgente(tel, { prueba: false, operadorId });
+    if (!r.ok) {
+      if (esNumeroNoPermitido(r.error)) { await apartarNumero(tel); saltadas.push({ telefono: visible, porQue: "la línea no permite este número" }); continue; }
+      saltadas.push({ telefono: visible, porQue: r.error.slice(0, 300) });
+      continue;
+    }
+    marcadas.push(visible);
   }
   // Ninguna salió y todas porque la plataforma contestó con error: es una falla que se avisa, no «no hay a quién llamar».
   if (!marcadas.length && saltadas.length && saltadas.every((x) => /^ElevenLabs contestó/.test(x.porQue))) await avisarFallaDeVoz("SERVICIO", saltadas[0].porQue);
