@@ -363,6 +363,7 @@ export default async function Encuestas({ searchParams }: { searchParams: Promis
               <div className="flex flex-wrap items-center gap-3">
                 <button className={BTN_PRIMARY}>Subir a la base</button>
                 <span className="text-[12.5px] text-ink-muted">Celulares de 10 dígitos. Lo repetido y lo que ya estaba no se duplica.</span>
+                <a href="/encuestas/plantilla" className="text-[12.5px] font-semibold text-ink-muted underline">Descargar plantilla</a>
               </div>
             </form>
             {base.total > 0 && (

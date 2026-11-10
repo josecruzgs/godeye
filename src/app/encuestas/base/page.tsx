@@ -143,6 +143,7 @@ export default async function Base({ searchParams }: { searchParams: Promise<{ q
         <form action={subirBase} className="flex flex-wrap items-end gap-3">
           <input name="archivo" type="file" accept=".xlsx,.csv,.txt,.tsv" className={`${INPUT} !w-auto min-w-[240px] flex-1 !py-1.5`} />
           <button className={BTN_PRIMARY}>Subir a la base</button>
+          <a href="/encuestas/plantilla" className={BTN}>Descargar plantilla</a>
         </form>
       </Carta>
     </div>
