@@ -73,10 +73,10 @@ export default async function Base({ searchParams }: { searchParams: Promise<{ q
 
       <Aviso ok={ok} error={error} />
 
-      <div className="flex items-start gap-2.5 rounded-lg border border-hairline bg-surface-2 px-4 py-3 text-[13px] text-ink-muted">
-        <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+      <div className="flex items-start gap-3 rounded-lg border border-l-4 border-[color-mix(in_srgb,var(--status-warning)_55%,transparent)] border-l-[var(--status-warning)] bg-[color-mix(in_srgb,var(--status-warning)_16%,transparent)] px-4 py-3 text-[13.5px] text-ink">
+        <Lock className="mt-0.5 h-4 w-4 shrink-0 text-[var(--status-warning)]" />
         <p>
-          Los nombres, teléfonos y colonias se guardan cifrados. <b className="text-ink">Cada quien ve en claro solo lo que subió</b>; de las bases de otros
+          Los nombres, teléfonos y colonias se guardan cifrados. <b className="text-[var(--status-warning)]">Cada quien ve en claro solo lo que subió</b>; de las bases de otros
           usuarios (también los administradores) solo se ven los últimos 4 dígitos y cómo le fue a cada persona.
           {ajenas > 0 && ` Aquí hay ${n(ajenas)} ${ajenas === 1 ? "persona" : "personas"} de bases ajenas: no salen en las búsquedas.`}
         </p>
