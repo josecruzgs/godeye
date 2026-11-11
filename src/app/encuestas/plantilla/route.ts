@@ -12,12 +12,15 @@ import { NextResponse } from "next/server";
  *
  * El .xlsx se arma aquí, sin librerías: es un zip (sin comprimir) con seis XML.
  */
-// Todas van con formato de texto: así Excel no le quita los ceros a la izquierda a un ID ni a un distrito («05»), ni vuelve número el teléfono.
+// Todas van con formato de texto: así Excel no le quita los ceros a la izquierda a un ID, un distrito («05») o una sección («0123»), ni vuelve número el teléfono.
 const COLUMNAS = [
   { titulo: "ID", ancho: 14, texto: true },
   { titulo: "Teléfono", ancho: 16, texto: true },
   { titulo: "Municipio", ancho: 24, texto: true },
   { titulo: "Distrito", ancho: 14, texto: true },
+  { titulo: "Sección electoral", ancho: 18, texto: true },
+  // Cualquier dato que el cliente necesite y no tenga columna propia.
+  { titulo: "Otro", ancho: 30, texto: true },
 ];
 const LETRA = "ABCDEFGHIJ";
 

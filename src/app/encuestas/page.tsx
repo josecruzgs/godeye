@@ -22,8 +22,8 @@ const haceMin = (m: number) => new Date(Date.now() - m * 60_000);
 /** Margen de error al 95% para una proporción, en el peor caso (50%): lo que una casa encuestadora pone al pie. */
 const margen = (base: number) => (base >= 30 ? Math.round((98 / Math.sqrt(base)) * 10) / 10 : null);
 
-export default async function Encuestas({ searchParams }: { searchParams: Promise<{ ok?: string; error?: string; pruebas?: string; municipio?: string; distrito?: string }> }) {
-  const { ok, error, pruebas: verPruebas, municipio = "", distrito = "" } = await searchParams;
+export default async function Encuestas({ searchParams }: { searchParams: Promise<{ ok?: string; error?: string; pruebas?: string; municipio?: string; distrito?: string; seccion?: string }> }) {
+  const { ok, error, pruebas: verPruebas, municipio = "", distrito = "", seccion = "" } = await searchParams;
   const s = await requireSesion();
   const admin = s.admin;
   const c = await cuestionarioActivo();
@@ -32,14 +32,14 @@ export default async function Encuestas({ searchParams }: { searchParams: Promis
   // Las llamadas de prueba (las de «Llamarme») entran a las estadísticas si se pide, o solas mientras la campaña todavía
   // no tiene ninguna llamada: así se ve cómo quedan los resultados antes de arrancar. Siempre se dice cuántas son de prueba.
   const deCampana = await EncuestaLlamadaModel.countDocuments({ cuestionarioId: c.id, prueba: false, estado: { $nin: ["NO_SALIO", "EN_CURSO"] } });
-  // El filtro de municipio y distrito sale de la base que este usuario ve en claro (lo suyo y lo compartido): las opciones
+  // El filtro de municipio, distrito y sección sale de la base que este usuario ve en claro (lo suyo y lo compartido): las opciones
   // nunca enseñan lo de una base ajena. Con filtro no hay pruebas: esas llamadas no son de nadie de la base.
-  const seg = await segmentos(s.id, { municipio, distrito });
+  const seg = await segmentos(s.id, { municipio, distrito, seccion });
   const filtrado = !!seg.contactoIds;
-  const zona = [municipio && `Municipio: ${municipio}`, distrito && `Distrito: ${distrito}`].filter(Boolean).join(" · ");
+  const zona = [municipio && `Municipio: ${municipio}`, distrito && `Distrito: ${distrito}`, seccion && `Sección: ${seccion}`].filter(Boolean).join(" · ");
   const conPruebas = !filtrado && (verPruebas === "1" || (verPruebas !== "0" && deCampana === 0));
   const liga = (cambio: Record<string, string>) => {
-    const u = new URLSearchParams({ ...(municipio ? { municipio } : {}), ...(distrito ? { distrito } : {}), ...(verPruebas ? { pruebas: verPruebas } : {}), ...cambio });
+    const u = new URLSearchParams({ ...(municipio ? { municipio } : {}), ...(distrito ? { distrito } : {}), ...(seccion ? { seccion } : {}), ...(verPruebas ? { pruebas: verPruebas } : {}), ...cambio });
     for (const [k, v] of [...u.entries()]) if (!v) u.delete(k);
     return u.toString() ? `?${u}` : "";
   };
@@ -108,14 +108,14 @@ export default async function Encuestas({ searchParams }: { searchParams: Promis
         </Carta>
       )}
 
-      {(seg.municipios.length > 0 || seg.distritos.length > 0) && (
+      {(seg.municipios.length > 0 || seg.distritos.length > 0 || seg.secciones.length > 0) && (
         <form action="/encuestas" className={`flex flex-wrap items-end gap-3 rounded-xl border px-4 py-3 ${filtrado ? "border-primary/50 bg-primary/10" : "border-hairline bg-surface"}`}>
           <div className="min-w-0 flex-1 basis-56">
             <p className="text-[13px] font-semibold text-ink">{filtrado ? `Viendo solo ${zona}` : "Ver los resultados por zona"}</p>
             <p className="text-[12.5px] text-ink-muted">
               {filtrado
                 ? `${n(seg.contactoIds?.length ?? 0)} ${seg.contactoIds?.length === 1 ? "persona" : "personas"} de tu base. Las cifras, las gráficas y la descarga son solo de ellas.`
-                : "Municipio y distrito salen de la base que tú subiste (y de la compartida)."}
+                : "Municipio, distrito y sección salen de la base que tú subiste (y de la compartida)."}
             </p>
           </div>
           <div className="w-full sm:w-52">
@@ -130,6 +130,13 @@ export default async function Encuestas({ searchParams }: { searchParams: Promis
             <select id="f-distrito" name="distrito" defaultValue={distrito} className={INPUT}>
               <option value="">Todos</option>
               {seg.distritos.map((d) => <option key={d.clave} value={d.valor}>{d.valor} ({n(d.n)})</option>)}
+            </select>
+          </div>
+          <div className="w-full sm:w-40">
+            <label className={LABEL} htmlFor="f-seccion">Sección</label>
+            <select id="f-seccion" name="seccion" defaultValue={seccion} className={INPUT}>
+              <option value="">Todas</option>
+              {seg.secciones.map((x) => <option key={x.clave} value={x.valor}>{x.valor} ({n(x.n)})</option>)}
             </select>
           </div>
           <button className={BTN_PRIMARY}>Filtrar</button>

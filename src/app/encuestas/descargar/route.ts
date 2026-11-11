@@ -9,10 +9,10 @@ export const GET = withAuth(async (user, req: NextRequest) => {
   const c = await cuestionarioActivo();
   if (!c) return NextResponse.json({ error: "Sin cuestionario" }, { status: 404 });
   // Con ?pruebas=1 (lo que se esté viendo en el tablero) entran también las de prueba, marcadas en su columna.
-  // Con ?municipio= y ?distrito= (el filtro del tablero) solo entran las llamadas a esas personas de la base del usuario.
+  // Con ?municipio=, ?distrito= y ?seccion= (el filtro del tablero) solo entran las llamadas a esas personas de la base del usuario.
   const q = req.nextUrl.searchParams;
-  const municipio = q.get("municipio") ?? "", distrito = q.get("distrito") ?? "";
-  const { contactoIds } = municipio || distrito ? await segmentos(user.id, { municipio, distrito }) : { contactoIds: null };
+  const municipio = q.get("municipio") ?? "", distrito = q.get("distrito") ?? "", seccion = q.get("seccion") ?? "";
+  const { contactoIds } = municipio || distrito || seccion ? await segmentos(user.id, { municipio, distrito, seccion }) : { contactoIds: null };
   const r = await resultadosLlamadas(c, { conPruebas: !contactoIds && q.get("pruebas") === "1", contactoIds });
   const celda = (x: string | number | null | undefined) => `"${String(x ?? "").replace(/"/g, '""')}"`;
   const filas = [

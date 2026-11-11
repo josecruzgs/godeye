@@ -25,7 +25,7 @@ const ROTULO: Record<string, string> = { PENDIENTE: "Sin llamar", NO_LLAMAR: "Pi
 const COLOR: Record<string, string> = { PENDIENTE: "var(--primary)", NO_LLAMAR: "var(--status-critical)", ...Object.fromEntries(Object.entries(ESTADOS_LLAMADA).map(([k, v]) => [k, v.color])) };
 const tel = (t: string) => `${t.slice(0, 3)} ${t.slice(3, 6)} ${t.slice(6)}`;
 const sinAcentos = (x: string) => x.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-const CAMPOS = "telefono telCifrado telFin idCifrado municipioCifrado distritoCifrado origenCifrado subidoPor estado intentos ultimoIntento createdAt";
+const CAMPOS = "telefono telCifrado telFin idCifrado municipioCifrado distritoCifrado seccionCifrada otroCifrado origenCifrado subidoPor estado intentos ultimoIntento createdAt";
 
 export default async function Base({ searchParams }: { searchParams: Promise<{ q?: string; estado?: string; p?: string; ok?: string; error?: string }> }) {
   const { q = "", estado = "", p = "1", ok, error } = await searchParams;
@@ -37,7 +37,7 @@ export default async function Base({ searchParams }: { searchParams: Promise<{ q
   const base = await estadoBase();
   const misContactos = await EncuestaContactoModel.countDocuments({ subidoPor: s.id });
 
-  // Sin búsqueda se pagina en Mongo. Con búsqueda no se puede: ID, teléfono, municipio y distrito están cifrados. Se busca entonces
+  // Sin búsqueda se pagina en Mongo. Con búsqueda no se puede: todo lo de la persona está cifrado. Se busca entonces
   // solo en lo que este usuario puede ver en claro, descifrándolo aquí; lo de otros nunca aparece en una búsqueda (si
   // apareciera, confirmaría que ese número o ese ID está en una base ajena).
   let total: number, filas: ReturnType<typeof contactoVisible>[];
@@ -45,7 +45,7 @@ export default async function Base({ searchParams }: { searchParams: Promise<{ q
     const t = sinAcentos(busca), digitos = busca.replace(/\D/g, "");
     const todos = (await EncuestaContactoModel.find({ ...porEstado, ...filtroVisible(s.id) }).sort({ createdAt: -1, _id: 1 }).select(CAMPOS).lean<ContactoDoc[]>())
       .map((c) => contactoVisible(c, s.id))
-      .filter((c) => [c.idExterno, c.municipio, c.distrito].some((x) => x && sinAcentos(x).includes(t)) || (digitos.length >= 3 && c.telefono?.includes(digitos)));
+      .filter((c) => [c.idExterno, c.municipio, c.distrito, c.seccion, c.otro].some((x) => x && sinAcentos(x).includes(t)) || (digitos.length >= 3 && c.telefono?.includes(digitos)));
     total = todos.length;
     filas = todos.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA);
   } else {
@@ -85,7 +85,7 @@ export default async function Base({ searchParams }: { searchParams: Promise<{ q
       <Carta>
         <form className="flex flex-wrap items-end gap-3" action="/encuestas/base">
           <div className="min-w-[220px] flex-1">
-            <label className={LABEL} htmlFor="q">Buscar en tu base por ID, teléfono, municipio o distrito</label>
+            <label className={LABEL} htmlFor="q">Buscar en tu base por ID, teléfono, municipio, distrito, sección u otro dato</label>
             <input id="q" name="q" defaultValue={busca} placeholder="Ej. 10234 · 686 123 · Mexicali · 05" className={INPUT} />
           </div>
           {estado && <input type="hidden" name="estado" value={estado} />}
@@ -106,7 +106,7 @@ export default async function Base({ searchParams }: { searchParams: Promise<{ q
         {filas.length ? (
           <div className="-mx-1 overflow-x-auto px-1">
             <table className="enc-tabla">
-              <thead><tr><th className="num">#</th><th>ID</th><th>Teléfono</th><th>Municipio</th><th>Distrito</th><th>Cómo va</th><th className="num">Llamadas</th><th>Última llamada</th><th>Archivo</th><th>De quién</th></tr></thead>
+              <thead><tr><th className="num">#</th><th>ID</th><th>Teléfono</th><th>Municipio</th><th>Distrito</th><th>Sección</th><th>Otro</th><th>Cómo va</th><th className="num">Llamadas</th><th>Última llamada</th><th>Archivo</th><th>De quién</th></tr></thead>
               <tbody>
                 {filas.map((x, i) => (
                   <tr key={x.id}>
@@ -118,6 +118,8 @@ export default async function Base({ searchParams }: { searchParams: Promise<{ q
                     <td className="whitespace-nowrap font-mono text-[12.5px]">{x.telefono ? tel(x.telefono) : <span className="text-ink-muted">••• ••• {x.telFin ?? "????"}</span>}</td>
                     <td>{x.municipio ?? <span className="text-ink-muted">—</span>}</td>
                     <td className="whitespace-nowrap">{x.distrito ?? <span className="text-ink-muted">—</span>}</td>
+                    <td className="whitespace-nowrap">{x.seccion ?? <span className="text-ink-muted">—</span>}</td>
+                    <td className="max-w-[200px] truncate text-[13px]" title={x.otro ?? ""}>{x.otro ?? <span className="text-ink-muted">—</span>}</td>
                     <td className="whitespace-nowrap"><Pastilla color={COLOR[x.estado] ?? "var(--text-muted)"}>{ROTULO[x.estado] ?? x.estado}</Pastilla></td>
                     <td className="num">{x.intentos}</td>
                     <td className="whitespace-nowrap text-[13px] text-ink-muted">{x.ultimoIntento ? fechaHoraCorta(new Date(x.ultimoIntento)) : "—"}</td>
@@ -140,7 +142,7 @@ export default async function Base({ searchParams }: { searchParams: Promise<{ q
         )}
       </Carta>
 
-      <Carta titulo="Subir más personas" subtitulo="Excel con las columnas ID, Teléfono, Municipio y Distrito (baja la plantilla). Se guarda cifrado y solo tú lo ves en claro. Lo repetido no se duplica.">
+      <Carta titulo="Subir más personas" subtitulo="Excel con las columnas ID, Teléfono, Municipio, Distrito, Sección electoral y Otro (baja la plantilla). Se guarda cifrado y solo tú lo ves en claro. Lo repetido no se duplica.">
         <form action={subirBase} className="flex flex-wrap items-end gap-3">
           <input name="archivo" type="file" accept=".xlsx,.csv,.txt,.tsv" className={`${INPUT} !w-auto min-w-[240px] flex-1 !py-1.5`} />
           <button className={BTN_PRIMARY}>Subir a la base</button>

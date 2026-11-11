@@ -6,8 +6,8 @@ import { Schema, models, model } from "mongoose";
  * Nada personal va en claro (ver src/lib/encuestas/cifrado.ts):
  * - `telefono` NO es el número: es su huella («h1:…»). Se quedó con ese nombre para conservar el índice único que ya
  *   existía en producción; es lo que evita duplicados y liga cada llamada con su contacto.
- * - `telCifrado`, `idCifrado`, `municipioCifrado` y `distritoCifrado` son lo que se subió (las columnas de la base:
- *   ID, Teléfono, Municipio, Distrito), cifrado. Solo se descifra para marcar y para enseñárselo a quien lo subió.
+ * - `telCifrado`, `idCifrado`, `municipioCifrado`, `distritoCifrado`, `seccionCifrada` y `otroCifrado` son lo que se
+ *   subió (las columnas de la base: ID, Teléfono, Municipio, Distrito, Sección electoral y Otro), cifrado. Solo se descifra para marcar y para enseñárselo a quien lo subió.
  * - `nombreCifrado` y `coloniaCifrada` son de las bases de antes, que traían nombre y colonia: ya no se piden ni se
  *   enseñan, y solo existen para que esos datos viejos no queden en claro.
  * - `telFin` son los últimos 4 dígitos, lo único que ven los demás.
@@ -27,6 +27,9 @@ const EncuestaContactoSchema = new Schema(
     idCifrado: { type: String, default: null },
     municipioCifrado: { type: String, default: null },
     distritoCifrado: { type: String, default: null },
+    seccionCifrada: { type: String, default: null },
+    /** «Otro»: cualquier dato que el cliente necesite y que no tenga columna propia. Se guarda tal cual. */
+    otroCifrado: { type: String, default: null },
     nombreCifrado: { type: String, default: null },
     coloniaCifrada: { type: String, default: null },
     subidoPor: { type: Schema.Types.ObjectId, ref: "User", default: null },

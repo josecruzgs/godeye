@@ -23,12 +23,14 @@ export function celularValido(entrada: string | null | undefined): string | null
   return t;
 }
 
-/** Las columnas de la base: ID, Teléfono, Municipio y Distrito (la plantilla está en /encuestas/plantilla). */
+/** Las columnas de la base: ID, Teléfono, Municipio, Distrito, Sección electoral y Otro (la plantilla está en /encuestas/plantilla). */
 const SINONIMOS: Record<string, string[]> = {
   telefono: ["telefono", "tel", "celular", "cel", "movil", "numero", "phone", "whatsapp", "telefonocelular", "numerodetelefono"],
   id: ["id", "folio", "clave", "identificador", "idcontacto", "idpersona", "consecutivo", "registro"],
   municipio: ["municipio", "mpio", "mun", "ciudad"],
   distrito: ["distrito", "dto", "dist", "distritoelectoral", "distritolocal", "distritofederal"],
+  seccion: ["seccion", "seccionelectoral", "secc", "sec", "seccional"],
+  otro: ["otro", "otros", "otrodato", "otrosdatos", "dato", "datoadicional", "extra", "notas", "observaciones", "comentarios"],
 };
 const limpio = (x: string) => x.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "");
 
@@ -75,7 +77,8 @@ export async function cargarFilas(filas: string[][], origen: string, subidoPor: 
   }
   if (iTel < 0) return { leidas: cuerpo.length, cargadas: 0, repetidas: 0, sinTelefono: cuerpo.length, columna: null };
   const iId = conEncabezado ? idx("id") : -1, iMun = conEncabezado ? idx("municipio") : -1, iDis = conEncabezado ? idx("distrito") : -1;
-  const celda = (f: string[], k: number) => (k >= 0 ? (f[k] ?? "").trim().slice(0, 120) || null : null);
+  const iSec = conEncabezado ? idx("seccion") : -1, iOtro = conEncabezado ? idx("otro") : -1;
+  const celda = (f: string[], k: number, largo = 120) => (k >= 0 ? (f[k] ?? "").trim().slice(0, largo) || null : null);
 
   await dbConnect();
   await migrarACifrado();
@@ -92,6 +95,7 @@ export async function cargarFilas(filas: string[][], origen: string, subidoPor: 
     nuevos.push({
       telefono: huella(tel), telCifrado: cifrar(tel), telFin: finDe(tel),
       idCifrado: cifrar(celda(f, iId)), municipioCifrado: cifrar(celda(f, iMun)), distritoCifrado: cifrar(celda(f, iDis)),
+      seccionCifrada: cifrar(celda(f, iSec)), otroCifrado: cifrar(celda(f, iOtro, 500)),
       origenCifrado, subidoPor: dueno,
     });
   }
@@ -113,7 +117,7 @@ export async function cargarFilas(filas: string[][], origen: string, subidoPor: 
 
 export type ContactoDoc = {
   _id: Types.ObjectId; telefono: string; telCifrado?: string | null; telFin?: string | null;
-  idCifrado?: string | null; municipioCifrado?: string | null; distritoCifrado?: string | null; origenCifrado?: string | null; subidoPor?: Types.ObjectId | null;
+  idCifrado?: string | null; municipioCifrado?: string | null; distritoCifrado?: string | null; seccionCifrada?: string | null; otroCifrado?: string | null; origenCifrado?: string | null; subidoPor?: Types.ObjectId | null;
   estado: string; intentos: number; ultimoIntento: Date | null; createdAt?: Date;
 };
 
@@ -135,6 +139,8 @@ export function contactoVisible(c: ContactoDoc, yo: string) {
     idExterno: abierto ? descifrar(c.idCifrado) : null,
     municipio: abierto ? descifrar(c.municipioCifrado) : null,
     distrito: abierto ? descifrar(c.distritoCifrado) : null,
+    seccion: abierto ? descifrar(c.seccionCifrada) : null,
+    otro: abierto ? descifrar(c.otroCifrado) : null,
     origen: abierto ? descifrar(c.origenCifrado) : null,
     estado: c.estado, intentos: c.intentos, ultimoIntento: c.ultimoIntento,
   };
@@ -144,9 +150,9 @@ export function contactoVisible(c: ContactoDoc, yo: string) {
 export const filtroVisible = (yo: string) => ({ subidoPor: { $in: [null, ...(Types.ObjectId.isValid(yo) ? [new Types.ObjectId(yo)] : [])] } });
 
 /**
- * FILTRAR LOS RESULTADOS POR MUNICIPIO Y DISTRITO.
+ * FILTRAR LOS RESULTADOS POR MUNICIPIO, DISTRITO Y SECCIÓN ELECTORAL.
  *
- * Municipio y distrito están cifrados, así que no se pueden agrupar en Mongo: se descifran aquí, y solo los de las bases
+ * Municipio, distrito y sección están cifrados, así que no se pueden agrupar en Mongo: se descifran aquí, y solo los de las bases
  * que `yo` puede ver en claro (lo suyo y lo compartido). Así las opciones del filtro nunca enseñan los municipios de una
  * base ajena. Devuelve las opciones con cuántas personas tiene cada una y, si se eligió algo, los contactos que entran,
  * para filtrar las llamadas por su `contactoId`.
@@ -154,12 +160,18 @@ export const filtroVisible = (yo: string) => ({ subidoPor: { $in: [null, ...(Typ
  * Se agrupa sin distinguir mayúsculas, acentos ni espacios («Tijuana», «TIJUANA », «tijuána» son uno) y se enseña la
  * forma más común.
  */
-export async function segmentos(yo: string, elegido: { municipio?: string; distrito?: string }) {
+export async function segmentos(yo: string, elegido: { municipio?: string; distrito?: string; seccion?: string }) {
   await dbConnect();
   const clave = (x: string) => x.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ");
-  const filas = (await EncuestaContactoModel.find({ ...filtroVisible(yo), $or: [{ municipioCifrado: { $ne: null } }, { distritoCifrado: { $ne: null } }] })
-    .select("municipioCifrado distritoCifrado").lean<{ _id: Types.ObjectId; municipioCifrado?: string | null; distritoCifrado?: string | null }[]>())
-    .map((c) => ({ _id: c._id, municipio: descifrar(c.municipioCifrado)?.trim() || null, distrito: descifrar(c.distritoCifrado)?.trim() || null }));
+  const filas = (await EncuestaContactoModel.find({ ...filtroVisible(yo), $or: [{ municipioCifrado: { $ne: null } }, { distritoCifrado: { $ne: null } }, { seccionCifrada: { $ne: null } }] })
+    .select("municipioCifrado distritoCifrado seccionCifrada")
+    .lean<{ _id: Types.ObjectId; municipioCifrado?: string | null; distritoCifrado?: string | null; seccionCifrada?: string | null }[]>())
+    .map((c) => ({
+      _id: c._id,
+      municipio: descifrar(c.municipioCifrado)?.trim() || null,
+      distrito: descifrar(c.distritoCifrado)?.trim() || null,
+      seccion: descifrar(c.seccionCifrada)?.trim() || null,
+    }));
 
   const contar = (valores: (string | null)[]) => {
     const grupos = new Map<string, { n: number; formas: Map<string, number> }>();
@@ -173,12 +185,16 @@ export async function segmentos(yo: string, elegido: { municipio?: string; distr
       .sort((a, b) => a.valor.localeCompare(b.valor, "es", { numeric: true }));
   };
   const mun = elegido.municipio ? clave(elegido.municipio) : "", dis = elegido.distrito ? clave(elegido.distrito) : "";
-  const delMunicipio = mun ? filas.filter((c) => c.municipio && clave(c.municipio) === mun) : filas;
+  const sec = elegido.seccion ? clave(elegido.seccion) : "";
+  const es = (v: string | null, k: string) => !k || (!!v && clave(v) === k);
+  // Cada lista ofrece solo lo que cabe en lo elegido arriba: los distritos del municipio, las secciones del distrito.
+  const delMunicipio = filas.filter((c) => es(c.municipio, mun));
+  const delDistrito = delMunicipio.filter((c) => es(c.distrito, dis));
   return {
     municipios: contar(filas.map((c) => c.municipio)),
-    // Los distritos que se ofrecen son los del municipio elegido: un distrito de otro municipio daría cero.
     distritos: contar(delMunicipio.map((c) => c.distrito)),
-    contactoIds: mun || dis ? delMunicipio.filter((c) => !dis || (c.distrito && clave(c.distrito) === dis)).map((c) => c._id) : null,
+    secciones: contar(delDistrito.map((c) => c.seccion)),
+    contactoIds: mun || dis || sec ? delDistrito.filter((c) => es(c.seccion, sec)).map((c) => c._id) : null,
   };
 }
 
