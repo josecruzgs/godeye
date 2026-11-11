@@ -5,7 +5,7 @@ import EncuestaContactoModel from "@/lib/models/EncuestaContacto";
 import { requireSesion } from "@/lib/encuestas/acceso";
 import { cuestionarioActivo, resultadosLlamadas, respuestasDe, telefonoVisible, buscarLlamadas, ESTADOS_LLAMADA, leerOpciones } from "@/lib/encuestas/llamadas";
 import { hayAgenteDeVoz, estadoTanda, horarioDeLlamadas, avisoDeVoz, metaDeContacto, simultaneas } from "@/lib/encuestas/agente_voz";
-import { estadoBase } from "@/lib/encuestas/base";
+import { estadoBase, segmentos } from "@/lib/encuestas/base";
 import { COLOR_OPCION, COLOR_PERSONA } from "@/lib/encuestas/encuesta";
 import { fechaHoraCorta, mmss } from "@/lib/encuestas/fechas";
 import { Carta, Kpi, Barra, Pastilla, Aviso, n, INPUT, LABEL, BTN, BTN_PRIMARY } from "@/components/encuestas/ui";
@@ -22,8 +22,8 @@ const haceMin = (m: number) => new Date(Date.now() - m * 60_000);
 /** Margen de error al 95% para una proporción, en el peor caso (50%): lo que una casa encuestadora pone al pie. */
 const margen = (base: number) => (base >= 30 ? Math.round((98 / Math.sqrt(base)) * 10) / 10 : null);
 
-export default async function Encuestas({ searchParams }: { searchParams: Promise<{ ok?: string; error?: string; pruebas?: string }> }) {
-  const { ok, error, pruebas: verPruebas } = await searchParams;
+export default async function Encuestas({ searchParams }: { searchParams: Promise<{ ok?: string; error?: string; pruebas?: string; municipio?: string; distrito?: string }> }) {
+  const { ok, error, pruebas: verPruebas, municipio = "", distrito = "" } = await searchParams;
   const s = await requireSesion();
   const admin = s.admin;
   const c = await cuestionarioActivo();
@@ -32,9 +32,19 @@ export default async function Encuestas({ searchParams }: { searchParams: Promis
   // Las llamadas de prueba (las de «Llamarme») entran a las estadísticas si se pide, o solas mientras la campaña todavía
   // no tiene ninguna llamada: así se ve cómo quedan los resultados antes de arrancar. Siempre se dice cuántas son de prueba.
   const deCampana = await EncuestaLlamadaModel.countDocuments({ cuestionarioId: c.id, prueba: false, estado: { $nin: ["NO_SALIO", "EN_CURSO"] } });
-  const conPruebas = verPruebas === "1" || (verPruebas !== "0" && deCampana === 0);
+  // El filtro de municipio y distrito sale de la base que este usuario ve en claro (lo suyo y lo compartido): las opciones
+  // nunca enseñan lo de una base ajena. Con filtro no hay pruebas: esas llamadas no son de nadie de la base.
+  const seg = await segmentos(s.id, { municipio, distrito });
+  const filtrado = !!seg.contactoIds;
+  const zona = [municipio && `Municipio: ${municipio}`, distrito && `Distrito: ${distrito}`].filter(Boolean).join(" · ");
+  const conPruebas = !filtrado && (verPruebas === "1" || (verPruebas !== "0" && deCampana === 0));
+  const liga = (cambio: Record<string, string>) => {
+    const u = new URLSearchParams({ ...(municipio ? { municipio } : {}), ...(distrito ? { distrito } : {}), ...(verPruebas ? { pruebas: verPruebas } : {}), ...cambio });
+    for (const [k, v] of [...u.entries()]) if (!v) u.delete(k);
+    return u.toString() ? `?${u}` : "";
+  };
   const [real, enLinea, tanda, base, meta, aviso, pruebas] = await Promise.all([
-    resultadosLlamadas(c, { conPruebas }),
+    resultadosLlamadas(c, { conPruebas, contactoIds: seg.contactoIds }),
     EncuestaLlamadaModel.countDocuments({ estado: "EN_CURSO", inicio: { $gte: haceMin(30) } }),
     estadoTanda(),
     estadoBase(),
@@ -98,7 +108,36 @@ export default async function Encuestas({ searchParams }: { searchParams: Promis
         </Carta>
       )}
 
-      <section className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 ${conPruebas ? "border-warning/40 bg-warning/10" : "border-hairline bg-surface"}`}>
+      {(seg.municipios.length > 0 || seg.distritos.length > 0) && (
+        <form action="/encuestas" className={`flex flex-wrap items-end gap-3 rounded-xl border px-4 py-3 ${filtrado ? "border-primary/50 bg-primary/10" : "border-hairline bg-surface"}`}>
+          <div className="min-w-0 flex-1 basis-56">
+            <p className="text-[13px] font-semibold text-ink">{filtrado ? `Viendo solo ${zona}` : "Ver los resultados por zona"}</p>
+            <p className="text-[12.5px] text-ink-muted">
+              {filtrado
+                ? `${n(seg.contactoIds?.length ?? 0)} ${seg.contactoIds?.length === 1 ? "persona" : "personas"} de tu base. Las cifras, las gráficas y la descarga son solo de ellas.`
+                : "Municipio y distrito salen de la base que tú subiste (y de la compartida)."}
+            </p>
+          </div>
+          <div className="w-full sm:w-52">
+            <label className={LABEL} htmlFor="f-municipio">Municipio</label>
+            <select id="f-municipio" name="municipio" defaultValue={municipio} className={INPUT}>
+              <option value="">Todos</option>
+              {seg.municipios.map((m) => <option key={m.clave} value={m.valor}>{m.valor} ({n(m.n)})</option>)}
+            </select>
+          </div>
+          <div className="w-full sm:w-40">
+            <label className={LABEL} htmlFor="f-distrito">Distrito</label>
+            <select id="f-distrito" name="distrito" defaultValue={distrito} className={INPUT}>
+              <option value="">Todos</option>
+              {seg.distritos.map((d) => <option key={d.clave} value={d.valor}>{d.valor} ({n(d.n)})</option>)}
+            </select>
+          </div>
+          <button className={BTN_PRIMARY}>Filtrar</button>
+          {filtrado && <Link href="/encuestas" className="pb-2.5 text-[13px] font-semibold text-ink-muted underline">Quitar filtro</Link>}
+        </form>
+      )}
+
+      {!filtrado && <section className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 ${conPruebas ? "border-warning/40 bg-warning/10" : "border-hairline bg-surface"}`}>
         <p className={`text-[13px] ${conPruebas ? "text-warning" : "text-ink-muted"}`}>
           {conPruebas ? (
             <>
@@ -113,13 +152,13 @@ export default async function Encuestas({ searchParams }: { searchParams: Promis
           <Link href="/encuestas?pruebas=0" className={`rounded-md px-3 py-1 ${!conPruebas ? "bg-primary text-primary-fg" : "text-ink-muted"}`} aria-selected={!conPruebas} role="tab">Solo campaña</Link>
           <Link href="/encuestas?pruebas=1" className={`rounded-md px-3 py-1 ${conPruebas ? "bg-warning text-white" : "text-ink-muted"}`} aria-selected={conPruebas} role="tab">Con pruebas</Link>
         </div>
-      </section>
+      </section>}
 
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Kpi etiqueta="Llamadas hechas" valor={n(real.intentos)} pie={`${conPruebas ? `incluye ${n(real.pruebas)} de prueba` : "a personas de la base"}${enLinea ? ` · ${enLinea} en la línea` : ""}`} />
+        <Kpi etiqueta="Llamadas hechas" valor={n(real.intentos)} pie={`${conPruebas ? `incluye ${n(real.pruebas)} de prueba` : filtrado ? zona : "a personas de la base"}${enLinea ? ` · ${enLinea} en la línea` : ""}`} />
         <Kpi etiqueta="Contestaron" valor={n(real.contestaron)} pie={real.intentos ? `${Math.round((real.contestaron / real.intentos) * 100)} de cada 100 llamadas` : "—"} color="var(--teal)" />
         <Kpi etiqueta="Encuestas completas" valor={n(real.completas)} pie={real.duracionMedia ? `duran ${mmss(real.duracionMedia)} en promedio` : "contestaron todas las preguntas"} color="var(--status-good)" />
-        <Kpi etiqueta="Faltan por llamar" valor={n(pendientes + reintentables)} pie={reintentables ? `${n(reintentables)} son para volver a marcar` : base.total ? `de ${n(base.total)} en la base` : "sube la base para empezar"} color="#7c8aa5" />
+        <Kpi etiqueta="Faltan por llamar" valor={n(pendientes + reintentables)} pie={`${reintentables ? `${n(reintentables)} son para volver a marcar` : base.total ? `de ${n(base.total)} en la base` : "sube la base para empezar"}${filtrado ? " · de toda la base" : ""}`} color="#7c8aa5" />
       </section>
 
       {admin && (
@@ -266,7 +305,7 @@ export default async function Encuestas({ searchParams }: { searchParams: Promis
         extra={
           <div className="flex flex-wrap gap-2">
             {hechas.length > 0 && (
-              <a href={`/encuestas/descargar${conPruebas ? "?pruebas=1" : ""}`} className={BTN}>
+              <a href={`/encuestas/descargar${liga({ pruebas: conPruebas ? "1" : "" })}`} className={BTN}>
                 <Download className="h-3.5 w-3.5" /> Descargar Excel (CSV)
               </a>
             )}

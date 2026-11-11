@@ -187,12 +187,15 @@ export async function buscarLlamadas(filtro: Record<string, unknown>, { limite }
  * segunda, no dijo «ninguno», simplemente no dijo. Confundir esas dos cosas es la manera más fácil de que una encuesta
  * mienta.
  */
-export async function resultadosLlamadas(c: CuestionarioActivo, { conPruebas = false } = {}) {
+export async function resultadosLlamadas(c: CuestionarioActivo, { conPruebas = false, contactoIds = null }: { conPruebas?: boolean; contactoIds?: Types.ObjectId[] | null } = {}) {
   // Con «conPruebas» entran también las llamadas de prueba, para enseñar cómo se ven los resultados antes de que
   // arranque la campaña. El tablero siempre dice cuántas son de prueba.
+  // Con «contactoIds» (el filtro de municipio y distrito, ver segmentos() en base.ts) solo entran las llamadas a esas
+  // personas; las de prueba nunca se ligan a un contacto, así que con filtro quedan fuera solas.
   const llamadas = await buscarLlamadas({
     cuestionarioId: c.id,
     ...(conPruebas ? {} : { prueba: false }),
+    ...(contactoIds ? { contactoId: { $in: contactoIds } } : {}),
     estado: { $ne: "NO_SALIO" },
   });
 

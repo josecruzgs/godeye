@@ -2,13 +2,18 @@ import { NextResponse, type NextRequest } from "next/server";
 import { withAuth } from "@/lib/apiHandler";
 import { cuestionarioActivo, resultadosLlamadas, respuestasDe, telefonoVisible, ESTADOS_LLAMADA } from "@/lib/encuestas/llamadas";
 import { ZONA } from "@/lib/encuestas/fechas";
+import { segmentos } from "@/lib/encuestas/base";
 
 /** Las encuestas hechas en un archivo que abre Excel: una fila por llamada; de la campaña, solo los últimos 4 dígitos del teléfono. */
-export const GET = withAuth(async (_user, req: NextRequest) => {
+export const GET = withAuth(async (user, req: NextRequest) => {
   const c = await cuestionarioActivo();
   if (!c) return NextResponse.json({ error: "Sin cuestionario" }, { status: 404 });
   // Con ?pruebas=1 (lo que se esté viendo en el tablero) entran también las de prueba, marcadas en su columna.
-  const r = await resultadosLlamadas(c, { conPruebas: req.nextUrl.searchParams.get("pruebas") === "1" });
+  // Con ?municipio= y ?distrito= (el filtro del tablero) solo entran las llamadas a esas personas de la base del usuario.
+  const q = req.nextUrl.searchParams;
+  const municipio = q.get("municipio") ?? "", distrito = q.get("distrito") ?? "";
+  const { contactoIds } = municipio || distrito ? await segmentos(user.id, { municipio, distrito }) : { contactoIds: null };
+  const r = await resultadosLlamadas(c, { conPruebas: !contactoIds && q.get("pruebas") === "1", contactoIds });
   const celda = (x: string | number | null | undefined) => `"${String(x ?? "").replace(/"/g, '""')}"`;
   const filas = [
     ["#", "Fecha", "Hora", "Teléfono", "Resultado", "Prueba", "Duración (s)", "Versión del guion", ...c.preguntas.map((p) => p.corto ?? p.clave)],

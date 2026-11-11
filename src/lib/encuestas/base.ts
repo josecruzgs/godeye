@@ -143,6 +143,45 @@ export function contactoVisible(c: ContactoDoc, yo: string) {
 /** Lo que un usuario puede ver en claro: lo suyo y lo compartido. */
 export const filtroVisible = (yo: string) => ({ subidoPor: { $in: [null, ...(Types.ObjectId.isValid(yo) ? [new Types.ObjectId(yo)] : [])] } });
 
+/**
+ * FILTRAR LOS RESULTADOS POR MUNICIPIO Y DISTRITO.
+ *
+ * Municipio y distrito están cifrados, así que no se pueden agrupar en Mongo: se descifran aquí, y solo los de las bases
+ * que `yo` puede ver en claro (lo suyo y lo compartido). Así las opciones del filtro nunca enseñan los municipios de una
+ * base ajena. Devuelve las opciones con cuántas personas tiene cada una y, si se eligió algo, los contactos que entran,
+ * para filtrar las llamadas por su `contactoId`.
+ *
+ * Se agrupa sin distinguir mayúsculas, acentos ni espacios («Tijuana», «TIJUANA », «tijuána» son uno) y se enseña la
+ * forma más común.
+ */
+export async function segmentos(yo: string, elegido: { municipio?: string; distrito?: string }) {
+  await dbConnect();
+  const clave = (x: string) => x.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ");
+  const filas = (await EncuestaContactoModel.find({ ...filtroVisible(yo), $or: [{ municipioCifrado: { $ne: null } }, { distritoCifrado: { $ne: null } }] })
+    .select("municipioCifrado distritoCifrado").lean<{ _id: Types.ObjectId; municipioCifrado?: string | null; distritoCifrado?: string | null }[]>())
+    .map((c) => ({ _id: c._id, municipio: descifrar(c.municipioCifrado)?.trim() || null, distrito: descifrar(c.distritoCifrado)?.trim() || null }));
+
+  const contar = (valores: (string | null)[]) => {
+    const grupos = new Map<string, { n: number; formas: Map<string, number> }>();
+    for (const v of valores) {
+      if (!v) continue;
+      const g = grupos.get(clave(v)) ?? { n: 0, formas: new Map() };
+      g.n++; g.formas.set(v, (g.formas.get(v) ?? 0) + 1);
+      grupos.set(clave(v), g);
+    }
+    return [...grupos].map(([k, g]) => ({ clave: k, valor: [...g.formas].sort((a, b) => b[1] - a[1])[0][0], n: g.n }))
+      .sort((a, b) => a.valor.localeCompare(b.valor, "es", { numeric: true }));
+  };
+  const mun = elegido.municipio ? clave(elegido.municipio) : "", dis = elegido.distrito ? clave(elegido.distrito) : "";
+  const delMunicipio = mun ? filas.filter((c) => c.municipio && clave(c.municipio) === mun) : filas;
+  return {
+    municipios: contar(filas.map((c) => c.municipio)),
+    // Los distritos que se ofrecen son los del municipio elegido: un distrito de otro municipio daría cero.
+    distritos: contar(delMunicipio.map((c) => c.distrito)),
+    contactoIds: mun || dis ? delMunicipio.filter((c) => !dis || (c.distrito && clave(c.distrito) === dis)).map((c) => c._id) : null,
+  };
+}
+
 /** Cómo va la base. */
 export async function estadoBase() {
   await dbConnect();
