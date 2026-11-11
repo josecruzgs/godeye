@@ -130,9 +130,9 @@ export async function subirBase(formData: FormData) {
   if (!r.cargadas && !r.repetidas) volver(`No encontré teléfonos válidos (${n(r.leidas)} renglones leídos). Revisa que la columna traiga celulares de 10 dígitos.`, false, "#base");
   const partes = [`${n(r.cargadas)} ${r.cargadas === 1 ? "teléfono nuevo cargado" : "teléfonos nuevos cargados"} de ${n(r.leidas)} renglones.`];
   if (r.repetidas) partes.push(`${n(r.repetidas)} ${r.repetidas === 1 ? "ya estaba" : "ya estaban"} y no se duplicaron.`);
-  partes.push("Se guardaron cifrados: solo tú ves los nombres y los números.");
+  partes.push("Se guardaron cifrados: solo tú ves los IDs y los números.");
   if (r.sinTelefono) partes.push(`${n(r.sinTelefono)} sin celular válido quedaron fuera.`);
-  volver(partes.join(" "), true, "", "/encuestas/base"); // directo a la lista, para ver lo que se cargó con nombre y número
+  volver(partes.join(" "), true, "", "/encuestas/base"); // directo a la lista, para ver lo que se cargó
 }
 
 /**

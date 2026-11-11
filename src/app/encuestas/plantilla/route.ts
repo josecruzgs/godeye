@@ -5,19 +5,19 @@ import { NextResponse } from "next/server";
  *
  * Un CSV no sirve de plantilla: Excel decide el separador según la configuración regional de cada computadora, y con la
  * equivocada abre todo en una sola columna. Un .xlsx abre igual en todas. La columna del teléfono va con formato de
- * texto para que Excel no lo vuelva número (ni notación científica).
+ * texto para que Excel no lo vuelva número (ni notación científica), y las demás también, para que un ID o un distrito no pierdan los ceros.
  *
  * Solo encabezados, sin renglones de ejemplo: un ejemplo que se queda en el archivo acaba en la base y la asistente le
  * marca. Los nombres de columna son los que reconoce cargarFilas (lib/encuestas/base.ts).
  *
  * El .xlsx se arma aquí, sin librerías: es un zip (sin comprimir) con seis XML.
  */
+// Todas van con formato de texto: así Excel no le quita los ceros a la izquierda a un ID ni a un distrito («05»), ni vuelve número el teléfono.
 const COLUMNAS = [
-  { titulo: "Teléfono", ancho: 16 },
-  { titulo: "Nombre", ancho: 24 },
-  { titulo: "Apellido paterno", ancho: 20 },
-  { titulo: "Apellido materno", ancho: 20 },
-  { titulo: "Colonia", ancho: 24 },
+  { titulo: "ID", ancho: 14, texto: true },
+  { titulo: "Teléfono", ancho: 16, texto: true },
+  { titulo: "Municipio", ancho: 24, texto: true },
+  { titulo: "Distrito", ancho: 14, texto: true },
 ];
 const LETRA = "ABCDEFGHIJ";
 
@@ -60,7 +60,7 @@ const ARCHIVOS: Record<string, string> = {
     '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
     // El encabezado se queda fijo al bajar.
     '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' +
-    "<cols>" + COLUMNAS.map((c, i) => `<col min="${i + 1}" max="${i + 1}" width="${c.ancho}" customWidth="1"${i === 0 ? ' style="2"' : ""}/>`).join("") + "</cols>" +
+    "<cols>" + COLUMNAS.map((c, i) => `<col min="${i + 1}" max="${i + 1}" width="${c.ancho}" customWidth="1"${c.texto ? ' style="2"' : ""}/>`).join("") + "</cols>" +
     '<sheetData><row r="1">' +
     COLUMNAS.map((c, i) => `<c r="${LETRA[i]}1" t="inlineStr" s="1"><is><t>${c.titulo}</t></is></c>`).join("") +
     "</row></sheetData></worksheet>",

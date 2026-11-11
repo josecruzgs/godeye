@@ -17,15 +17,15 @@ export const metadata = { title: `Base de teléfonos · ${BRAND_NAME}` };
 /**
  * LA BASE, CON NOMBRE Y NÚMERO, PERO SOLO PARA QUIEN LA SUBIÓ. Cada contacto se guarda cifrado y con dueño
  * (lib/encuestas/cifrado.ts): aquí cada quien ve en claro lo suyo y lo compartido; lo que subió otro usuario sale con los
- * últimos 4 dígitos y cómo le fue, sin nombre. Admin y operador. Lo que contestó cada quien no se enseña aquí: eso vive en
- * las encuestas, sin nombre.
+ * últimos 4 dígitos y cómo le fue. Admin y operador. Lo que contestó cada quien no se enseña aquí: eso vive en las
+ * encuestas, sin ID ni teléfono.
  */
 const POR_PAGINA = 50;
 const ROTULO: Record<string, string> = { PENDIENTE: "Sin llamar", NO_LLAMAR: "Pidió que no le llamen", ...Object.fromEntries(Object.entries(ESTADOS_LLAMADA).map(([k, v]) => [k, v.label])) };
 const COLOR: Record<string, string> = { PENDIENTE: "var(--primary)", NO_LLAMAR: "var(--status-critical)", ...Object.fromEntries(Object.entries(ESTADOS_LLAMADA).map(([k, v]) => [k, v.color])) };
 const tel = (t: string) => `${t.slice(0, 3)} ${t.slice(3, 6)} ${t.slice(6)}`;
 const sinAcentos = (x: string) => x.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-const CAMPOS = "telefono telCifrado telFin nombreCifrado coloniaCifrada origenCifrado subidoPor estado intentos ultimoIntento createdAt";
+const CAMPOS = "telefono telCifrado telFin idCifrado municipioCifrado distritoCifrado origenCifrado subidoPor estado intentos ultimoIntento createdAt";
 
 export default async function Base({ searchParams }: { searchParams: Promise<{ q?: string; estado?: string; p?: string; ok?: string; error?: string }> }) {
   const { q = "", estado = "", p = "1", ok, error } = await searchParams;
@@ -37,15 +37,15 @@ export default async function Base({ searchParams }: { searchParams: Promise<{ q
   const base = await estadoBase();
   const misContactos = await EncuestaContactoModel.countDocuments({ subidoPor: s.id });
 
-  // Sin búsqueda se pagina en Mongo. Con búsqueda no se puede: nombre, teléfono y colonia están cifrados. Se busca entonces
+  // Sin búsqueda se pagina en Mongo. Con búsqueda no se puede: ID, teléfono, municipio y distrito están cifrados. Se busca entonces
   // solo en lo que este usuario puede ver en claro, descifrándolo aquí; lo de otros nunca aparece en una búsqueda (si
-  // apareciera, confirmaría que ese número o ese nombre está en una base ajena).
+  // apareciera, confirmaría que ese número o ese ID está en una base ajena).
   let total: number, filas: ReturnType<typeof contactoVisible>[];
   if (busca) {
     const t = sinAcentos(busca), digitos = busca.replace(/\D/g, "");
     const todos = (await EncuestaContactoModel.find({ ...porEstado, ...filtroVisible(s.id) }).sort({ createdAt: -1, _id: 1 }).select(CAMPOS).lean<ContactoDoc[]>())
       .map((c) => contactoVisible(c, s.id))
-      .filter((c) => (c.nombre && sinAcentos(c.nombre).includes(t)) || (c.colonia && sinAcentos(c.colonia).includes(t)) || (digitos.length >= 3 && c.telefono?.includes(digitos)));
+      .filter((c) => [c.idExterno, c.municipio, c.distrito].some((x) => x && sinAcentos(x).includes(t)) || (digitos.length >= 3 && c.telefono?.includes(digitos)));
     total = todos.length;
     filas = todos.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA);
   } else {
@@ -85,8 +85,8 @@ export default async function Base({ searchParams }: { searchParams: Promise<{ q
       <Carta>
         <form className="flex flex-wrap items-end gap-3" action="/encuestas/base">
           <div className="min-w-[220px] flex-1">
-            <label className={LABEL} htmlFor="q">Buscar en tu base por nombre, teléfono o colonia</label>
-            <input id="q" name="q" defaultValue={busca} placeholder="Ej. García · 686 123 · Pueblo Nuevo" className={INPUT} />
+            <label className={LABEL} htmlFor="q">Buscar en tu base por ID, teléfono, municipio o distrito</label>
+            <input id="q" name="q" defaultValue={busca} placeholder="Ej. 10234 · 686 123 · Mexicali · 05" className={INPUT} />
           </div>
           {estado && <input type="hidden" name="estado" value={estado} />}
           <button className={BTN_PRIMARY}>Buscar</button>
@@ -106,17 +106,18 @@ export default async function Base({ searchParams }: { searchParams: Promise<{ q
         {filas.length ? (
           <div className="-mx-1 overflow-x-auto px-1">
             <table className="enc-tabla">
-              <thead><tr><th className="num">#</th><th>Nombre</th><th>Teléfono</th><th>Colonia</th><th>Cómo va</th><th className="num">Llamadas</th><th>Última llamada</th><th>Archivo</th><th>De quién</th></tr></thead>
+              <thead><tr><th className="num">#</th><th>ID</th><th>Teléfono</th><th>Municipio</th><th>Distrito</th><th>Cómo va</th><th className="num">Llamadas</th><th>Última llamada</th><th>Archivo</th><th>De quién</th></tr></thead>
               <tbody>
                 {filas.map((x, i) => (
                   <tr key={x.id}>
                     <td className="num text-ink-muted">{(pagina - 1) * POR_PAGINA + i + 1}</td>
-                    <td className="font-medium">
-                      {!x.abierto ? <span className="inline-flex items-center gap-1 font-normal text-ink-muted"><Lock className="h-3 w-3" /> privado</span>
-                        : x.nombre ?? <span className="font-normal text-ink-muted">sin nombre</span>}
+                    <td className="whitespace-nowrap font-mono text-[12.5px] font-medium">
+                      {!x.abierto ? <span className="inline-flex items-center gap-1 font-sans font-normal text-ink-muted"><Lock className="h-3 w-3" /> privado</span>
+                        : x.idExterno ?? <span className="font-normal text-ink-muted">—</span>}
                     </td>
                     <td className="whitespace-nowrap font-mono text-[12.5px]">{x.telefono ? tel(x.telefono) : <span className="text-ink-muted">••• ••• {x.telFin ?? "????"}</span>}</td>
-                    <td>{x.colonia ?? <span className="text-ink-muted">—</span>}</td>
+                    <td>{x.municipio ?? <span className="text-ink-muted">—</span>}</td>
+                    <td className="whitespace-nowrap">{x.distrito ?? <span className="text-ink-muted">—</span>}</td>
                     <td className="whitespace-nowrap"><Pastilla color={COLOR[x.estado] ?? "var(--text-muted)"}>{ROTULO[x.estado] ?? x.estado}</Pastilla></td>
                     <td className="num">{x.intentos}</td>
                     <td className="whitespace-nowrap text-[13px] text-ink-muted">{x.ultimoIntento ? fechaHoraCorta(new Date(x.ultimoIntento)) : "—"}</td>
@@ -139,7 +140,7 @@ export default async function Base({ searchParams }: { searchParams: Promise<{ q
         )}
       </Carta>
 
-      <Carta titulo="Subir más personas" subtitulo="Excel o CSV con una columna de teléfono y, si hay, nombre (o nombre y apellidos) y colonia. Se guarda cifrado y solo tú lo ves en claro. Lo repetido no se duplica.">
+      <Carta titulo="Subir más personas" subtitulo="Excel con las columnas ID, Teléfono, Municipio y Distrito (baja la plantilla). Se guarda cifrado y solo tú lo ves en claro. Lo repetido no se duplica.">
         <form action={subirBase} className="flex flex-wrap items-end gap-3">
           <input name="archivo" type="file" accept=".xlsx,.csv,.txt,.tsv" className={`${INPUT} !w-auto min-w-[240px] flex-1 !py-1.5`} />
           <button className={BTN_PRIMARY}>Subir a la base</button>

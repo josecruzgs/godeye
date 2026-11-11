@@ -23,13 +23,12 @@ export function celularValido(entrada: string | null | undefined): string | null
   return t;
 }
 
+/** Las columnas de la base: ID, Teléfono, Municipio y Distrito (la plantilla está en /encuestas/plantilla). */
 const SINONIMOS: Record<string, string[]> = {
   telefono: ["telefono", "tel", "celular", "cel", "movil", "numero", "phone", "whatsapp", "telefonocelular", "numerodetelefono"],
-  nombre: ["nombre", "nombres", "name", "nombrecompleto", "nombredelapersona", "ciudadano", "contacto"],
-  paterno: ["apellidopaterno", "paterno", "apellido1", "primerapellido", "apellido"],
-  materno: ["apellidomaterno", "materno", "apellido2", "segundoapellido"],
-  apellidos: ["apellidos"],
-  colonia: ["colonia", "col", "fraccionamiento", "barrio"],
+  id: ["id", "folio", "clave", "identificador", "idcontacto", "idpersona", "consecutivo", "registro"],
+  municipio: ["municipio", "mpio", "mun", "ciudad"],
+  distrito: ["distrito", "dto", "dist", "distritoelectoral", "distritolocal", "distritofederal"],
 };
 const limpio = (x: string) => x.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "");
 
@@ -75,10 +74,8 @@ export async function cargarFilas(filas: string[][], origen: string, subidoPor: 
     iTel = mejor;
   }
   if (iTel < 0) return { leidas: cuerpo.length, cargadas: 0, repetidas: 0, sinTelefono: cuerpo.length, columna: null };
-  const iNom = conEncabezado ? idx("nombre") : -1, iCol = conEncabezado ? idx("colonia") : -1;
-  // Hay bases con el nombre y los apellidos en columnas aparte: se juntan en el orden en que se dicen.
-  const iPat = conEncabezado ? idx("paterno") : -1, iMat = conEncabezado ? idx("materno") : -1, iAps = conEncabezado ? idx("apellidos") : -1;
-  const nombreDe = (f: string[]) => [iNom, iAps, iPat, iMat].filter((k) => k >= 0).map((k) => (f[k] ?? "").trim()).filter(Boolean).join(" ").replace(/\s+/g, " ").slice(0, 160) || null;
+  const iId = conEncabezado ? idx("id") : -1, iMun = conEncabezado ? idx("municipio") : -1, iDis = conEncabezado ? idx("distrito") : -1;
+  const celda = (f: string[], k: number) => (k >= 0 ? (f[k] ?? "").trim().slice(0, 120) || null : null);
 
   await dbConnect();
   await migrarACifrado();
@@ -94,7 +91,7 @@ export async function cargarFilas(filas: string[][], origen: string, subidoPor: 
     vistos.add(tel);
     nuevos.push({
       telefono: huella(tel), telCifrado: cifrar(tel), telFin: finDe(tel),
-      nombreCifrado: cifrar(nombreDe(f)), coloniaCifrada: cifrar(iCol >= 0 ? (f[iCol] ?? "").trim() : null),
+      idCifrado: cifrar(celda(f, iId)), municipioCifrado: cifrar(celda(f, iMun)), distritoCifrado: cifrar(celda(f, iDis)),
       origenCifrado, subidoPor: dueno,
     });
   }
@@ -116,7 +113,7 @@ export async function cargarFilas(filas: string[][], origen: string, subidoPor: 
 
 export type ContactoDoc = {
   _id: Types.ObjectId; telefono: string; telCifrado?: string | null; telFin?: string | null;
-  nombreCifrado?: string | null; coloniaCifrada?: string | null; origenCifrado?: string | null; subidoPor?: Types.ObjectId | null;
+  idCifrado?: string | null; municipioCifrado?: string | null; distritoCifrado?: string | null; origenCifrado?: string | null; subidoPor?: Types.ObjectId | null;
   estado: string; intentos: number; ultimoIntento: Date | null; createdAt?: Date;
 };
 
@@ -135,8 +132,9 @@ export function contactoVisible(c: ContactoDoc, yo: string) {
     id: String(c._id), de, abierto,
     telefono: tel,
     telFin: c.telFin ?? (tel ? finDe(tel) : null),
-    nombre: abierto ? descifrar(c.nombreCifrado) : null,
-    colonia: abierto ? descifrar(c.coloniaCifrada) : null,
+    idExterno: abierto ? descifrar(c.idCifrado) : null,
+    municipio: abierto ? descifrar(c.municipioCifrado) : null,
+    distrito: abierto ? descifrar(c.distritoCifrado) : null,
     origen: abierto ? descifrar(c.origenCifrado) : null,
     estado: c.estado, intentos: c.intentos, ultimoIntento: c.ultimoIntento,
   };
