@@ -32,6 +32,7 @@ const TYPE_LABELS: Record<string, string> = {
   like: "Like",
   likecomment: "Like a comentario",
   comment: "Comentario",
+  livecomment: "Comentario en live",
   post: "Publicación",
   warmup: "Warmup",
   scrape: "Scrape",

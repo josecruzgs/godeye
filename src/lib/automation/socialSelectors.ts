@@ -143,6 +143,58 @@ export const COMMENT_PRESETS: Record<string, CommentPreset> = {
   custom: { label: "Personalizado", selector: "", submitMethod: "enter", submitSelector: "" },
 };
 
+/**
+ * La caja del chat de un live, por red.
+ *
+ * Facebook e Instagram usan en sus lives la misma caja que en una publicación,
+ * así que se reutilizan esos selectores. TikTok y YouTube tienen un chat
+ * propio: TikTok un div contenteditable con un rótulo tipo "Di algo bonito…",
+ * y YouTube un `div#input` dentro del renderer del chat, que en la página del
+ * video vive en el iframe `#chatframe` (el runner entra solo a ese iframe).
+ *
+ * En todos se envía con Enter.
+ */
+export const LIVE_CHAT_PRESETS: Record<string, { label: string; selector: string }> = {
+  facebook: { label: "Facebook", selector: FACEBOOK_COMMENT_BOX_SELECTOR },
+  instagram: { label: "Instagram", selector: INSTAGRAM_COMMENT_BOX_SELECTOR },
+  tiktok: {
+    label: "TikTok",
+    selector: [
+      '[data-e2e*="chat-input"] [contenteditable]',
+      '[data-e2e*="comment-input"] [contenteditable]',
+      'div[contenteditable][placeholder*="Say something" i]',
+      'div[contenteditable][placeholder*="Di algo" i]',
+      'div[contenteditable][placeholder*="Add comment" i]',
+      'div[contenteditable][placeholder*="Añade un comentario" i]',
+      'div[contenteditable][placeholder*="Agrega un comentario" i]',
+    ].join(", "),
+  },
+  youtube: {
+    label: "YouTube",
+    selector: [
+      "yt-live-chat-text-input-field-renderer div#input[contenteditable]",
+      "yt-live-chat-message-input-renderer div#input[contenteditable]",
+      'div#input[contenteditable][aria-label*="chat" i]',
+    ].join(", "),
+  },
+};
+
+/**
+ * La red de un link de live. Aparte de `platformFromUrl` porque esa no conoce
+ * YouTube a propósito (la escucha la usa para decidir qué se puede comentar con
+ * un perfil, y en YouTube eso solo aplica a los lives).
+ */
+export function livePlatformFromUrl(url: string): string | null {
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase().replace(/^(www|m)\./, "");
+  } catch {
+    return null;
+  }
+  if (host === "youtube.com" || host.endsWith(".youtube.com") || host === "youtu.be") return "youtube";
+  return platformFromUrl(url);
+}
+
 // El picker de reacciones (mantener el cursor sobre "Me gusta" para que
 // aparezcan las demás) es un patrón exclusivo de Facebook — las otras
 // plataformas solo tienen like/no-like.

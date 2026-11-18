@@ -14,6 +14,7 @@ const DOMINIOS: [string, string[]][] = [
   ["instagram", ["instagram.com", "instagr.am"]],
   ["tiktok", ["tiktok.com"]],
   ["x", ["x.com", "twitter.com"]],
+  ["youtube", ["youtube.com", "youtu.be"]],
 ];
 
 export function platformFromUrl(valor: string): string | null {

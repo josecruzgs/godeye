@@ -39,6 +39,7 @@ if (
     !cachedTypes?.includes("joingroup") ||
     !cachedTypes?.includes("grouppost") ||
     !cachedTypes?.includes("follow") ||
+    !cachedTypes?.includes("livecomment") ||
     !cachedCampaignSchema?.path("ownerId") ||
     !cachedCampaignSchema?.path("stopReason"))
 ) {

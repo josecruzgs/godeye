@@ -5,6 +5,7 @@ import TaskModel from "@/lib/models/Task";
 import CampaignModel from "@/lib/models/Campaign";
 import TaskLogModel from "@/lib/models/TaskLog";
 import ProfileModel from "@/lib/models/Profile";
+import CommentModel from "@/lib/models/Comment";
 import { connectToProfile, disconnectProfile } from "./browser";
 import { publicarEnGrupo } from "./groupPost";
 import GroupPostImageModel from "@/lib/models/GroupPostImage";
@@ -12,6 +13,8 @@ import {
   INSTAGRAM_COMMENT_BOX_SELECTOR,
   INSTAGRAM_COMMENT_OPEN_SELECTOR,
   INSTAGRAM_DISMISS_SELECTOR,
+  LIVE_CHAT_PRESETS,
+  livePlatformFromUrl,
   platformFromUrl,
 } from "./socialSelectors";
 import { parseFacebookCommentTarget } from "@/lib/commentLinks";
@@ -36,7 +39,8 @@ type Step = {
     | "joinGroup"
     | "followProfile"
     | "readGroupName"
-    | "groupPost";
+    | "groupPost"
+    | "liveComment";
   selector?: string;
   value?: string;
   url?: string;
@@ -3235,6 +3239,197 @@ async function ensureFacebookSession(page: Page) {
   throw new SesionCaidaError(USUARIO_NO_LOGEADO);
 }
 
+/**
+ * El live ya no está al aire. Corta la tarea y, desde runTask, cancela las
+ * tareas de la campaña que todavía no corrieron contra ese mismo live: todas
+ * iban a fallar igual, cada una gastando un navegador y un comentario del banco.
+ */
+class LiveTerminadoError extends Error {}
+
+/**
+ * Frases con las que cada red avisa que la transmisión terminó (o que el chat
+ * ya no acepta mensajes), normalizadas sin acentos. Solo se miran cuando la
+ * caja del chat NO apareció: por sí solas son demasiado comunes —"estuvo en
+ * vivo" sale también en las sugerencias de otros videos—, pero sin caja y con
+ * una de estas en pantalla, el live se acabó.
+ */
+const LIVE_TERMINADO_TEXTOS = [
+  // Facebook
+  "la transmision en vivo termino",
+  "la transmision en vivo finalizo",
+  "este video en vivo termino",
+  "this live video has ended",
+  "live video ended",
+  // Instagram
+  "el video en vivo termino",
+  "the live video has ended",
+  "this live video has ended",
+  // TikTok
+  "live has ended",
+  "el live ha terminado",
+  "el live termino",
+  "este live ha finalizado",
+  "live ended",
+  // YouTube
+  "this live event has ended",
+  "este evento en vivo finalizo",
+  "este evento en vivo ha finalizado",
+  "chat is disabled for this live stream",
+  "el chat esta inhabilitado",
+  "chat replay",
+  "repeticion del chat",
+];
+
+const LIVE_CAJA_TIMEOUT_MS = 30000;
+const LIVE_CONFIRMACION_MS = 12000;
+
+/**
+ * Dónde está el chat. En YouTube, dentro del iframe `#chatframe` de la página
+ * del video; si se abrió directo el `live_chat?v=`, en la página misma.
+ */
+async function alcanceDelChat(page: Page, red: string | null) {
+  if (red === "youtube" && (await page.locator("iframe#chatframe").count().catch(() => 0)) > 0) {
+    return page.frameLocator("iframe#chatframe");
+  }
+  return page;
+}
+
+async function textoVisibleDelLive(page: Page, red: string | null) {
+  const partes = [await page.locator("body").innerText({ timeout: 1500 }).catch(() => "")];
+  if (red === "youtube") {
+    partes.push(
+      await page
+        .frameLocator("iframe#chatframe")
+        .locator("body")
+        .innerText({ timeout: 1500 })
+        .catch(() => ""),
+    );
+  }
+  return normalizePageText(partes.join("\n")).replace(/[’']/g, "'");
+}
+
+async function liveTerminado(page: Page, red: string | null) {
+  const texto = await textoVisibleDelLive(page, red);
+  return LIVE_TERMINADO_TEXTOS.find((frase) => texto.includes(frase)) ?? null;
+}
+
+/**
+ * La caja del chat visible, buscando dentro del iframe si hace falta.
+ *
+ * Mismo bucle que `firstVisibleLocator` —incluida la revisión de frenos de la
+ * red—, pero sobre el alcance del chat, que en YouTube no es la página.
+ */
+async function buscarCajaDelLive(page: Page, red: string | null, selector: string, ctx: StepContext) {
+  const deadline = Date.now() + LIVE_CAJA_TIMEOUT_MS;
+  let ultimaRevision = 0;
+  let intentoAbrir = false;
+
+  while (Date.now() <= deadline) {
+    if (Date.now() - ultimaRevision >= BLOCKER_CHECK_INTERVAL_MS) {
+      ultimaRevision = Date.now();
+      await assertNoKnownBlocker(page);
+      if (red === "instagram") await dismissInstagramOverlays(page, ctx);
+    }
+
+    const alcance = await alcanceDelChat(page, red);
+    const locator = alcance.locator(selector);
+    const count = await locator.count().catch(() => 0);
+    for (let i = 0; i < count; i += 1) {
+      const candidata = locator.nth(i);
+      if (await candidata.isVisible().catch(() => false)) return candidata;
+    }
+
+    // A la mitad del tiempo, un intento de abrir el panel: en algunos lives de
+    // Facebook los comentarios arrancan plegados detrás del botón "Comentar".
+    if (!intentoAbrir && red === "facebook" && deadline - Date.now() < LIVE_CAJA_TIMEOUT_MS / 2) {
+      intentoAbrir = true;
+      await openCommentsWithKeyboard(page, ctx).catch(() => false);
+    }
+
+    await page.waitForTimeout(VISIBLE_POLL_MS);
+  }
+
+  await assertNoKnownBlocker(page);
+  const frase = await liveTerminado(page, red);
+  if (frase) {
+    throw new LiveTerminadoError(`El live ya terminó o cerró el chat (la página dice "${frase}").`);
+  }
+  throw new Error(
+    `No apareció la caja del chat del live en ${LIVE_CAJA_TIMEOUT_MS / 1000}s. Puede que el live haya ` +
+      "terminado, que el perfil no tenga permiso para comentar (p. ej. chat solo para suscriptores) o que la " +
+      "red haya cambiado la página; en ese caso ajusta el selector en los ajustes adicionales.",
+  );
+}
+
+/**
+ * Escribe un comentario en el chat de un live y comprueba que salió.
+ *
+ * No hay permalink que buscar —en un live el comentario se va de la pantalla
+ * en segundos—, así que la confirmación es otra: en Facebook e Instagram, la
+ * respuesta del servidor al envío (lo mismo que usa "captureComment"); en todas
+ * las redes, que la caja quede vacía tras el Enter. Si el texto sigue en la
+ * caja, no se envió.
+ */
+async function comentarEnLive(page: Page, step: Step, ctx: StepContext) {
+  const texto = step.value?.trim();
+  if (!texto) throw new Error("Step 'liveComment' requiere 'value' con el texto a comentar");
+
+  const red = livePlatformFromUrl(page.url()) ?? livePlatformFromUrl(ctx.targetUrl ?? "");
+  const selector = step.selector?.trim() || (red ? LIVE_CHAT_PRESETS[red]?.selector : "");
+  if (!selector) {
+    throw new Error(`No hay selector para el chat de este live (${page.url()}). Indícalo en los ajustes adicionales.`);
+  }
+
+  const caja = await buscarCajaDelLive(page, red, selector, ctx);
+  await escribirEnCaja(page, caja, texto, ctx);
+
+  const escuchaRed = red === "facebook" || red === "instagram";
+  const envio = escuchaRed ? vigilarEnvioComentario(page, texto) : undefined;
+  try {
+    await caja.press("Enter", { timeout: 5000 });
+
+    const normalizar = (valor: string) =>
+      valor
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, " ")
+        .trim();
+    const esperado = normalizar(texto);
+
+    const deadline = Date.now() + LIVE_CONFIRMACION_MS;
+    let cajaVacia = false;
+    while (Date.now() <= deadline) {
+      if (!normalizar(await leerCaja(caja)).includes(esperado)) {
+        cajaVacia = true;
+        break;
+      }
+      await page.waitForTimeout(500);
+    }
+
+    const confirmacion = envio ? await envio.esperar(cajaVacia ? 6000 : 1000) : null;
+
+    if (confirmacion && !confirmacion.ok) {
+      throw new Error(`La red rechazó el comentario en el live: ${confirmacion.error}`);
+    }
+    if (!cajaVacia && !confirmacion?.ok) {
+      await assertNoKnownBlocker(page);
+      throw new Error(
+        "El comentario quedó escrito en la caja del chat y no se envió. Puede que el chat tenga modo lento, " +
+          "que solo acepte seguidores/suscriptores o que el perfil esté limitado.",
+      );
+    }
+
+    await log(
+      ctx.taskId,
+      "info",
+      confirmacion?.ok
+        ? `Comentario enviado al live: ${red ?? "la red"} confirmó la creación.`
+        : `Comentario enviado al live (la caja del chat se vació tras enviarlo).`,
+    );
+  } finally {
+    envio?.cancelar();
+  }
+}
+
 async function runStep(page: Page, step: Step, ctx: StepContext) {
   switch (step.action) {
     case "goto":
@@ -3504,6 +3699,9 @@ async function runStep(page: Page, step: Step, ctx: StepContext) {
       );
       return;
     }
+    case "liveComment":
+      await comentarEnLive(page, step, ctx);
+      return;
     case "joinGroup": {
       // `value` es el contexto que escribió el operador para responder el
       // formulario de ingreso (de dónde es la gente, por qué le interesa).
@@ -3875,6 +4073,43 @@ async function detenerSeguimientoImposible(task: InstanceType<typeof TaskModel>,
   await log(String(task._id), "warn", `${motivo} Se cancelaron ${result.modifiedCount} tarea(s) que faltaban.`);
 }
 
+/**
+ * El live terminó: se cancelan las tareas de la campaña que todavía no
+ * corrieron contra ese live y se devuelven al banco los comentarios que tenían
+ * reservados —no se llegaron a publicar, así que pueden usarse en otra campaña—.
+ */
+async function detenerLiveTerminado(task: InstanceType<typeof TaskModel>, profileName: string) {
+  const url = (task.steps as Step[]).find((s) => s.action === "goto" && s.url)?.url;
+  if (!task.campaignId || !url) return;
+
+  const filtro = {
+    campaignId: task.campaignId,
+    _id: { $ne: task._id },
+    type: "livecomment",
+    "steps.url": url,
+    status: { $in: ["pending", "queued", "paused"] },
+  };
+  const pendientes = await TaskModel.find(filtro).select("_id").lean<{ _id: unknown }[]>();
+  if (pendientes.length === 0) return;
+  const ids = pendientes.map((t) => t._id);
+
+  const motivo = `Campaña detenida: el live ${url} ya terminó. Lo detectó la tarea de ${profileName}.`;
+  await TaskModel.updateMany(
+    { ...filtro, _id: { $in: ids } },
+    { $set: { status: "cancelled", error: motivo, finishedAt: new Date() }, $unset: { resumeStatus: "" } },
+  );
+  const devueltos = await CommentModel.updateMany(
+    { usedByTaskId: { $in: ids } },
+    { $set: { used: false }, $unset: { usedAt: "", usedByTaskId: "" } },
+  );
+  await CampaignModel.updateOne({ _id: task.campaignId }, { $set: { stopReason: motivo } });
+  await log(
+    String(task._id),
+    "warn",
+    `${motivo} Se cancelaron ${pendientes.length} tarea(s) que faltaban y ${devueltos.modifiedCount} comentario(s) volvieron al banco.`,
+  );
+}
+
 export async function runTask(taskId: string) {
   await dbConnect();
   const task = await TaskModel.findById(taskId);
@@ -3997,6 +4232,15 @@ export async function runTask(taskId: string) {
     task.status = "failed";
     task.error = err instanceof Error ? err.message : String(err);
     await log(taskId, "error", task.error);
+    if (err instanceof LiveTerminadoError) {
+      await detenerLiveTerminado(task, profile.name).catch((stopErr) =>
+        log(
+          taskId,
+          "warn",
+          `No se pudo detener la campaña: ${stopErr instanceof Error ? stopErr.message : String(stopErr)}`,
+        ),
+      );
+    }
     if (err instanceof FollowNotAllowedError) {
       await detenerSeguimientoImposible(task, profile.name).catch((stopErr) =>
         log(

@@ -19,7 +19,7 @@ import { allowedOwnerFilter, isAdmin } from "@/lib/auth/dal";
  * publicaciones también empiezan con un "goto", pero al muro o al grupo, así
  * que llamarle "la publicación de la campaña" sería mentir.
  */
-const CAMPAIGN_TYPES_WITH_POST = new Set(["like", "likecomment", "comment", "ramificacion"]);
+const CAMPAIGN_TYPES_WITH_POST = new Set(["like", "likecomment", "comment", "livecomment", "ramificacion"]);
 
 /**
  * La publicación sobre la que trabaja la campaña, sacada de la primera tarea.

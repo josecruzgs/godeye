@@ -240,7 +240,7 @@ async function performanceFor(
  * en la ruta del detalle: en warmup y publicaciones el primer `goto` va al muro
  * o al grupo, así que llamarle "la publicación de la campaña" sería mentir.
  */
-const CAMPAIGN_TYPES_WITH_POST = ["like", "likecomment", "comment", "ramificacion"];
+const CAMPAIGN_TYPES_WITH_POST = ["like", "likecomment", "comment", "livecomment", "ramificacion"];
 
 /**
  * La publicación de cada campaña, sacada del primer `goto` de su primera tarea.

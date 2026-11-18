@@ -509,6 +509,7 @@ export default function ProfilesPage() {
               <option value="instagram">Instagram</option>
               <option value="tiktok">TikTok</option>
               <option value="x">X</option>
+              <option value="youtube">YouTube</option>
               <option value="linkedin">LinkedIn</option>
             </select>
           </div>
@@ -556,6 +557,7 @@ export default function ProfilesPage() {
           <option value="instagram">Instagram</option>
           <option value="tiktok">TikTok</option>
           <option value="x">X</option>
+          <option value="youtube">YouTube</option>
           <option value="linkedin">LinkedIn</option>
         </select>
         <select

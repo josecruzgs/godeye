@@ -31,6 +31,7 @@ const PLATFORM_NAMES: Record<string, string> = {
   instagram: "Instagram",
   tiktok: "TikTok",
   x: "X",
+  youtube: "YouTube",
   linkedin: "LinkedIn",
 };
 
@@ -266,6 +267,7 @@ export default function ProfilePicker({
           <option value="instagram">Instagram</option>
           <option value="tiktok">TikTok</option>
           <option value="x">X</option>
+          <option value="youtube">YouTube</option>
           <option value="linkedin">LinkedIn</option>
         </select>
         <select

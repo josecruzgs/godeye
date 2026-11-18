@@ -30,6 +30,7 @@ import {
   Newspaper,
   X,
   type LucideIcon,
+  Radio,
 } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
 import { useSession } from "@/lib/session";
@@ -71,6 +72,7 @@ const NAV: NavSection[] = [
       { href: "/tasks/like", label: "Likes", hint: "Reacciones a una publicación", icon: Heart },
       { href: "/tasks/likecomment", label: "Likes a comentarios", hint: "Reacciones a comentarios", icon: MessageCircleHeart },
       { href: "/tasks/comment", label: "Comentar", hint: "Comentarios desde el banco", icon: MessageSquare },
+      { href: "/tasks/live", label: "Comentar en lives", hint: "Varios comentarios por perfil durante un live", icon: Radio },
       { href: "/tasks/ramificacion", label: "Ramificaciones", hint: "Hilos de respuestas", icon: GitBranch },
       { href: "/tasks/unirse-grupo", label: "Unirse a grupos", hint: "Solicitudes a grupos de Facebook", icon: UsersRound },
       { href: "/tasks/publicar-grupo", label: "Publicar en grupos", hint: "Una publicación con imagen por perfil", icon: Newspaper },

@@ -26,6 +26,7 @@ const StepSchema = new Schema(
         "followProfile",
         "readGroupName",
         "groupPost",
+        "liveComment",
       ],
       required: true,
     },
@@ -57,6 +58,7 @@ export const TASK_TYPES = [
   "like",
   "likecomment",
   "comment",
+  "livecomment",
   "ramificacion",
   "joingroup",
   "grouppost",
@@ -155,10 +157,12 @@ function isStaleTaskModel() {
     !types.includes("joingroup") ||
     !types.includes("grouppost") ||
     !types.includes("follow") ||
+    !types.includes("livecomment") ||
     !actions.includes("joinGroup") ||
     !actions.includes("readGroupName") ||
     !actions.includes("followProfile") ||
-    !actions.includes("groupPost")
+    !actions.includes("groupPost") ||
+    !actions.includes("liveComment")
   );
 }
 

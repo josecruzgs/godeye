@@ -23,6 +23,7 @@ import {
   UserPlus,
   LogIn,
   type LucideIcon,
+  Radio,
 } from "lucide-react";
 import Card from "@/components/Card";
 import StatusBadge from "@/components/StatusBadge";
@@ -61,6 +62,7 @@ const TYPE_LABELS: Record<string, string> = {
   like: "Likes",
   likecomment: "Likes a comentarios",
   comment: "Comentarios",
+  livecomment: "Comentarios en lives",
   joingroup: "Unirse a grupos",
   grouppost: "Publicar en grupos",
   follow: "Seguir perfiles",
@@ -75,6 +77,7 @@ const TYPE_ICONS: Record<string, LucideIcon> = {
   like: Heart,
   likecomment: MessageCircleHeart,
   comment: MessageSquare,
+  livecomment: Radio,
   post: Megaphone,
   warmup: Activity,
   scrape: Tornado,
@@ -87,6 +90,7 @@ const TYPE_ICON_BG: Record<string, string> = {
   like: "bg-series-3",
   likecomment: "bg-series-3",
   comment: "bg-series-5",
+  livecomment: "bg-series-5",
   post: "bg-series-7",
   warmup: "bg-series-4",
   scrape: "bg-series-1",

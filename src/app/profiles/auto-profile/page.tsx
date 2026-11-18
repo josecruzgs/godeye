@@ -750,6 +750,7 @@ export default function AutoProfilePage() {
                   <option value="instagram">Instagram</option>
                   <option value="tiktok">TikTok</option>
                   <option value="x">X</option>
+                  <option value="youtube">YouTube</option>
                   <option value="linkedin">LinkedIn</option>
                 </select>
                 <select value={sheetGenderFilter} onChange={(e) => setSheetGenderFilter(e.target.value)} className="rounded-lg border border-hairline bg-page px-3 py-2 text-sm outline-none focus:border-primary">

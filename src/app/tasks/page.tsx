@@ -21,6 +21,7 @@ import {
   Newspaper,
   Ban,
   Trash2,
+  Radio,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { esRelanzamientoDeLike } from "@/lib/tasks/relanzar";
@@ -92,7 +93,7 @@ function nombreDelDueno(task: Task) {
 
 const PAGE_SIZE = 20;
 const STATUSES = ["pending", "queued", "running", "paused", "success", "failed", "cancelled"];
-const TYPES = ["login", "post", "warmup", "scrape", "like", "likecomment", "comment", "joingroup", "grouppost", "follow", "custom"];
+const TYPES = ["login", "post", "warmup", "scrape", "like", "likecomment", "comment", "livecomment", "joingroup", "grouppost", "follow", "custom"];
 
 export default function TasksPage() {
   return (
@@ -370,6 +371,12 @@ function TasksContent() {
             className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-surface px-3 py-2 text-sm font-medium text-ink-secondary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:text-ink hover:shadow-md"
           >
             <MessageSquare className="h-4 w-4" /> Campaña de comentarios
+          </Link>
+          <Link
+            href="/tasks/live"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-surface px-3 py-2 text-sm font-medium text-ink-secondary shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:text-ink hover:shadow-md"
+          >
+            <Radio className="h-4 w-4" /> Comentar en lives
           </Link>
           <Link
             href="/tasks/ramificacion"

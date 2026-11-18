@@ -28,6 +28,7 @@ export const TYPE_LABELS: Record<string, string> = {
   like: "Likes",
   likecomment: "Likes a comentarios",
   comment: "Comentarios",
+  livecomment: "Comentarios en lives",
   joingroup: "Unirse a grupos",
   grouppost: "Publicar en grupos",
   follow: "Seguir perfiles",

@@ -128,12 +128,13 @@ type CampaignCharts = {
 
 const PAGE_SIZE = 20;
 const STATUSES = ["pending", "queued", "running", "paused", "success", "failed", "partial", "cancelled", "empty"];
-const TYPES = ["like", "likecomment", "comment", "joingroup", "grouppost", "follow", "post", "warmup", "scrape", "custom"];
+const TYPES = ["like", "likecomment", "comment", "livecomment", "joingroup", "grouppost", "follow", "post", "warmup", "scrape", "custom"];
 
 const TYPE_LABELS: Record<string, string> = {
   like: "Likes",
   likecomment: "Likes a comentarios",
   comment: "Comentarios",
+  livecomment: "Comentarios en lives",
   joingroup: "Unirse a grupos",
   grouppost: "Publicar en grupos",
   follow: "Seguir perfiles",
@@ -198,6 +199,7 @@ const TYPE_ROUTES: Record<string, string> = {
   like: "/tasks/like",
   likecomment: "/tasks/likecomment",
   comment: "/tasks/comment",
+  livecomment: "/tasks/live",
   joingroup: "/tasks/unirse-grupo",
   grouppost: "/tasks/publicar-grupo",
   follow: "/tasks/follow",
