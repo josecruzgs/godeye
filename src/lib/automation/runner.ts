@@ -3398,9 +3398,11 @@ async function liveTerminado(page: Page, red: string | null) {
  * red—, pero sobre el alcance del chat, que en YouTube no es la página.
  */
 async function buscarCajaDelLive(page: Page, red: string | null, selector: string, ctx: StepContext) {
-  const deadline = Date.now() + LIVE_CAJA_TIMEOUT_MS;
+  const inicio = Date.now();
+  const deadline = inicio + LIVE_CAJA_TIMEOUT_MS;
   let ultimaRevision = 0;
   let intentoAbrir = false;
+  let avisoGenerica = false;
 
   while (Date.now() <= deadline) {
     if (Date.now() - ultimaRevision >= BLOCKER_CHECK_INTERVAL_MS) {
@@ -3424,6 +3426,20 @@ async function buscarCajaDelLive(page: Page, red: string | null, selector: strin
       await openCommentsWithKeyboard(page, ctx).catch(() => false);
     }
 
+    // Y si por rótulo no aparece —la interfaz del perfil en un idioma que el
+    // selector no cubre: se vio en turco, "Yorum yaz…"—, la caja editable
+    // visible que no sea de Messenger. En el visor de un live es la del chat.
+    if (red === "facebook" && Date.now() - inicio > 6000) {
+      const generica = await marcarCajaGenericaDeFacebook(page);
+      if (generica) {
+        if (!avisoGenerica) {
+          avisoGenerica = true;
+          await log(ctx.taskId, "info", `La caja del chat no coincidió por rótulo; se usa la caja editable de la página ("${generica}").`);
+        }
+        return page.locator(`[${CAJA_GENERICA_MARK}]`).first();
+      }
+    }
+
     await page.waitForTimeout(VISIBLE_POLL_MS);
   }
 
@@ -3435,7 +3451,78 @@ async function buscarCajaDelLive(page: Page, red: string | null, selector: strin
   throw new Error(
     `No apareció la caja del chat del live en ${LIVE_CAJA_TIMEOUT_MS / 1000}s. Puede que el live haya ` +
       "terminado, que el perfil no tenga permiso para comentar (p. ej. chat solo para suscriptores) o que la " +
-      "red haya cambiado la página; en ese caso ajusta el selector en los ajustes adicionales.",
+      "red haya cambiado la página; en ese caso ajusta el selector en los ajustes adicionales. " +
+      (await describirPantallaDelLive(page, red)),
+  );
+}
+
+const CAJA_GENERICA_MARK = "data-godeye-caja-live";
+
+/**
+ * Marca la caja editable visible de la página que no pertenezca a una ventana
+ * de Messenger, y devuelve su rótulo (para el log). `null` si no hay ninguna o
+ * si hay más de una candidata: con dos no se sabe cuál es la del chat, y
+ * escribir en la equivocada puede mandar un mensaje privado.
+ *
+ * Messenger se reconoce por estructura, no por idioma: sus ventanas llevan un
+ * enlace a /messages/ en el encabezado.
+ */
+async function marcarCajaGenericaDeFacebook(page: Page) {
+  await defineEsbuildNameHelper(page);
+  return page
+    .evaluate((mark) => {
+      document.querySelectorAll(`[${mark}]`).forEach((el) => el.removeAttribute(mark));
+      const esDeMessenger = (el: Element) => {
+        let nodo: Element | null = el;
+        for (let i = 0; nodo && i < 10; i += 1, nodo = nodo.parentElement) {
+          if (nodo.querySelector('a[href*="/messages/"]')) return true;
+        }
+        return false;
+      };
+      const visibles = Array.from(document.querySelectorAll<HTMLElement>('[contenteditable="true"][role="textbox"]')).filter(
+        (el) => {
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden" && !esDeMessenger(el);
+        },
+      );
+      if (visibles.length !== 1) return null;
+      visibles[0].setAttribute(mark, "1");
+      return visibles[0].getAttribute("aria-label") || visibles[0].getAttribute("aria-placeholder") || "sin rótulo";
+    }, CAJA_GENERICA_MARK)
+    .catch(() => null);
+}
+
+/**
+ * Lo que hay en pantalla cuando no se encontró la caja: los rótulos de las
+ * cajas de texto y de las pestañas visibles. Con eso el log dice cómo se llama
+ * la caja en el idioma del perfil y si el chat estaba en otra pestaña, sin
+ * tener que bajar la captura del VPS.
+ */
+async function describirPantallaDelLive(page: Page, red: string | null) {
+  await defineEsbuildNameHelper(page);
+  const alcance = await alcanceDelChat(page, red);
+  const leer = async (selector: string, atributos: string[]) =>
+    alcance
+      .locator(selector)
+      .evaluateAll(
+        (els, attrs) =>
+          els
+            .filter((el) => {
+              const r = el.getBoundingClientRect();
+              return r.width > 0 && r.height > 0;
+            })
+            .map((el) => attrs.map((a) => el.getAttribute(a)).find(Boolean) || (el as HTMLElement).innerText?.trim() || "")
+            .filter(Boolean)
+            .slice(0, 8),
+        atributos,
+      )
+      .catch(() => [] as string[]);
+
+  const cajas = await leer('[contenteditable="true"], textarea, input[type="text"]', ["aria-label", "aria-placeholder", "placeholder"]);
+  const pestanas = await leer('[role="tab"]', ["aria-label"]);
+  return (
+    `Cajas de texto visibles: ${cajas.length ? cajas.map((c) => `"${c}"`).join(", ") : "ninguna"}. ` +
+    `Pestañas: ${pestanas.length ? pestanas.map((p) => `"${p}"`).join(", ") : "ninguna"}.`
   );
 }
 
@@ -3453,7 +3540,11 @@ async function comentarEnLive(page: Page, step: Step, ctx: StepContext) {
   if (!texto) throw new Error("Step 'liveComment' requiere 'value' con el texto a comentar");
 
   const red = livePlatformFromUrl(page.url()) ?? livePlatformFromUrl(ctx.targetUrl ?? "");
-  const selector = step.selector?.trim() || (red ? LIVE_CHAT_PRESETS[red]?.selector : "");
+  // En Facebook, además del preset, el selector ancho de comentar ("Comenta
+  // como…", "Write a public comment…" y demás variantes por subcadena).
+  const preset = red ? LIVE_CHAT_PRESETS[red]?.selector : "";
+  const selector =
+    step.selector?.trim() || (red === "facebook" ? `${preset}, ${FACEBOOK_COMMENT_BOX_SELECTOR}` : preset);
   if (!selector) {
     throw new Error(`No hay selector para el chat de este live (${page.url()}). Indícalo en los ajustes adicionales.`);
   }
