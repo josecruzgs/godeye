@@ -22,8 +22,10 @@ const haceMin = (m: number) => new Date(Date.now() - m * 60_000);
 /** Margen de error al 95% para una proporción, en el peor caso (50%): lo que una casa encuestadora pone al pie. */
 const margen = (base: number) => (base >= 30 ? Math.round((98 / Math.sqrt(base)) * 10) / 10 : null);
 
-export default async function Encuestas({ searchParams }: { searchParams: Promise<{ ok?: string; error?: string; pruebas?: string; municipio?: string; distrito?: string; seccion?: string }> }) {
-  const { ok, error, pruebas: verPruebas, municipio = "", distrito = "", seccion = "" } = await searchParams;
+export default async function Encuestas({ searchParams }: { searchParams: Promise<{ ok?: string; error?: string; pruebas?: string; municipio?: string; distrito?: string; seccion?: string; de?: string }> }) {
+  const { ok, error, pruebas: verPruebas, municipio = "", distrito = "", seccion = "", de } = await searchParams;
+  // El resultado de «Probar con mi número» va en su tarjeta, no arriba: la página vuelve anclada ahí.
+  const delProbar = de === "probar";
   const s = await requireSesion();
   const admin = s.admin;
   const c = await cuestionarioActivo();
@@ -88,7 +90,7 @@ export default async function Encuestas({ searchParams }: { searchParams: Promis
         }
       />
 
-      <Aviso ok={ok} error={error} />
+      {!delProbar && <Aviso ok={ok} error={error} />}
 
       {admin && (
         <Carta id="mandar" titulo="Mandar la encuesta a un número" subtitulo="Escribe un celular de 10 dígitos: la asistente le llama y le hace la encuesta. La respuesta aparece abajo en cuanto cuelga." accent="var(--gold-vivid)">
@@ -421,6 +423,7 @@ export default async function Encuestas({ searchParams }: { searchParams: Promis
           </Carta>
 
           <Carta id="probar" titulo="Probar con mi número" subtitulo="La asistente te llama a ti, a cualquier hora. Nunca cuenta en los resultados.">
+            {delProbar && <div className="mb-3"><Aviso ok={ok} error={error} /></div>}
             <form action={probarConMiNumero} className="flex flex-wrap items-end gap-2">
               <div className="min-w-[180px] flex-1">
                 <label className={LABEL} htmlFor="telefono">Tu celular</label>

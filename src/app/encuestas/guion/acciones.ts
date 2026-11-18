@@ -10,7 +10,7 @@ import EncuestaCambioModel from "@/lib/models/EncuestaCambio";
 import { requireAdmin } from "@/lib/encuestas/acceso";
 import { cuestionarioActivo, leerOpciones, type CuestionarioActivo } from "@/lib/encuestas/llamadas";
 import { clavear } from "@/lib/encuestas/agente_voz";
-import { leerFrases, sincronizarAgente, ROTULO_FRASES, type Frases } from "@/lib/encuestas/guion";
+import { ajustarFrases, ajustarNumeroDePreguntas, leerFrases, sincronizarAgente, ROTULO_FRASES, type Frases } from "@/lib/encuestas/guion";
 
 export type OpcionEditada = { original: string | null; texto: string; seLee: boolean };
 export type PreguntaEditada = { id: string; texto: string; corto: string; reglas: string; opciones: OpcionEditada[] };
@@ -65,11 +65,11 @@ export async function guardarGuion(_prev: Resultado, formData: FormData): Promis
   const c = await cuestionarioActivo();
   if (!c) return { error: "No hay cuestionario cargado." };
 
-  const saludo = limpia(g.saludo, 400);
+  let saludo = limpia(g.saludo, 400);
   const cierre = limpia(g.cierre, 300);
   if (saludo.length < 15) return { error: "La introducción quedó muy corta: tiene que decir quién llama y pedir permiso." };
   if (!cierre) return { error: "Falta la despedida." };
-  const frases = leerFrases(null);
+  let frases = leerFrases(null);
   for (const k of Object.keys(frases) as (keyof Frases)[]) {
     const v = limpia(g.frases?.[k], 300);
     if (!v) return { error: `Falta qué contesta la asistente «${ROTULO_FRASES[k].toLowerCase()}».` };
@@ -119,6 +119,9 @@ export async function guardarGuion(_prev: Resultado, formData: FormData): Promis
     nuevas.push({ ...p, ...comun, corto: corto || p.corto });
   }
 
+  // «Una encuesta de dos preguntas» tiene que decir cuántas hay de verdad.
+  saludo = ajustarNumeroDePreguntas(saludo, nuevas.length);
+  frases = ajustarFrases(frases, nuevas.length);
   const nuevo: CuestionarioActivo = { ...c, saludo, cierre, frases: JSON.stringify(frases), version: c.version + 1, preguntas: nuevas };
   const resumen = resumir(c, nuevo);
   if (!resumen.length) return { ok: "No había nada que cambiar: el guion ya está así." };

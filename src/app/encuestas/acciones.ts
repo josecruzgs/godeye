@@ -14,7 +14,7 @@ import { cargarFilas, textoAFilas, filtroVisible } from "@/lib/encuestas/base";
 import { leerXlsx } from "@/lib/encuestas/xlsx";
 
 function volver(msg: string, ok = true, ancla = "", base = "/encuestas"): never {
-  redirect(`${base}?${ok ? "ok" : "error"}=${encodeURIComponent(msg)}${ancla}`);
+  redirect(`${base}${base.includes("?") ? "&" : "?"}${ok ? "ok" : "error"}=${encodeURIComponent(msg)}${ancla}`);
 }
 const n = (x: number) => x.toLocaleString("es-MX");
 
@@ -80,7 +80,9 @@ export async function mandarEncuesta(formData: FormData) {
 export async function probarConMiNumero(formData: FormData) {
   const s = await requireAdmin();
   const tel = String(formData.get("telefono") ?? "");
-  const base = formData.get("desde") === "guion" ? "/encuestas/guion" : "/encuestas"; // el editor del guion también tiene «Llamarme»
+  // El editor del guion también tiene «Llamarme». `de=probar` es para que el resultado salga junto al botón: la página
+  // vuelve anclada en #probar y un aviso arriba quedaba fuera de la vista (parecía que no pasaba nada).
+  const base = `${formData.get("desde") === "guion" ? "/encuestas/guion" : "/encuestas"}?de=probar`;
   const r = await llamarConAgente(tel, { prueba: true, operadorId: s.id });
   revalidatePath("/encuestas");
   if (!r.ok) volver(r.error, false, "#probar", base);

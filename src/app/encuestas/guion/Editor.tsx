@@ -14,12 +14,14 @@ const segundos = (t: string) => Math.max(1, Math.round(t.trim().split(/\s+/).fil
 
 type Props = {
   inicial: GuionEditado;
+  /** El guion con el número de preguntas corregido, cuando el guardado dice otro: el editor arranca con este. */
+  corregido?: GuionEditado;
   rotulos: Record<keyof Frases, string>;
   respuestasPorOpcion: Record<string, Record<string, number>>; // preguntaId → opción → respuestas
 };
 
-export default function Editor({ inicial, rotulos, respuestasPorOpcion }: Props) {
-  const [g, setG] = useState<GuionEditado>(inicial);
+export default function Editor({ inicial, corregido, rotulos, respuestasPorOpcion }: Props) {
+  const [g, setG] = useState<GuionEditado>(corregido ?? inicial);
   const [estado, accion, guardando] = useActionState<Resultado, FormData>(guardarGuion, undefined);
   const cambiado = JSON.stringify(g) !== JSON.stringify(inicial);
 
@@ -130,7 +132,7 @@ export default function Editor({ inicial, rotulos, respuestasPorOpcion }: Props)
       )}
       {g.preguntas.length !== inicial.preguntas.length && (
         <p className="rounded-xl bg-warning/10 px-4 py-3 text-[13px] text-warning">
-          Cambió el número de preguntas: revisa que la introducción y la respuesta «si pregunta quién habla» no digan «de dos preguntas».
+          Cambió el número de preguntas: al guardar, donde la introducción o las respuestas digan «dos preguntas» (o cualquier número) se cambia solo a {g.preguntas.length === 1 ? "una pregunta" : `${["", "una", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho"][g.preguntas.length]} preguntas`}. Revisa que el resto del texto siga teniendo sentido.
         </p>
       )}
 

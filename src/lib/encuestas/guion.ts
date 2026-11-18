@@ -29,6 +29,34 @@ export function leerFrases(crudo: string | null | undefined): Frases {
   try { return { ...FRASES_BASE, ...(crudo ? (JSON.parse(crudo) as Partial<Frases>) : {}) }; } catch { return FRASES_BASE; }
 }
 
+const NUMEROS = ["cero", "una", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve", "diez"];
+
+/**
+ * EL NÚMERO DE PREGUNTAS EN LO QUE DICE LA ASISTENTE. La introducción y «quién soy» dicen «una encuesta de dos preguntas»,
+ * y al agregar o quitar una se quedaba diciendo el número viejo. Aquí se reescribe cualquier «<número> pregunta(s)» —en
+ * palabra o en cifra— con el número real, en palabra. Se aplica al guardar (para que el panel lo muestre) y al armar el
+ * agente (para que nunca salga uno viejo aunque el texto guardado no se haya vuelto a guardar).
+ */
+export function ajustarNumeroDePreguntas(texto: string, n: number) {
+  if (!texto || n < 1) return texto;
+  const palabra = NUMEROS[n] ?? String(n);
+  const sustantivo = n === 1 ? "pregunta" : "preguntas";
+  return texto.replace(/\b(un|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|\d{1,2})(\s+)preguntas?\b/gi, (_, num: string, espacio: string) => {
+    const nuevo = /^[A-ZÁÉÍÓÚ]/.test(num) ? palabra[0].toUpperCase() + palabra.slice(1) : palabra;
+    return `${nuevo}${espacio}${sustantivo}`;
+  });
+}
+
+/** Las frases con el número de preguntas puesto al día. */
+export function ajustarFrases(f: Frases, n: number): Frases {
+  return {
+    rechazo: ajustarNumeroDePreguntas(f.rechazo, n),
+    noLlamar: ajustarNumeroDePreguntas(f.noLlamar, n),
+    quienSoy: ajustarNumeroDePreguntas(f.quienSoy, n),
+    paraQuien: ajustarNumeroDePreguntas(f.paraQuien, n),
+  };
+}
+
 const comillas = (x: string) => x.replace(/[«»]/g, '"').trim();
 const frase = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} o ${xs[xs.length - 1]}` : xs.join(""));
 
@@ -55,8 +83,8 @@ export function palabrasSinInterrupcion(c: CuestionarioActivo) {
 }
 
 export function armarAgente(c: CuestionarioActivo) {
-  const frases = leerFrases(c.frases);
   const n = c.preguntas.length;
+  const frases = ajustarFrases(leerFrases(c.frases), n);
   const preguntas = c.preguntas.map((p, i) => {
     const opciones = leerOpciones(p.opciones);
     const callar = leerOpciones(p.noSeLeen);
@@ -107,7 +135,7 @@ Lo que se alcanzó a preguntar vale. En buzón o grabadora no dejas mensaje: ter
   for (const p of c.preguntas)
     datos[p.clave] = { type: "string", description: `${comillas(p.texto)} Responde exactamente con uno de: ${leerOpciones(p.opciones).join(", ")}. Si nunca se llegó a esta pregunta, deja el valor vacío.` };
 
-  return { primerMensaje: c.saludo, prompt, datos };
+  return { primerMensaje: ajustarNumeroDePreguntas(c.saludo, n), prompt, datos };
 }
 
 const API = "https://api.elevenlabs.io/v1/convai/agents";

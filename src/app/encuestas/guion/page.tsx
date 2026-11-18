@@ -5,7 +5,7 @@ import EncuestaLlamadaModel from "@/lib/models/EncuestaLlamada";
 import EncuestaCambioModel from "@/lib/models/EncuestaCambio";
 import { requireAdmin } from "@/lib/encuestas/acceso";
 import { cuestionarioActivo, leerOpciones } from "@/lib/encuestas/llamadas";
-import { leerFrases, ROTULO_FRASES } from "@/lib/encuestas/guion";
+import { ajustarFrases, ajustarNumeroDePreguntas, leerFrases, ROTULO_FRASES } from "@/lib/encuestas/guion";
 import { fechaHoraCorta } from "@/lib/encuestas/fechas";
 import { Carta, Aviso, n, INPUT, LABEL, BTN } from "@/components/encuestas/ui";
 import PageHeader from "@/components/ui/PageHeader";
@@ -19,8 +19,10 @@ export const metadata = { title: `Editar el guion · ${BRAND_NAME}` };
 
 type Cambio = { _id: unknown; version: number; nombre: string | null; fecha: Date; resumen: string };
 
-export default async function EditarGuion({ searchParams }: { searchParams: Promise<{ ok?: string; error?: string }> }) {
-  const { ok, error } = await searchParams;
+export default async function EditarGuion({ searchParams }: { searchParams: Promise<{ ok?: string; error?: string; de?: string }> }) {
+  const { ok, error, de } = await searchParams;
+  // El resultado de «Llamarme» va en su tarjeta, no arriba: la página vuelve anclada ahí.
+  const delProbar = de === "probar";
   await requireAdmin();
   const c = await cuestionarioActivo();
   if (!c) return <p className="text-ink-muted">No se pudo cargar el cuestionario.</p>;
@@ -51,6 +53,12 @@ export default async function EditarGuion({ searchParams }: { searchParams: Prom
     }),
   };
 
+  // Si el texto guardado todavía dice otro número de preguntas («dos preguntas» con una sola), el editor abre ya corregido
+  // para que baste con darle Guardar: así también se le manda a la asistente, que es la que lo dice en la llamada.
+  const nPreguntas = inicial.preguntas.length;
+  const corregido: GuionEditado = { ...inicial, saludo: ajustarNumeroDePreguntas(inicial.saludo, nPreguntas), frases: ajustarFrases(inicial.frases, nPreguntas) };
+  const hayQueCorregir = JSON.stringify(corregido) !== JSON.stringify(inicial);
+
   return (
     <div className="mx-auto flex max-w-[920px] flex-col gap-5">
       <PageHeader
@@ -61,7 +69,7 @@ export default async function EditarGuion({ searchParams }: { searchParams: Prom
       />
       <p className="-mt-2 text-[14px] text-ink-secondary">Lo que dice la asistente virtual en cada llamada. Al guardar se actualiza sola y lo usa desde la siguiente llamada.</p>
 
-      <Aviso ok={ok} error={error} />
+      {!delProbar && <Aviso ok={ok} error={error} />}
 
       <p className="rounded-xl bg-warning/10 px-4 py-3 text-[13px] text-warning">
         <b>Ojo:</b> cambiar cómo se pregunta a media encuesta cambia lo que se mide, y las respuestas de antes y después ya no son
@@ -69,9 +77,17 @@ export default async function EditarGuion({ searchParams }: { searchParams: Prom
         introducción o la despedida no afecta los resultados.
       </p>
 
-      <Editor key={c.version} inicial={inicial} rotulos={ROTULO_FRASES} respuestasPorOpcion={respuestasPorOpcion} />
+      {hayQueCorregir && (
+        <p className="rounded-xl bg-primary/10 px-4 py-3 text-[13px] text-primary">
+          La introducción o las respuestas decían un número de preguntas distinto al real ({nPreguntas}). Ya se corrigió abajo:
+          dale <b>Guardar cambios</b> para que la asistente lo diga bien en las llamadas.
+        </p>
+      )}
+
+      <Editor key={c.version} inicial={inicial} corregido={hayQueCorregir ? corregido : undefined} rotulos={ROTULO_FRASES} respuestasPorOpcion={respuestasPorOpcion} />
 
       <Carta id="probar" titulo="Escucharlo" subtitulo="Guarda primero y luego pide que la asistente te llame. Sale a cualquier hora y nunca cuenta en los resultados.">
+        {delProbar && <div className="mb-3"><Aviso ok={ok} error={error} /></div>}
         <form action={probarConMiNumero} className="flex flex-wrap items-end gap-2">
           <input type="hidden" name="desde" value="guion" />
           <div className="min-w-[180px] flex-1">
