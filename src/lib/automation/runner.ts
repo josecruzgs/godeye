@@ -3551,8 +3551,20 @@ async function comentarEnLive(page: Page, step: Step, ctx: StepContext) {
 
   // El aviso de normas puede estar desde que carga el live o aparecer recién
   // al tocar la caja: se busca antes de escribir y otra vez antes de enviar.
-  if (red === "facebook") await cerrarAvisoNormasDelLive(page, ctx);
-  const caja = await buscarCajaDelLive(page, red, selector, ctx);
+  let selectorCaja = selector;
+  if (red === "facebook") {
+    await cerrarAvisoNormasDelLive(page, ctx);
+    // En la vista /watch/live/?v= el live sale como publicación del feed de
+    // Video: la caja no existe hasta clickear "Comentar". Se usa la misma
+    // rutina que las tareas de comentario (marca el botón de esta publicación,
+    // lo clickea una sola vez, espera la caja y reintenta); con el tipo
+    // "comment" porque esa rutina solo corre para tareas de comentario.
+    if (!step.selector?.trim()) {
+      const marcada = await prepareSelectorTarget(page, FACEBOOK_COMMENT_BOX_SELECTOR, { ...ctx, taskType: "comment" });
+      if (marcada) selectorCaja = marcada;
+    }
+  }
+  const caja = await buscarCajaDelLive(page, red, selectorCaja, ctx);
   await escribirEnCaja(page, caja, texto, ctx);
   if (red === "facebook" && (await cerrarAvisoNormasDelLive(page, ctx))) {
     // Si el aviso se llevó el foco o vació la caja, se vuelve a escribir.
@@ -3618,6 +3630,19 @@ async function comentarEnLive(page: Page, step: Step, ctx: StepContext) {
     );
   } finally {
     envio?.cancelar();
+    // La rutina de abrir comentarios de Facebook pausa el video para que el
+    // visor no derive; en un live se reanuda (en silencio) para que el perfil
+    // siga viéndolo durante la espera de después.
+    if (red === "facebook") {
+      await page
+        .evaluate(() => {
+          for (const video of Array.from(document.querySelectorAll("video"))) {
+            video.muted = true;
+            void video.play().catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }
   }
 }
 
