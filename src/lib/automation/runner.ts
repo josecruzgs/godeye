@@ -3329,6 +3329,63 @@ async function comentarioVisibleEnLive(page: Page, red: string | null, texto: st
   return false;
 }
 
+const AVISO_NORMAS_MARK = "data-godeye-aviso-normas";
+
+/**
+ * Cierra el aviso de Normas comunitarias que Facebook pone sobre el chat de un
+ * live la primera vez que la cuenta entra a comentar ("No olvides seguir
+ * nuestras Normas comunitarias…" con un botón Aceptar/OK/Tamam).
+ *
+ * Mientras está abierto, la caja se puede encontrar y escribir, pero Facebook
+ * rechaza el envío con un genérico "A server error field_exception occured".
+ *
+ * Se reconoce por el enlace a las Normas comunitarias que trae adentro, no por
+ * el texto del botón: el perfil puede tener Facebook en cualquier idioma (se
+ * vio en turco). Se sube desde el enlace hasta el primer contenedor que tenga
+ * un botón y se clickea ese botón.
+ */
+async function cerrarAvisoNormasDelLive(page: Page, ctx: StepContext) {
+  await defineEsbuildNameHelper(page);
+  const marcado = await page
+    .evaluate((mark) => {
+      document.querySelectorAll(`[${mark}]`).forEach((el) => el.removeAttribute(mark));
+      const esNormas = (href: string) => {
+        let valor = href;
+        try {
+          valor = decodeURIComponent(href);
+        } catch {
+          // queda tal cual
+        }
+        return /community.?standards/i.test(valor);
+      };
+      const enlaces = Array.from(document.querySelectorAll<HTMLAnchorElement>("a[href]")).filter((a) => esNormas(a.href));
+      for (const enlace of enlaces) {
+        let nodo: HTMLElement | null = enlace.parentElement;
+        for (let nivel = 0; nodo && nivel < 8; nivel += 1, nodo = nodo.parentElement) {
+          // Del tamaño de un aviso: más arriba ya es la página, y el primer
+          // botón que aparezca ahí puede ser cualquier cosa.
+          if ((nodo.innerText ?? "").length > 400) break;
+          const boton = Array.from(nodo.querySelectorAll<HTMLElement>('[role="button"], button')).find((b) => {
+            const caja = b.getBoundingClientRect();
+            return caja.width > 0 && caja.height > 0 && !b.contains(enlace);
+          });
+          if (boton) {
+            boton.setAttribute(mark, "1");
+            return true;
+          }
+        }
+      }
+      return false;
+    }, AVISO_NORMAS_MARK)
+    .catch(() => false);
+  if (!marcado) return false;
+
+  await page.locator(`[${AVISO_NORMAS_MARK}]`).first().click({ timeout: 3000 }).catch(() => {});
+  await log(ctx.taskId, "info", "Se aceptó el aviso de Normas comunitarias que Facebook pone sobre el chat del live.");
+  await page.waitForTimeout(1000);
+  return true;
+}
+
 async function liveTerminado(page: Page, red: string | null) {
   const texto = await textoVisibleDelLive(page, red);
   return LIVE_TERMINADO_TEXTOS.find((frase) => texto.includes(frase)) ?? null;
@@ -3401,8 +3458,18 @@ async function comentarEnLive(page: Page, step: Step, ctx: StepContext) {
     throw new Error(`No hay selector para el chat de este live (${page.url()}). Indícalo en los ajustes adicionales.`);
   }
 
+  // El aviso de normas puede estar desde que carga el live o aparecer recién
+  // al tocar la caja: se busca antes de escribir y otra vez antes de enviar.
+  if (red === "facebook") await cerrarAvisoNormasDelLive(page, ctx);
   const caja = await buscarCajaDelLive(page, red, selector, ctx);
   await escribirEnCaja(page, caja, texto, ctx);
+  if (red === "facebook" && (await cerrarAvisoNormasDelLive(page, ctx))) {
+    // Si el aviso se llevó el foco o vació la caja, se vuelve a escribir.
+    const normal = (v: string) => v.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    if (!normal(await leerCaja(caja)).includes(normal(texto))) {
+      await escribirEnCaja(page, caja, texto, ctx);
+    }
+  }
 
   const escuchaRed = red === "facebook" || red === "instagram";
   const envio = escuchaRed ? vigilarEnvioComentario(page, texto) : undefined;
