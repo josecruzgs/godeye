@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Bot, Plus } from "lucide-react";
+import { Bot, Plus, ArrowUp, ArrowDown, Trash2 } from "lucide-react";
 import { guardarGuion, type GuionEditado, type Resultado } from "./acciones";
 import type { Frases } from "@/lib/encuestas/guion";
 import { INPUT, LABEL, BTN, BTN_PRIMARY } from "@/components/encuestas/ui";
@@ -25,6 +25,21 @@ export default function Editor({ inicial, rotulos, respuestasPorOpcion }: Props)
 
   const ponPregunta = (i: number, cambio: Partial<GuionEditado["preguntas"][number]>) =>
     setG((x) => ({ ...x, preguntas: x.preguntas.map((p, k) => (k === i ? { ...p, ...cambio } : p)) }));
+  const [porQuitar, setPorQuitar] = useState<string | null>(null);
+  const totalDe = (id: string) => Object.values(respuestasPorOpcion[id] ?? {}).reduce((a, x) => a + x, 0);
+  const mover = (i: number, d: -1 | 1) =>
+    setG((x) => {
+      const ps = [...x.preguntas];
+      [ps[i], ps[i + d]] = [ps[i + d], ps[i]];
+      return { ...x, preguntas: ps };
+    });
+  const quitar = (id: string) => { setPorQuitar(null); setG((x) => ({ ...x, preguntas: x.preguntas.filter((p) => p.id !== id) })); };
+  // El id provisional («nueva-…») lo reconoce guardarGuion y le da uno de verdad al guardar.
+  const agregar = () =>
+    setG((x) => ({
+      ...x,
+      preguntas: [...x.preguntas, { id: `nueva-${Date.now()}`, texto: "", corto: "", reglas: "", opciones: [{ original: null, texto: "", seLee: true }, { original: null, texto: "", seLee: true }, { original: null, texto: "No sabe", seLee: false }] }],
+    }));
   const ponOpcion = (i: number, j: number, cambio: Partial<GuionEditado["preguntas"][number]["opciones"][number]>) =>
     ponPregunta(i, { opciones: g.preguntas[i].opciones.map((o, k) => (k === j ? { ...o, ...cambio } : o)) });
 
@@ -37,8 +52,29 @@ export default function Editor({ inicial, rotulos, respuestasPorOpcion }: Props)
       </Bloque>
 
       {g.preguntas.map((p, i) => (
-        <Bloque key={p.id} titulo={`Pregunta ${i + 1}`} ayuda="Escríbela tal como la dice la asistente, con las opciones que sí se leen dentro de la pregunta." texto={p.texto}>
-          <textarea value={p.texto} onChange={(e) => ponPregunta(i, { texto: e.target.value })} rows={3} maxLength={500} className={`${INPUT} text-[15px] font-medium leading-relaxed`} />
+        <Bloque
+          key={p.id}
+          titulo={<>Pregunta {i + 1}{p.id.startsWith("nueva-") && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">Nueva</span>}</>}
+          ayuda="Escríbela tal como la dice la asistente, con las opciones que sí se leen dentro de la pregunta."
+          texto={p.texto}
+          acciones={
+            <>
+              <button type="button" disabled={i === 0} onClick={() => mover(i, -1)} className="rounded p-1 text-ink-muted hover:text-ink disabled:opacity-30" aria-label="Subir pregunta" title="Subir"><ArrowUp className="h-4 w-4" /></button>
+              <button type="button" disabled={i === g.preguntas.length - 1} onClick={() => mover(i, 1)} className="rounded p-1 text-ink-muted hover:text-ink disabled:opacity-30" aria-label="Bajar pregunta" title="Bajar"><ArrowDown className="h-4 w-4" /></button>
+              {g.preguntas.length > 1 && (
+                <button type="button" onClick={() => (totalDe(p.id) ? setPorQuitar(p.id) : quitar(p.id))} className="rounded p-1 text-critical hover:opacity-80" aria-label="Quitar pregunta" title="Quitar pregunta"><Trash2 className="h-4 w-4" /></button>
+              )}
+            </>
+          }
+        >
+          {porQuitar === p.id && (
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-critical/10 px-3 py-2 text-[13px] text-critical">
+              <span className="flex-1">Esta pregunta ya tiene {totalDe(p.id)} {totalDe(p.id) === 1 ? "respuesta" : "respuestas"}. Si la quitas deja de hacerse y de verse en el tablero; las respuestas se quedan guardadas en sus llamadas.</span>
+              <button type="button" onClick={() => quitar(p.id)} className="font-semibold underline">Sí, quitarla</button>
+              <button type="button" onClick={() => setPorQuitar(null)} className="text-ink-muted underline">Cancelar</button>
+            </div>
+          )}
+          <textarea value={p.texto} onChange={(e) => ponPregunta(i, { texto: e.target.value })} rows={3} maxLength={500} placeholder="¿…? Escribe la pregunta con las opciones que se leen." className={`${INPUT} text-[15px] font-medium leading-relaxed`} />
           <div className="mt-3">
             <label className={LABEL}>Respuestas que se registran</label>
             <div className="space-y-2">
@@ -85,6 +121,19 @@ export default function Editor({ inicial, rotulos, respuestasPorOpcion }: Props)
         </Bloque>
       ))}
 
+      {g.preguntas.length < 8 ? (
+        <button type="button" onClick={agregar} className={`${BTN} w-full justify-center border-dashed py-3`}>
+          <Plus className="h-4 w-4" /> Agregar pregunta
+        </button>
+      ) : (
+        <p className="text-center text-[13px] text-ink-muted">Máximo 8 preguntas: por teléfono, con más la gente cuelga.</p>
+      )}
+      {g.preguntas.length !== inicial.preguntas.length && (
+        <p className="rounded-xl bg-warning/10 px-4 py-3 text-[13px] text-warning">
+          Cambió el número de preguntas: revisa que la introducción y la respuesta «si pregunta quién habla» no digan «de dos preguntas».
+        </p>
+      )}
+
       <Bloque titulo="Despedida" ayuda="Al terminar la última pregunta." texto={g.cierre}>
         <textarea value={g.cierre} onChange={(e) => setG({ ...g, cierre: e.target.value })} rows={2} maxLength={300} className={`${INPUT} text-[15px]`} />
       </Bloque>
@@ -115,12 +164,15 @@ export default function Editor({ inicial, rotulos, respuestasPorOpcion }: Props)
   );
 }
 
-function Bloque({ titulo, ayuda, texto, children }: { titulo: React.ReactNode; ayuda: string; texto: string; children: React.ReactNode }) {
+function Bloque({ titulo, ayuda, texto, acciones, children }: { titulo: React.ReactNode; ayuda: string; texto: string; acciones?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="card-surface p-5">
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-3">
         <h2 className="font-display flex items-center gap-1.5 text-[17px] font-semibold text-ink">{titulo}</h2>
-        <span className="font-mono text-[12px] font-semibold text-primary">≈ {segundos(texto)} s</span>
+        <span className="flex items-center gap-1">
+          <span className="font-mono text-[12px] font-semibold text-primary">≈ {segundos(texto)} s</span>
+          {acciones && <span className="ml-2 flex items-center">{acciones}</span>}
+        </span>
       </div>
       <p className="mb-3 text-[13px] text-ink-muted">{ayuda}</p>
       {children}
