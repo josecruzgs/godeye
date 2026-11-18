@@ -3308,6 +3308,27 @@ async function textoVisibleDelLive(page: Page, red: string | null) {
   return normalizePageText(partes.join("\n")).replace(/[’']/g, "'");
 }
 
+/**
+ * Si el comentario se ve en la página (el chat del live), comparando solo
+ * letras y números: los emojis y la puntuación la red los re-renderiza a su
+ * manera. Se llama con la caja ya vacía, así que el texto no puede venir de ahí.
+ */
+async function comentarioVisibleEnLive(page: Page, red: string | null, texto: string, timeoutMs: number) {
+  const normalizar = (valor: string) =>
+    normalizePageText(valor)
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim();
+  const buscado = normalizar(texto);
+  if (!buscado) return false;
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() <= deadline) {
+    if (normalizar(await textoVisibleDelLive(page, red)).includes(buscado)) return true;
+    await page.waitForTimeout(1000);
+  }
+  return false;
+}
+
 async function liveTerminado(page: Page, red: string | null) {
   const texto = await textoVisibleDelLive(page, red);
   return LIVE_TERMINADO_TEXTOS.find((frase) => texto.includes(frase)) ?? null;
@@ -3407,8 +3428,20 @@ async function comentarEnLive(page: Page, step: Step, ctx: StepContext) {
 
     const confirmacion = envio ? await envio.esperar(cajaVacia ? 6000 : 1000) : null;
 
+    // Un "rechazo" no se cree a ciegas: Facebook contesta errores genéricos de
+    // GraphQL ("A server error field_exception occured") cuando falla un campo
+    // secundario de la respuesta, con el comentario ya creado. Igual que en
+    // "captureComment", manda lo que se ve: si el texto está en el chat, salió.
     if (confirmacion && !confirmacion.ok) {
-      throw new Error(`La red rechazó el comentario en el live: ${confirmacion.error}`);
+      await log(ctx.taskId, "warn", `La red respondió con un error al envío (${confirmacion.error}); se busca el comentario en el chat.`);
+      if (await comentarioVisibleEnLive(page, red, texto, 10000)) {
+        await log(ctx.taskId, "info", "Comentario enviado al live: aparece en el chat pese al error de la red.");
+        return;
+      }
+      throw new Error(
+        `La red rechazó el comentario en el live: ${confirmacion.error}. No aparece en el chat; antes de ` +
+          "relanzar, revisa el live por si sí salió (relanzar lo duplicaría).",
+      );
     }
     if (!cajaVacia && !confirmacion?.ok) {
       await assertNoKnownBlocker(page);
