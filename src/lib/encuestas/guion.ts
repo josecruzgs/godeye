@@ -1,6 +1,7 @@
 import type { CuestionarioActivo } from "./llamadas";
 import { leerOpciones, esDemo } from "./llamadas";
 import { BRAND_NAME } from "@/lib/brand";
+import { vocesUsables } from "./campanas";
 
 /**
  * EL GUION DE LA ASISTENTE, ARMADO DESDE LA BASE.
@@ -60,6 +61,17 @@ export function ajustarFrases(f: Frases, n: number): Frases {
 
 const comillas = (x: string) => x.replace(/[«»]/g, '"').trim();
 const frase = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} o ${xs[xs.length - 1]}` : xs.join(""));
+const plano = (x: string) => x.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/**
+ * ¿LA PREGUNTA YA DICE SUS OPCIONES? Si el texto es «¿…Goku o Saitama?», las opciones van dentro y basta con leerlo. Si
+ * es solo «¿Quién es el humano más poderoso en Dragon Ball?», la asistente leía el texto tal cual y nunca decía las
+ * opciones hasta que se las pedían. Sin todas las opciones en el texto, se le pide leerlas enseguida de la pregunta.
+ */
+export function opcionesEnElTexto(texto: string, opciones: string[]) {
+  const t = plano(texto);
+  return opciones.every((o) => t.includes(plano(o)));
+}
 
 /**
  * LOS TIEMPOS DE TURNO. Con solo 2.5 s de silencio («eager») antes de volver a hablar, a quien se quedaba pensando le
@@ -105,11 +117,15 @@ export function armarAgente(c: CuestionarioActivo) {
   const preguntas = c.preguntas.map((p, i) => {
     const opciones = leerOpciones(p.opciones);
     const callar = leerOpciones(p.noSeLeen);
+    const leer = opciones.filter((o) => !callar.includes(o));
+    const dice = leer.length && !opcionesEnElTexto(p.texto, leer)
+      ? `Dices exactamente, de corrido y sin números: «${comillas(p.texto)}» y, sin pausa, lees las opciones: «${frase(leer)}». Siempre lees las opciones, aunque no te las pidan.`
+      : `Dices exactamente, de corrido y sin números: «${comillas(p.texto)}»`;
     const reglas = (p.reglas ?? "").split("\n").map((l) => l.replace(/^\s*[-•]\s*/, "").trim()).filter(Boolean);
     return `# PREGUNTA ${i + 1}
-${i === 0 ? "" : "NO vuelvas a saludar. Di «Gracias.» y enseguida, "}Dices exactamente, de corrido y sin números: «${comillas(p.texto)}»
+${i === 0 ? "" : "NO vuelvas a saludar. Di «Gracias.» y enseguida: "}${dice}
 - Las únicas respuestas que registras son: ${opciones.map((o) => `«${o}»`).join(", ")}. Acepta una sola; si menciona dos, le pides que escoja una.
-${callar.length ? `- NO digas ${callar.map((o) => `«${o}»`).join(" ni ")} como opción. Pero si la persona lo contesta, lo registras igual.\n` : ""}${reglas.map((r) => `- ${r}\n`).join("")}- Si pregunta «¿cuál?», «¿cómo?» o pide que repitas: repites SOLO las opciones, una vez («${frase(opciones.filter((o) => !callar.includes(o)))}»). No repitas la pregunta completa.
+${callar.length ? `- NO digas ${callar.map((o) => `«${o}»`).join(" ni ")} como opción. Pero si la persona lo contesta, lo registras igual.\n` : ""}${reglas.map((r) => `- ${r}\n`).join("")}- Si pregunta «¿cuál?», «¿cómo?» o pide que repitas: repites SOLO las opciones, una vez («${frase(leer)}»). No repitas la pregunta completa.
 - Si se queda callada, está pensando: espérala. No repitas nada.
 - Si mientras todavía lees las opciones «se oye» un nombre o una palabra que tú misma acabas de decir, es el eco de tu voz en la línea, no su respuesta: termina de leer y espera. Solo cuenta lo que la persona dice después de que terminaste de preguntar. Nunca te despidas sin tener su respuesta.
 - No preguntes por qué y no comentes la respuesta.${i === n - 1 ? " Después de esta pregunta la encuesta se acabó: nunca regreses a las anteriores." : ""}`;
@@ -133,7 +149,9 @@ Tu primer mensaje ya está dicho (la introducción). Esperas la respuesta.
 ${preguntas.join("\n\n")}
 
 # Cómo cierras
-Dices: «${comillas(ajustarGenero(c.cierre ?? "", g) || "¡Muchas gracias por participar! ¡Que tenga excelente día!")}» Y terminas con end_call.
+En cuanto tienes la respuesta de la última pregunta, dices UNA sola vez: «${comillas(ajustarGenero(c.cierre ?? "", g) || "¡Muchas gracias por participar! ¡Que tenga excelente día!")}» y en ese mismo turno llamas a end_call. No esperas a que la persona conteste la despedida.
+- La despedida nunca se repite. Si después de despedirte la persona dice algo («gracias», «igualmente») o se queda callada, no vuelves a hablar: solo llamas a end_call.
+- Lo mismo cada vez que esta guía dice «y terminas con end_call»: dices la frase y cuelgas en el mismo turno, sin esperar.
 
 # Si cuelga a media o cae en buzón
 Lo que se alcanzó a preguntar vale. En buzón o grabadora no dejas mensaje: terminas con end_call.
@@ -142,7 +160,7 @@ Lo que se alcanzó a preguntar vale. En buzón o grabadora no dejas mensaje: ter
 - No pides nombre, dirección, edad, correo ni ningún dato personal.
 - No prometes nada, no ofreces nada y no pides el voto por nadie.
 - No te alargas: ${n === 1 ? "es una pregunta" : `son ${n} preguntas`} y se acaba.
-- Nunca dices la misma frase dos veces seguidas. Si la persona tarda en contestar, esperas; si después de un buen rato no se oye nada, dices solo «¿Me escucha?».`;
+- Nunca dices la misma frase dos veces seguidas. Si la persona tarda en contestar, esperas; si después de un buen rato no se oye nada, dices solo «¿Me escucha?». Esto es solo mientras esperas una respuesta: después de despedirte ya no hablas, cuelgas.`;
 
   const datos: Record<string, { type: "string" | "boolean"; description: string }> = {
     acepto: { type: "string", description: "¿Aceptó participar en la encuesta? Responde SI o NO." },
@@ -199,13 +217,13 @@ export async function sincronizarAgente(c: CuestionarioActivo, { nombre = `${BRA
   const { primerMensaje, prompt, datos } = armarAgente(c);
   const pb = b.conversation_config.agent.prompt;
   const herramientas = {
-    end_call: { type: "system", name: "end_call", description: "Termina la llamada cuando la encuesta acabó, cuando la persona no quiere participar o pide que no le llamen, o cuando contesta un buzón o una grabadora.", params: { system_tool_type: "end_call" } },
+    end_call: { type: "system", name: "end_call", description: "Termina la llamada. Llámala en el mismo turno en que te despides, justo después de decir la despedida, sin esperar respuesta. Úsala cuando la encuesta acabó, cuando la persona no quiere participar o pide que no le llamen, o cuando contesta un buzón o una grabadora.", params: { system_tool_type: "end_call" } },
     // Sin detección de contestador, la herramienta se quita (null): la asistente ya no cuelga sola al oír un buzón.
     voicemail_detection: c.buzon
       ? { type: "system", name: "voicemail_detection", description: "Detecta si contestó un buzón de voz o una grabadora y cuelga sin dejar mensaje.", params: { system_tool_type: "voicemail_detection", voicemail_message: "" } }
       : null,
   };
-  const voz = c.voz.voces[0];
+  const voz = (await vocesUsables(c))[0];
   const cuerpo = {
     name: nombre,
     conversation_config: {

@@ -77,6 +77,8 @@ export const VOZ_INICIAL = "ewn5JTa3lNPY8QVuZJi6";
 const RESPALDO: Voz[] = [{ id: VOZ_INICIAL, nombre: "Ana Sofía", genero: "F", muestra: null, descripcion: "Conversacional" }];
 
 let cacheVoces: { en: number; voces: Voz[] } | null = null;
+/** Voces de la cuenta que ElevenLabs no deja usar en agentes (ver catalogoDeVoces). */
+const vetadas = new Set<string>();
 
 /**
  * LAS VOCES QUE SE PUEDEN ESCOGER: las de español de México de la cuenta de ElevenLabs, femeninas y masculinas. Para
@@ -90,9 +92,14 @@ export async function catalogoDeVoces(): Promise<Voz[]> {
   try {
     const r = await fetch("https://api.elevenlabs.io/v2/voices?page_size=100", { headers: { "xi-api-key": llave }, cache: "no-store" });
     if (!r.ok) return cacheVoces?.voces ?? RESPALDO;
-    type V = { voice_id: string; name: string; preview_url?: string | null; labels?: Record<string, string> };
+    type V = { voice_id: string; name: string; preview_url?: string | null; labels?: Record<string, string>; sharing?: { live_moderation_enabled?: boolean } | null };
     const { voices = [] } = (await r.json()) as { voices?: V[] };
+    // Las voces de la biblioteca con «moderación en vivo» no se pueden usar en agentes: ElevenLabs rechaza el guion
+    // (400 «has live moderation enabled and cannot be used for agents»). No se ofrecen, y si una campaña ya tenía una
+    // guardada, se salta al llamar (vocesUsables).
+    for (const v of voices) if (v.sharing?.live_moderation_enabled) vetadas.add(v.voice_id);
     const voces = voices
+      .filter((v) => !v.sharing?.live_moderation_enabled)
       .filter((v) => (v.labels?.accent ?? "").toLowerCase().includes("mexic") && ["female", "male"].includes(v.labels?.gender ?? ""))
       .map((v) => {
         const [nombre, ...resto] = v.name.split(/\s+[-–·]\s+|\s*\(MX\)\s*|_MX/);
@@ -113,10 +120,15 @@ export async function catalogoDeVoces(): Promise<Voz[]> {
   }
 }
 
+/** Las voces de la campaña que sí se pueden usar: sin las que ElevenLabs no deja usar en agentes. */
+export async function vocesUsables(c: Pick<Campana, "voz">): Promise<string[]> {
+  await catalogoDeVoces();
+  return c.voz.voces.filter((id) => !vetadas.has(id));
+}
+
 /** La voz de una llamada: si la campaña tiene varias, una al azar (así se oyen tonos distintos de una llamada a otra). */
-export function vozParaLlamada(c: Pick<Campana, "voz">): string | null {
-  const v = c.voz.voces;
-  return v.length ? v[Math.floor(Math.random() * v.length)] : null;
+export function vozParaLlamada(voces: string[]): string | null {
+  return voces.length ? voces[Math.floor(Math.random() * voces.length)] : null;
 }
 
 // ── La migración: de «una encuesta» a campañas ─────────────────────────────────────────────────────────────────────

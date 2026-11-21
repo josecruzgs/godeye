@@ -6,7 +6,7 @@ import EncuestaDestinatarioModel from "@/lib/models/EncuestaDestinatario";
 import EncuestaCuestionarioModel from "@/lib/models/EncuestaCuestionario";
 import EncuestaConfigModel from "@/lib/models/EncuestaConfig";
 import { aCampana, leerOpciones, esDemo, type Campana, type CampanaDoc } from "./llamadas";
-import { horarioDe, vozParaLlamada, ponerEstado, asegurarCampanas } from "./campanas";
+import { horarioDe, vozParaLlamada, vocesUsables, ponerEstado, asegurarCampanas } from "./campanas";
 import { huella, descifrar, cifrar, finDe, telefonoDeLlamada } from "./cifrado";
 import { migrarACifrado } from "./base";
 
@@ -324,7 +324,8 @@ export async function llamarConAgente(
     return { ok: false as const, error: "Ese número está en otra llamada ahora mismo." };
 
   // Con varias voces en la campaña, cada llamada sale con una al azar.
-  const voz = c.voz.voces.length > 1 ? vozParaLlamada(c) : null;
+  const usables = await vocesUsables(c);
+  const voz = usables.length > 1 ? vozParaLlamada(usables) : null;
   const r = await fetch(`${API}/twilio/outbound-call`, {
     method: "POST",
     headers: { ...llaves(), "Content-Type": "application/json" },
