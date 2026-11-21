@@ -124,7 +124,11 @@ export async function guardarGuion(_prev: Resultado, formData: FormData): Promis
   frases = ajustarFrases(frases, nuevas.length);
   const nuevo: CuestionarioActivo = { ...c, saludo, cierre, frases: JSON.stringify(frases), version: c.version + 1, preguntas: nuevas };
   const resumen = resumir(c, nuevo);
-  if (!resumen.length) return { ok: "No había nada que cambiar: el guion ya está así." };
+  if (!resumen.length) {
+    // Sin cambios en el texto, igual se le vuelve a mandar a la asistente: es la forma de ponerla al día a mano.
+    const r = await sincronizarAgente(c);
+    return r.ok ? { ok: "No había cambios en el guion; la asistente se actualizó con él." } : { error: `La asistente no se actualizó: ${r.error}` };
+  }
 
   // Primero la asistente: si ElevenLabs no lo acepta, no se guarda nada.
   const r = await sincronizarAgente(nuevo);

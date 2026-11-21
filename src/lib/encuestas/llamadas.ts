@@ -64,6 +64,8 @@ export type ConfigCampana = {
   terminada: Date | null;
   motivo: string | null;
   creada: Date | null;
+  /** Versión del armado del guion con que se actualizó su asistente (ver ARMADO en guion.ts). */
+  armado: number;
 };
 
 export type Campana = ConfigCampana & {
@@ -91,7 +93,7 @@ export type CampanaDoc = {
   _id: Types.ObjectId;
   nombre: string; saludo: string; cierre?: string | null; municipio?: string | null; frases?: string | null; version?: number;
   preguntas?: PreguntaDoc[];
-  estado?: string; agenteId?: string | null; creadoPor?: Types.ObjectId | null;
+  estado?: string; agenteId?: string | null; creadoPor?: Types.ObjectId | null; armado?: number;
   voz?: { genero?: string; voces?: string[] }; horario?: { desde?: number; hasta?: number; dias?: number[] };
   reintentos?: { intentos?: number; esperaMin?: number };
   meta?: number; lineas?: number; tope?: number; buzon?: boolean; etiquetas?: string[];
@@ -138,6 +140,7 @@ export function aCampana(d: CampanaDoc): Campana {
     terminada: d.terminada ?? null,
     motivo: d.motivo ?? null,
     creada: d.createdAt ?? null,
+    armado: d.armado ?? 0,
   };
 }
 

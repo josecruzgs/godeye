@@ -9,6 +9,7 @@ import { aCampana, leerOpciones, esDemo, type Campana, type CampanaDoc } from ".
 import { horarioDe, vozParaLlamada, vocesUsables, ponerEstado, asegurarCampanas } from "./campanas";
 import { huella, descifrar, cifrar, finDe, telefonoDeLlamada } from "./cifrado";
 import { migrarACifrado } from "./base";
+import { sincronizarAgente, ARMADO } from "./guion";
 
 /**
  * LAS LLAMADAS DE LAS CAMPAÑAS, CON LA ASISTENTE VIRTUAL.
@@ -300,6 +301,28 @@ export async function limpiarAvisoDeVoz() {
  * `destinatarioId`: el motor ya apartó a ese destinatario (lo puso EN_CURSO y le sumó el intento). Sin él, si el número es
  * de la lista de la campaña y la llamada es de verdad, se aparta aquí mismo.
  */
+const marcando = new Set<string>();
+
+/**
+ * PONER AL DÍA LA ASISTENTE (una vez por campaña y por proceso). El motor marca varias llamadas de la misma campaña en
+ * una vuelta: todas esperan la misma actualización en vez de mandar cada una la suya.
+ */
+const poniendoAlDia = new Map<string, Promise<boolean>>();
+async function asistenteAlDia(c: Campana) {
+  if (c.armado === ARMADO) return;
+  let p = poniendoAlDia.get(c.id);
+  if (!p) {
+    p = sincronizarAgente(c).then((s) => {
+      if (!s.ok) console.warn(`[encuestas] «${c.nombre}»: no se pudo actualizar la asistente antes de llamar: ${s.error}`);
+      return s.ok;
+    });
+    poniendoAlDia.set(c.id, p);
+  }
+  const ok = await p;
+  if (ok) c.armado = ARMADO;
+  else poniendoAlDia.delete(c.id);
+}
+
 export async function llamarConAgente(
   telefono: string,
   { campana: c, prueba = true, operadorId = null, destinatarioId = null }: { campana: Campana; prueba?: boolean; operadorId?: string | null; destinatarioId?: Types.ObjectId | null },
@@ -319,49 +342,59 @@ export async function llamarConAgente(
   // Quien pidió que no le llamen no recibe ninguna llamada, de ninguna campaña, tampoco de prueba.
   if (await EncuestaContactoModel.exists({ telefono: laHuella, estado: "NO_LLAMAR" }))
     return { ok: false as const, error: "Esa persona pidió que no le volvieran a llamar." };
-  // Un número puede estar en varias campañas, pero no se le marca mientras esté en otra llamada.
-  if (await EncuestaLlamadaModel.exists({ huella: laHuella, estado: "EN_CURSO", inicio: { $gte: new Date(Date.now() - 15 * 60_000) } }))
-    return { ok: false as const, error: "Ese número está en otra llamada ahora mismo." };
+  // Dos clics seguidos en «Llamarme» (o una petición repetida) mandaban dos o tres llamadas al mismo número en el mismo
+  // segundo: entre revisar si ya estaba en una llamada y abrirla pasa más de un segundo. Mientras se marca, el número queda apartado.
+  if (marcando.has(laHuella)) return { ok: false as const, error: "Ya se está marcando a ese número." };
+  marcando.add(laHuella);
+  try {
+    // Si el armado del guion cambió desde la última vez, la asistente se pone al día antes de llamar.
+    await asistenteAlDia(c);
+    // Un número puede estar en varias campañas, pero no se le marca mientras esté en otra llamada.
+    if (await EncuestaLlamadaModel.exists({ huella: laHuella, estado: "EN_CURSO", inicio: { $gte: new Date(Date.now() - 15 * 60_000) } }))
+      return { ok: false as const, error: "Ese número está en otra llamada ahora mismo." };
 
-  // Con varias voces en la campaña, cada llamada sale con una al azar.
-  const usables = await vocesUsables(c);
-  const voz = usables.length > 1 ? vozParaLlamada(usables) : null;
-  const r = await fetch(`${API}/twilio/outbound-call`, {
-    method: "POST",
-    headers: { ...llaves(), "Content-Type": "application/json" },
-    // Si nadie contesta, se cuelga a los 20 s de timbrar: antes de que entre el buzón (en México suele entrar a los 25-30 s).
-    body: JSON.stringify({
-      agent_id: c.agenteId, agent_phone_number_id: numeroId(), to_number: e164,
-      telephony_call_config: { ringing_timeout_secs: timbreSeg() },
-      ...(voz ? { conversation_initiation_client_data: { conversation_config_override: { tts: { voice_id: voz } } } } : {}),
-    }),
-  });
-  const cuerpo = (await r.json().catch(() => ({}))) as { success?: boolean; conversation_id?: string; message?: string; detail?: unknown };
-  if (!r.ok || cuerpo.success === false)
-    return { ok: false as const, error: `ElevenLabs contestó ${r.status}: ${cuerpo.message ?? JSON.stringify(cuerpo.detail ?? {}).slice(0, 200)}` };
+    // Con varias voces en la campaña, cada llamada sale con una al azar.
+    const usables = await vocesUsables(c);
+    const voz = usables.length > 1 ? vozParaLlamada(usables) : null;
+    const r = await fetch(`${API}/twilio/outbound-call`, {
+      method: "POST",
+      headers: { ...llaves(), "Content-Type": "application/json" },
+      // Si nadie contesta, se cuelga a los 20 s de timbrar: antes de que entre el buzón (en México suele entrar a los 25-30 s).
+      body: JSON.stringify({
+        agent_id: c.agenteId, agent_phone_number_id: numeroId(), to_number: e164,
+        telephony_call_config: { ringing_timeout_secs: timbreSeg() },
+        ...(voz ? { conversation_initiation_client_data: { conversation_config_override: { tts: { voice_id: voz } } } } : {}),
+      }),
+    });
+    const cuerpo = (await r.json().catch(() => ({}))) as { success?: boolean; conversation_id?: string; message?: string; detail?: unknown };
+    if (!r.ok || cuerpo.success === false)
+      return { ok: false as const, error: `ElevenLabs contestó ${r.status}: ${cuerpo.message ?? JSON.stringify(cuerpo.detail ?? {}).slice(0, 200)}` };
 
-  // La llamada se abre en cuanto sale: cuenta como intento aunque no contesten y al colgar se llena sola. A la lista solo
-  // se liga lo real: una prueba a un número de la lista no le gasta su intento.
-  let contactoId: Types.ObjectId | null = null;
-  if (destinatarioId) {
-    contactoId = (await EncuestaDestinatarioModel.findById(destinatarioId).select("contactoId").lean<{ contactoId: Types.ObjectId }>())?.contactoId ?? null;
-  } else if (!prueba) {
-    const d = await EncuestaDestinatarioModel.findOneAndUpdate(
-      { campanaId: c.id, huella: laHuella, estado: { $nin: ["NO_LLAMAR", "EN_CURSO"] } },
-      { $set: { estado: "EN_CURSO", ultimoIntento: new Date() }, $inc: { intentos: 1 } },
-    ).select("contactoId").lean<{ contactoId: Types.ObjectId }>();
-    contactoId = d?.contactoId ?? null;
+    // La llamada se abre en cuanto sale: cuenta como intento aunque no contesten y al colgar se llena sola. A la lista solo
+    // se liga lo real: una prueba a un número de la lista no le gasta su intento.
+    let contactoId: Types.ObjectId | null = null;
+    if (destinatarioId) {
+      contactoId = (await EncuestaDestinatarioModel.findById(destinatarioId).select("contactoId").lean<{ contactoId: Types.ObjectId }>())?.contactoId ?? null;
+    } else if (!prueba) {
+      const d = await EncuestaDestinatarioModel.findOneAndUpdate(
+        { campanaId: c.id, huella: laHuella, estado: { $nin: ["NO_LLAMAR", "EN_CURSO"] } },
+        { $set: { estado: "EN_CURSO", ultimoIntento: new Date() }, $inc: { intentos: 1 } },
+      ).select("contactoId").lean<{ contactoId: Types.ObjectId }>();
+      contactoId = d?.contactoId ?? null;
+    }
+    const l = await EncuestaLlamadaModel.create({
+      cuestionarioId: c.id, prueba, estado: "EN_CURSO",
+      // undefined y no null: el índice único de externoId es disperso, y dos null chocarían.
+      externoId: cuerpo.conversation_id ?? undefined,
+      ...telefonoDeLlamada(diez, prueba), contactoId,
+      operadorId: operadorId && Types.ObjectId.isValid(operadorId) ? operadorId : null,
+      versionGuion: c.version,
+    });
+    if (contactoId) await EncuestaContactoModel.updateOne({ _id: contactoId, estado: { $ne: "NO_LLAMAR" } }, { $set: { estado: "EN_CURSO", ultimoIntento: new Date() }, $inc: { intentos: 1 } });
+    return { ok: true as const, conversationId: cuerpo.conversation_id ?? null, numero: e164, llamadaId: String(l._id) };
+  } finally {
+    marcando.delete(laHuella);
   }
-  const l = await EncuestaLlamadaModel.create({
-    cuestionarioId: c.id, prueba, estado: "EN_CURSO",
-    // undefined y no null: el índice único de externoId es disperso, y dos null chocarían.
-    externoId: cuerpo.conversation_id ?? undefined,
-    ...telefonoDeLlamada(diez, prueba), contactoId,
-    operadorId: operadorId && Types.ObjectId.isValid(operadorId) ? operadorId : null,
-    versionGuion: c.version,
-  });
-  if (contactoId) await EncuestaContactoModel.updateOne({ _id: contactoId, estado: { $ne: "NO_LLAMAR" } }, { $set: { estado: "EN_CURSO", ultimoIntento: new Date() }, $inc: { intentos: 1 } });
-  return { ok: true as const, conversationId: cuerpo.conversation_id ?? null, numero: e164, llamadaId: String(l._id) };
 }
 
 /**

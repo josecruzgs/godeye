@@ -2,6 +2,16 @@ import type { CuestionarioActivo } from "./llamadas";
 import { leerOpciones, esDemo } from "./llamadas";
 import { BRAND_NAME } from "@/lib/brand";
 import { vocesUsables } from "./campanas";
+import { dbConnect } from "@/lib/mongodb";
+import EncuestaCuestionarioModel from "@/lib/models/EncuestaCuestionario";
+
+/**
+ * LA VERSIÓN DEL ARMADO. Lo que se le manda a la asistente sale de armarAgente y sincronizarAgente; cuando cambian (una
+ * regla nueva, una corrección), las asistentes que ya existen siguen con lo viejo hasta que alguien guarde. Subir este
+ * número hace que cada campaña actualice su asistente sola antes de su siguiente llamada (ver llamarConAgente).
+ *  2: leer las opciones que no vienen en el texto de la pregunta y colgar en el mismo turno de la despedida.
+ */
+export const ARMADO = 2;
 
 /**
  * EL GUION DE LA ASISTENTE, ARMADO DESDE LA BASE.
@@ -242,7 +252,10 @@ export async function sincronizarAgente(c: CuestionarioActivo, { nombre = `${BRA
     : await fetch(`${API}/create`, { method: "POST", headers: H, body: JSON.stringify(cuerpo) });
   const j = (await r.json().catch(() => ({}))) as { agent_id?: string; detail?: unknown };
   if (!r.ok) return { ok: false as const, error: `ElevenLabs no aceptó el guion (${r.status}): ${JSON.stringify(j.detail ?? j).slice(0, 200)}` };
-  return { ok: true as const, agenteId: agenteId || j.agent_id || "", creado: !agenteId };
+  const nuevoId = agenteId || j.agent_id || "";
+  await dbConnect();
+  await EncuestaCuestionarioModel.updateOne({ _id: c.id }, { $set: { armado: ARMADO, ...(nuevoId && !agenteId ? { agenteId: nuevoId } : {}) } }).catch(() => null);
+  return { ok: true as const, agenteId: nuevoId, creado: !agenteId };
 }
 
 /** Borrar el agente de una campaña que se elimina. Si falla no pasa nada: queda un agente sin usar en ElevenLabs. */

@@ -80,6 +80,8 @@ const EncuestaCuestionarioSchema = new Schema(
     motivo: { type: String, default: null },
     /** La última vez que el motor marcó por esta campaña: se reparten las líneas empezando por la que lleva más tiempo esperando. */
     ultimaVuelta: { type: Date, default: null },
+    /** Con qué versión del armado del guion (ARMADO en guion.ts) se actualizó por última vez su asistente en ElevenLabs. */
+    armado: { type: Number, default: 0 },
   },
   { timestamps: true, collection: "encuestas_cuestionarios" },
 );
