@@ -13,6 +13,7 @@ import { INPUT, LABEL, BTN, BTN_PRIMARY } from "@/components/encuestas/ui";
 const segundos = (t: string) => Math.max(1, Math.round(t.trim().split(/\s+/).filter(Boolean).length / 2.6));
 
 type Props = {
+  campanaId: string;
   inicial: GuionEditado;
   /** El guion con el número de preguntas corregido, cuando el guardado dice otro: el editor arranca con este. */
   corregido?: GuionEditado;
@@ -20,7 +21,7 @@ type Props = {
   respuestasPorOpcion: Record<string, Record<string, number>>; // preguntaId → opción → respuestas
 };
 
-export default function Editor({ inicial, corregido, rotulos, respuestasPorOpcion }: Props) {
+export default function Editor({ campanaId, inicial, corregido, rotulos, respuestasPorOpcion }: Props) {
   const [g, setG] = useState<GuionEditado>(corregido ?? inicial);
   const [estado, accion, guardando] = useActionState<Resultado, FormData>(guardarGuion, undefined);
   const cambiado = JSON.stringify(g) !== JSON.stringify(inicial);
@@ -47,6 +48,7 @@ export default function Editor({ inicial, corregido, rotulos, respuestasPorOpcio
 
   return (
     <form action={accion} className="space-y-5">
+      <input type="hidden" name="campana" value={campanaId} />
       <input type="hidden" name="datos" value={JSON.stringify(g)} />
 
       <Bloque titulo={<><Bot className="h-4 w-4 text-primary" /> Introducción</>} ayuda="Lo primero que oye la persona. Corto, diciendo quién llama y pidiendo permiso." texto={g.saludo}>

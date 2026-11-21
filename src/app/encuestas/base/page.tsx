@@ -9,7 +9,7 @@ import { fechaHoraCorta } from "@/lib/encuestas/fechas";
 import { Carta, Pastilla, Aviso, n, INPUT, LABEL, BTN, BTN_PRIMARY } from "@/components/encuestas/ui";
 import PageHeader from "@/components/ui/PageHeader";
 import { BRAND_NAME } from "@/lib/brand";
-import { subirBase } from "../acciones";
+import { subirBase, vaciarBase } from "../acciones";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: `Base de teléfonos · ${BRAND_NAME}` };
@@ -67,8 +67,8 @@ export default async function Base({ searchParams }: { searchParams: Promise<{ q
       <PageHeader
         icon={<Users className="h-4 w-4" />}
         title="La base de teléfonos"
-        subtitle={`${n(base.total)} personas cargadas · ${n(misContactos)} las subiste tú · la lista a la que llama la asistente, con cómo le fue a cada quien`}
-        right={<Link href="/encuestas" className={BTN}>← Volver al tablero</Link>}
+        subtitle={`${n(base.total)} personas cargadas · ${n(misContactos)} las subiste tú · tus contactos para las campañas, con su último resultado en cualquier campaña`}
+        right={<Link href="/encuestas" className={BTN}>← Campañas</Link>}
       />
 
       <Aviso ok={ok} error={error} />
@@ -106,7 +106,7 @@ export default async function Base({ searchParams }: { searchParams: Promise<{ q
         {filas.length ? (
           <div className="-mx-1 overflow-x-auto px-1">
             <table className="enc-tabla">
-              <thead><tr><th className="num">#</th><th>ID</th><th>Teléfono</th><th>Municipio</th><th>Distrito</th><th>Sección</th><th>Otro</th><th>Cómo va</th><th className="num">Llamadas</th><th>Última llamada</th><th>Archivo</th><th>De quién</th></tr></thead>
+              <thead><tr><th className="num">#</th><th>ID</th><th>Teléfono</th><th>Municipio</th><th>Distrito</th><th>Sección</th><th>Otro</th><th>Último resultado</th><th className="num">Llamadas</th><th>Última llamada</th><th>Archivo</th><th>De quién</th></tr></thead>
               <tbody>
                 {filas.map((x, i) => (
                   <tr key={x.id}>
@@ -146,8 +146,16 @@ export default async function Base({ searchParams }: { searchParams: Promise<{ q
         <form action={subirBase} className="flex flex-wrap items-end gap-3">
           <input name="archivo" type="file" accept=".xlsx,.csv,.txt,.tsv" className={`${INPUT} !w-auto min-w-[240px] flex-1 !py-1.5`} />
           <button className={BTN_PRIMARY}>Subir a la base</button>
+          {/* Es una descarga (route handler), no una página: <Link> la abriría como navegación. */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a href="/encuestas/plantilla" className={BTN}>Descargar plantilla</a>
         </form>
+        {misContactos > 0 && (
+          <form action={vaciarBase} id="base" className="mt-4 border-t border-hairline pt-4">
+            <button className="text-[12.5px] font-semibold text-critical underline">Vaciar mi base</button>
+            <span className="ml-2 text-[12px] text-ink-muted">Borra tus teléfonos (y de las campañas, a quien todavía no se le llamaba). Las encuestas hechas se quedan.</span>
+          </form>
+        )}
       </Carta>
     </div>
   );

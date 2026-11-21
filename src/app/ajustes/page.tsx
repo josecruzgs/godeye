@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, RotateCcw, Upload, Trash2, Gauge } from "lucide-react";
+import { Check, RotateCcw, Upload, Trash2, Gauge, PhoneCall } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import Card from "@/components/Card";
 import { useSession } from "@/lib/session";
@@ -256,6 +256,7 @@ export default function AjustesPage() {
       </div>
 
       {session?.role === "admin" && <MotoresCard />}
+      {session?.role === "admin" && <CampanasCard />}
     </form>
   );
 }
@@ -411,6 +412,86 @@ function MotoresCard() {
             : aplicando
               ? `Aplicando: ${activos} → ${pedido} (el worker lo toma en unos segundos)...`
               : `${activos} de ${MOTORES_TOTALES} encendidos`}
+      </p>
+
+      {error && <p className="rounded-xl bg-critical/10 p-3 text-sm text-critical">{error}</p>}
+    </Card>
+  );
+}
+
+type EstadoCampanas = { limite: number; corriendo: number; maximo: number; lineas: number };
+
+/**
+ * Cuántas campañas de encuesta pueden llamar al mismo tiempo. Como los motores, es capacidad compartida y se aplica al
+ * tocarlo: las líneas telefónicas se reparten entre las campañas que estén llamando.
+ */
+function CampanasCard() {
+  const [estado, setEstado] = useState<EstadoCampanas | null>(null);
+  const [pidiendo, setPidiendo] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function traer() {
+    try {
+      setEstado(await apiFetch<EstadoCampanas>("/api/encuestas/ajustes"));
+    } catch {
+      // Si falla, se queda lo que ya se veía.
+    }
+  }
+
+  useEffect(() => {
+    traer();
+  }, []);
+
+  async function elegir(n: number) {
+    setPidiendo(n);
+    setError(null);
+    try {
+      await apiFetch("/api/encuestas/ajustes", { method: "PUT", body: JSON.stringify({ limite: n }) });
+      await traer();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPidiendo(null);
+    }
+  }
+
+  const maximo = estado?.maximo ?? 10;
+  return (
+    <Card className="flex flex-col gap-4 p-5">
+      <div>
+        <h2 className="flex items-center gap-2 font-display text-lg font-semibold text-ink">
+          <PhoneCall className="h-4 w-4 text-primary" /> Campañas de encuesta a la vez
+        </h2>
+        <p className="mt-1 text-[13px] text-ink-secondary">
+          Cuántas campañas de llamadas pueden estar llamando al mismo tiempo. Afecta a todo el sistema y se aplica al
+          tocarlo. Las {estado?.lineas ?? "—"} líneas telefónicas se reparten entre las que estén llamando: con más campañas a
+          la vez, a cada una le tocan menos. Bajarlo no detiene las que ya llaman; solo impide arrancar otra hasta que haya lugar.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {Array.from({ length: maximo }, (_, i) => i + 1).map((n) => {
+          const elegido = estado?.limite === n;
+          return (
+            <button
+              key={n}
+              type="button"
+              disabled={pidiendo !== null || !estado}
+              onClick={() => elegir(n)}
+              title={`Hasta ${n} campaña${n === 1 ? "" : "s"} a la vez`}
+              aria-pressed={elegido}
+              className={`grid h-11 w-11 place-items-center rounded-lg border font-mono text-sm font-semibold transition-colors disabled:opacity-50 ${
+                elegido ? "border-primary bg-primary text-primary-fg ring-2 ring-primary ring-offset-2 ring-offset-page" : "border-hairline bg-surface text-ink-muted hover:bg-page hover:text-ink"
+              }`}
+            >
+              {n}
+            </button>
+          );
+        })}
+      </div>
+
+      <p className="font-mono text-[11px] text-ink-muted">
+        {!estado ? "Consultando..." : `${estado.corriendo} llamando ahora · límite ${estado.limite}`}
       </p>
 
       {error && <p className="rounded-xl bg-critical/10 p-3 text-sm text-critical">{error}</p>}

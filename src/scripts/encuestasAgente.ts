@@ -2,33 +2,33 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 
 import mongoose from "mongoose";
-import { cuestionarioActivo } from "../lib/encuestas/llamadas";
+import EncuestaCuestionarioModel from "../lib/models/EncuestaCuestionario";
+import { leerCampana, campanaPorOmision } from "../lib/encuestas/llamadas";
+import { asegurarCampanas } from "../lib/encuestas/campanas";
 import { armarAgente, sincronizarAgente } from "../lib/encuestas/guion";
 
 /**
- * LA ASISTENTE VIRTUAL DE ENCUESTAS, ARMADA DESDE EL CUESTIONARIO DE MONGO.
+ * LA ASISTENTE VIRTUAL DE UNA CAMPAÑA, ARMADA DESDE MONGO.
  *
- * Es lo mismo que hace «Guardar» en /encuestas/guion, para usarlo desde la terminal: crear el agente la primera vez
- * (copiando voz, modelo y tiempos de ELEVENLABS_AGENTE_BASE si existe; si no, con la configuración probada en campo de
- * lib/encuestas/guion.ts) o volver a mandarle el guion.
+ * Es lo mismo que hace «Guardar» en el guion o en la configuración de una campaña, para usarlo desde la terminal: enseñar
+ * lo que dice la asistente y, con --aplicar, mandárselo a su agente de ElevenLabs (o crearlo si la campaña no tiene).
  *
- *   npm run encuestas:agente               # enseña el guion
- *   npm run encuestas:agente -- --aplicar  # crea el agente (o actualiza ELEVENLABS_AGENTE_ENCUESTA)
- *
- * El id del agente nuevo se imprime y no se escribe solo en ningún lado: va en el .env.local de cada máquina (y en el
- * del VPS), igual que las demás variables.
+ *   npm run encuestas:agente                          # la campaña por omisión: enseña el guion
+ *   npm run encuestas:agente -- <idCampaña>           # esa campaña
+ *   npm run encuestas:agente -- <idCampaña> --aplicar # lo manda al agente (y guarda el agente nuevo en la campaña)
  */
 async function main() {
-  const c = await cuestionarioActivo();
-  if (!c) return console.log("No hay cuestionario.");
+  await asegurarCampanas();
+  const id = process.argv.slice(2).find((x) => !x.startsWith("--"));
+  const c = id ? await leerCampana(id) : await campanaPorOmision();
+  if (!c) return console.log("No hay esa campaña.");
   const { primerMensaje, prompt, datos } = armarAgente(c);
-  console.log(`Primer mensaje: ${primerMensaje}\n\n${prompt}\n\nCampos: ${Object.keys(datos).join(", ")}`);
+  console.log(`Campaña: ${c.nombre} (${c.id}) · agente ${c.agenteId ?? "sin crear"}\n\nPrimer mensaje: ${primerMensaje}\n\n${prompt}\n\nCampos: ${Object.keys(datos).join(", ")}`);
   if (!process.argv.includes("--aplicar")) return console.log("\nPara mandarlo al agente: agrega -- --aplicar");
-  const existente = process.env.ELEVENLABS_AGENTE_ENCUESTA ?? "";
-  const r = await sincronizarAgente(c, { agenteId: existente, desde: process.env.ELEVENLABS_AGENTE_BASE ?? "" });
+  const r = await sincronizarAgente(c);
   if (!r.ok) return console.log(`\nNo se pudo: ${r.error}`);
-  if (existente) return console.log(`\nActualizado el agente ${existente}.`);
-  console.log(`\nCreado. Agrega esta línea al .env.local (y al del VPS) y reinicia:\nELEVENLABS_AGENTE_ENCUESTA=${r.agenteId}`);
+  if (r.creado) await EncuestaCuestionarioModel.updateOne({ _id: c.id }, { $set: { agenteId: r.agenteId } });
+  console.log(r.creado ? `\nCreado el agente ${r.agenteId} y guardado en la campaña.` : `\nActualizado el agente ${r.agenteId}.`);
 }
 
 main().finally(() => mongoose.disconnect());

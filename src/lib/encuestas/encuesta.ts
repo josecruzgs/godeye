@@ -1,9 +1,9 @@
 /**
- * EL CUESTIONARIO INICIAL: OPINIÓN CIUDADANA EN BAJA CALIFORNIA.
+ * LA ENCUESTA DE EJEMPLO: OPINIÓN CIUDADANA EN BAJA CALIFORNIA.
  *
- * Solo sirve para arrancar una base vacía: la primera vez que alguien abre Encuestas se crea con esto (ver
- * cuestionarioActivo en llamadas.ts). Después el guion vive en Mongo y se cambia en /encuestas/guion: lo que diga este
- * archivo ya no pisa lo que haya allá.
+ * Es el guion con el que arranca una campaña nueva «en blanco» (ver crearCampana en campanas.ts), para que haya algo que
+ * editar. Después el guion de cada campaña vive en Mongo y se cambia en /encuestas/[id]/guion: lo que diga este archivo
+ * no pisa lo que haya allá.
  *
  * Es una encuesta de opinión sobre el trabajo de gobierno y los problemas de la colonia: no pregunta por partidos,
  * candidaturas ni intención de voto, y no menciona a ninguna persona.

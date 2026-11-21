@@ -2,54 +2,40 @@ import { Types } from "mongoose";
 import { dbConnect } from "@/lib/mongodb";
 import EncuestaLlamadaModel from "@/lib/models/EncuestaLlamada";
 import EncuestaContactoModel from "@/lib/models/EncuestaContacto";
+import EncuestaDestinatarioModel from "@/lib/models/EncuestaDestinatario";
+import EncuestaCuestionarioModel from "@/lib/models/EncuestaCuestionario";
 import EncuestaConfigModel from "@/lib/models/EncuestaConfig";
-import { cuestionarioActivo, leerOpciones, esDemo } from "./llamadas";
-import { ZONA } from "./fechas";
+import { aCampana, leerOpciones, esDemo, type Campana, type CampanaDoc } from "./llamadas";
+import { horarioDe, vozParaLlamada, ponerEstado, asegurarCampanas } from "./campanas";
 import { huella, descifrar, cifrar, finDe, telefonoDeLlamada } from "./cifrado";
 import { migrarACifrado } from "./base";
 
 /**
- * LA ENCUESTA QUE LEVANTA LA ASISTENTE VIRTUAL.
+ * LAS LLAMADAS DE LAS CAMPAÑAS, CON LA ASISTENTE VIRTUAL.
  *
  * ElevenLabs marca, habla, escucha y al colgar deja la plática con sus campos ya extraídos. Lo que importa es que eso
- * entre a la encuesta: una llamada que ocurrió y no quedó registrada no ocurrió para ningún resultado.
+ * entre a la campaña: una llamada que ocurrió y no quedó registrada no ocurrió para ningún resultado.
  *
  * Se traen las pláticas en vez de esperar un webhook: traerlas se puede repetir cuantas veces se quiera (cada plática se
  * guarda con su identificador y el segundo intento no duplica nada) y si algo falló, se vuelve a traer y ya. Lo hacen el
  * worker cada 2 minutos (src/worker/index.ts) y el tablero abierto cada 15 segundos.
  *
- * Lo que el agente extrae se guarda tal cual, sin corregirlo: si dijo que no sabe, se guarda que no sabe.
+ * Cada campaña tiene su agente, su horario, sus reglas de reintento y sus destinatarios. Lo que vale para todas a la vez:
+ * las líneas telefónicas (ELEVENLABS_SIMULTANEAS) se reparten entre las campañas que estén llamando, a quien pidió que no
+ * le llamen no lo llama ninguna, y a un número no se le marca si ya está en otra llamada.
  *
- * Es un motor ya probado en llamadas reales (timbre de 20 s para no caer en buzón, llamadas que no salieron que no gastan
- * intento, tanda que sigue sola, meta de contacto), con preguntas genéricas: cada pregunta tiene su `clave`, que es el
- * nombre del campo que extrae el agente.
+ * Lo que el agente extrae se guarda tal cual, sin corregirlo: si dijo que no sabe, se guarda que no sabe.
  *
  * Las variables de entorno se leen al usarse y no al cargar el archivo: el worker también lo importa, y ahí dotenv corre
  * en el mismo arranque.
  */
 const API = "https://api.elevenlabs.io/v1/convai";
-export const agenteId = () => process.env.ELEVENLABS_AGENTE_ENCUESTA ?? "";
 const numeroId = () => process.env.ELEVENLABS_NUMERO_ID ?? "";
-export const hayAgenteDeVoz = () => !!(process.env.ELEVENLABS_API_KEY && agenteId());
+/** ¿Está conectado ElevenLabs? Cada campaña tiene su agente; aquí solo se necesita la llave. */
+export const hayAgenteDeVoz = () => !!process.env.ELEVENLABS_API_KEY;
 const llaves = () => ({ "xi-api-key": process.env.ELEVENLABS_API_KEY ?? "" });
 
-/**
- * CUÁNDO SE PUEDE LLAMAR: de 9:00 a 20:00 en hora de Baja California, todos los días. Fuera de eso no sale ninguna llamada real:
- * contesta poca gente, molesta y deja mala imagen. Las pruebas a un número propio sí salen a cualquier hora.
- * Se ajusta con LLAMADAS_HORARIO="9-20" y LLAMADAS_DIAS="1-7" (1 = lunes).
- */
-const DIAS = ["", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
-export function horarioDeLlamadas(ahora = new Date()) {
-  const [H_INI, H_FIN] = (process.env.LLAMADAS_HORARIO ?? "9-20").split("-").map(Number);
-  const [D_INI, D_FIN] = (process.env.LLAMADAS_DIAS ?? "1-7").split("-").map(Number);
-  const partes = new Intl.DateTimeFormat("en-US", { timeZone: ZONA, hour: "numeric", hourCycle: "h23", weekday: "short" }).formatToParts(ahora);
-  const hora = Number(partes.find((x) => x.type === "hour")?.value ?? 0);
-  const dia = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].indexOf(partes.find((x) => x.type === "weekday")?.value ?? "") + 1;
-  const abierto = hora >= H_INI && hora < H_FIN && dia >= D_INI && dia <= D_FIN;
-  const dias = D_INI === 1 && D_FIN === 7 ? "todos los días" : `de ${DIAS[D_INI]} a ${DIAS[D_FIN]}`;
-  return { abierto, texto: `de ${H_INI}:00 a ${H_FIN}:00, ${dias}` };
-}
-const fueraDeHorario = () => `Fuera de horario: las llamadas de la encuesta salen ${horarioDeLlamadas().texto} (hora de Baja California). Las pruebas a tu número sí salen a cualquier hora.`;
+const fueraDeHorario = (c: Campana) => `Fuera de horario: esta campaña llama ${horarioDe(c).texto} (hora de Baja California). Las pruebas a tu número sí salen a cualquier hora.`;
 
 type Platica = { conversation_id: string };
 type Detalle = {
@@ -66,23 +52,57 @@ type LlamadaAbierta = { _id: Types.ObjectId; estado: string; inicio: Date; conta
 export const clavear = (x: string) =>
   x.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
 
-/** TRAER LAS LLAMADAS DEL AGENTE Y REGISTRARLAS. Lo que no se pueda ligar a la base entra como prueba. */
-export async function importarLlamadasDelAgente({ limite = 30 } = {}) {
-  if (!hayAgenteDeVoz()) return { ok: false as const, error: "Falta la llave de ElevenLabs o el identificador del agente." };
-  const c = await cuestionarioActivo();
-  if (!c) return { ok: false as const, error: "No hay cuestionario cargado." };
-  await migrarACifrado();
+/** Lo que se puede volver a marcar (con sus reglas) y lo que todavía está sonando. */
+const POR_REMARCAR = ["NO_CONTESTO", "BUZON"];
+const ALCANZABLE = ["PENDIENTE", "NO_CONTESTO", "BUZON", "EN_CURSO"];
 
-  const lista = await fetch(`${API}/conversations?agent_id=${encodeURIComponent(agenteId())}&page_size=${limite}`, { headers: llaves(), cache: "no-store" });
-  if (!lista.ok) return { ok: false as const, error: `ElevenLabs contestó ${lista.status} al pedir las pláticas.` };
+/**
+ * TRAER LAS LLAMADAS Y REGISTRARLAS, de las campañas que tienen algo que traer: las que están llamando y las que tuvieron
+ * llamadas en las últimas horas (una campaña en pausa puede tener llamadas que todavía no cuelgan).
+ */
+export async function importarLlamadasDelAgente({ limite = 30, campanaId = null }: { limite?: number; campanaId?: string | null } = {}) {
+  if (!hayAgenteDeVoz()) return { ok: false as const, error: "Falta la llave de ElevenLabs (ELEVENLABS_API_KEY)." };
+  await asegurarCampanas();
+  await migrarACifrado();
+  await cerrarHuerfanas();
+  const recientes = await EncuestaLlamadaModel.distinct("cuestionarioId", { inicio: { $gte: new Date(Date.now() - 3 * 3600_000) } });
+  const filtro = campanaId && Types.ObjectId.isValid(campanaId)
+    ? { _id: new Types.ObjectId(campanaId) }
+    : { agenteId: { $nin: [null, ""] }, $or: [{ estado: "CORRIENDO" }, { _id: { $in: recientes } }] };
+  const campanas = (await EncuestaCuestionarioModel.find(filtro).lean<CampanaDoc[]>()).map(aCampana).filter((c) => c.agenteId);
+
+  let nuevas = 0, saltadas = 0, revisadas = 0;
+  const problemas: string[] = [];
+  for (const c of campanas) {
+    const r = await importarDe(c, limite);
+    nuevas += r.nuevas; saltadas += r.saltadas; revisadas += r.revisadas;
+    problemas.push(...r.problemas.map((p) => `${c.nombre}: ${p}`));
+  }
+  return { ok: true as const, nuevas, saltadas, revisadas, problemas };
+}
+
+/** La llamada que se abrió y nunca recibió el identificador de su plática no se va a poder traer: no salió. */
+async function cerrarHuerfanas() {
+  // `externoId: null` en Mongo casa también con el campo que no existe.
+  const viejas = await EncuestaLlamadaModel.find({ estado: "EN_CURSO", externoId: null, inicio: { $lt: new Date(Date.now() - 2 * 3600_000) } })
+    .select("cuestionarioId contactoId").lean<{ _id: Types.ObjectId; cuestionarioId: Types.ObjectId; contactoId: Types.ObjectId | null }[]>();
+  for (const l of viejas) {
+    await EncuestaLlamadaModel.updateOne({ _id: l._id }, { $set: { estado: "NO_SALIO", fin: new Date(), segundos: 0, notas: "No salió: la llamada nunca se conectó." } });
+    if (l.contactoId) await devolverDestinatario(l.cuestionarioId, l.contactoId);
+  }
+}
+
+async function importarDe(c: Campana, limite: number) {
+  const problemas: string[] = [];
+  const lista = await fetch(`${API}/conversations?agent_id=${encodeURIComponent(c.agenteId ?? "")}&page_size=${limite}`, { headers: llaves(), cache: "no-store" });
+  if (!lista.ok) return { nuevas: 0, saltadas: 0, revisadas: 0, problemas: [`ElevenLabs contestó ${lista.status} al pedir las pláticas.`] };
   const { conversations = [] } = (await lista.json()) as { conversations?: Platica[] };
 
   // Las que se abrieron al marcar y siguen sin desenlace se revisan aunque ya no salgan en la primera página.
-  const abiertas = await EncuestaLlamadaModel.find({ estado: "EN_CURSO", externoId: { $exists: true, $ne: null } }).select("externoId").lean<{ externoId: string }[]>();
+  const abiertas = await EncuestaLlamadaModel.find({ cuestionarioId: c.id, estado: "EN_CURSO", externoId: { $exists: true, $ne: null } }).select("externoId").lean<{ externoId: string }[]>();
   const ids = [...new Set([...conversations.map((x) => x.conversation_id), ...abiertas.map((x) => x.externoId)])];
 
   let nuevas = 0, saltadas = 0;
-  const problemas: string[] = [];
 
   for (const id of ids) {
     const ya = await EncuestaLlamadaModel.findOne({ externoId: id }).lean<LlamadaAbierta>();
@@ -91,7 +111,7 @@ export async function importarLlamadasDelAgente({ limite = 30 } = {}) {
     const det = await fetch(`${API}/conversations/${id}`, { headers: llaves(), cache: "no-store" });
     if (!det.ok) {
       if (ya && det.status === 404 && Date.now() - new Date(ya.inicio).getTime() > 30 * 60_000) {
-        await cerrarContacto(ya.contactoId, "NO_CONTESTO", null);
+        await cerrarDestinatario(c.id, ya.contactoId, "NO_CONTESTO", null);
         await EncuestaLlamadaModel.updateOne({ _id: ya._id }, { $set: { estado: "NO_CONTESTO", fin: new Date() } });
         nuevas++;
       } else problemas.push(`${id}: ${det.status}`);
@@ -101,9 +121,11 @@ export async function importarLlamadasDelAgente({ limite = 30 } = {}) {
     const st = (d.status ?? "").toLowerCase();
     const arranco = d.metadata?.start_time_unix_secs ? d.metadata.start_time_unix_secs * 1000 : ya ? new Date(ya.inicio).getTime() : Date.now();
     const tel = d.metadata?.phone_call?.external_number?.replace(/\D/g, "").slice(-10) || null;
+    // La que no se abrió al marcar (marcada desde la consola de ElevenLabs) se reconoce por el número entre los destinatarios.
+    const destinatarioEnCurso = async () => (tel ? (await EncuestaDestinatarioModel.findOne({ campanaId: c.id, huella: huella(tel), estado: "EN_CURSO" }).select("contactoId").lean<{ contactoId: Types.ObjectId }>())?.contactoId ?? null : null);
 
     // LAS QUE NUNCA SALIERON: la plataforma las rechazó (pago, error al iniciar) o se quedaron «initiated» más de 10 min.
-    // A esa persona no le sonó el teléfono: no es un intento y su contacto regresa a la fila sin gastarle un intento.
+    // A esa persona no le sonó el teléfono: no es un intento y regresa a la fila sin gastarle un intento.
     const motivo = d.metadata?.error?.reason ?? "";
     const pago = /payment|pago|billing|quota|credit/i.test(motivo);
     // Un número que la línea no permite marcar («Account not authorized to call +52…») no es falla de la línea: es ese número,
@@ -124,10 +146,10 @@ export async function importarLlamadasDelAgente({ limite = 30 } = {}) {
     const noSalio = !sinRespuesta && ((st === "failed" && fallaDeSistema) || (st === "initiated" && Date.now() - arranco > 10 * 60_000));
     if (noSalio) {
       const nota = "No salió: la llamada no se pudo conectar.";
-      const contactoId = ya?.contactoId ?? (tel ? (await EncuestaContactoModel.findOne({ telefono: huella(tel), estado: "EN_CURSO" }).select("_id").lean<{ _id: Types.ObjectId }>())?._id ?? null : null);
+      const contactoId = ya?.contactoId ?? (await destinatarioEnCurso());
       if (ya) await EncuestaLlamadaModel.updateOne({ _id: ya._id }, { $set: { estado: "NO_SALIO", fin: new Date(), segundos: 0, notas: nota } });
       else await EncuestaLlamadaModel.create({ cuestionarioId: c.id, prueba: !contactoId, estado: "NO_SALIO", externoId: id, ...telefonoDeLlamada(tel, !contactoId), contactoId, inicio: new Date(arranco), fin: new Date(), segundos: 0, notas: nota });
-      if (contactoId) await devolverContacto(contactoId);
+      if (contactoId) await devolverDestinatario(c.id, contactoId);
       if (fallaDeSistema) await avisarFallaDeVoz(pago ? "PAGO" : "SERVICIO", motivo);
       nuevas++;
       continue;
@@ -177,42 +199,45 @@ export async function importarLlamadasDelAgente({ limite = 30 } = {}) {
     for (const r of respuestas) porPregunta.set(r.preguntaId, r.valor);
     const todas = [...porPregunta].map(([preguntaId, v]) => ({ preguntaId: new Types.ObjectId(preguntaId), valor: v }));
 
-    // La que se abrió al marcar se llena; la que no (marcada desde la consola de ElevenLabs), se reconoce por el número.
-    const deLaBase = !ya && tel ? await EncuestaContactoModel.findOne({ telefono: huella(tel), estado: "EN_CURSO" }).select("_id").lean<{ _id: Types.ObjectId }>() : null;
-    // De la llamada que se abrió al marcar solo queda la huella (las de verdad no guardan el número en claro).
     let llamadaId: Types.ObjectId, contactoId: Types.ObjectId | null, laHuella: string | null;
     if (ya) {
       await EncuestaLlamadaModel.updateOne({ _id: ya._id }, { $set: { ...datos, respuestas: todas } });
+      // De la llamada que se abrió al marcar solo queda la huella (las de verdad no guardan el número en claro).
       llamadaId = ya._id; contactoId = ya.contactoId ?? null; laHuella = ya.huella ?? (ya.telefono ? huella(ya.telefono) : tel ? huella(tel) : null);
     } else {
-      const l = await EncuestaLlamadaModel.create({ ...datos, respuestas: todas, cuestionarioId: c.id, prueba: !deLaBase, externoId: id, ...telefonoDeLlamada(tel, !deLaBase), contactoId: deLaBase?._id ?? null, versionGuion: c.version });
-      llamadaId = l._id; contactoId = deLaBase?._id ?? null; laHuella = tel ? huella(tel) : null;
+      const deLaLista = await destinatarioEnCurso();
+      const l = await EncuestaLlamadaModel.create({ ...datos, respuestas: todas, cuestionarioId: c.id, prueba: !deLaLista, externoId: id, ...telefonoDeLlamada(tel, !deLaLista), contactoId: deLaLista, versionGuion: c.version });
+      llamadaId = l._id; contactoId = deLaLista; laHuella = tel ? huella(tel) : null;
     }
 
-    await cerrarContacto(contactoId, noLlamar ? "NO_LLAMAR" : estado, llamadaId);
-    // Quien pidió que no le llamen queda apuntado aunque su número no viniera de la base (lo mandó el panel o la API):
-    // así ninguna llamada futura le vuelve a marcar.
-    // Se apunta por la huella; sin dueño, porque no salió de la base de nadie.
-    if (noLlamar && !contactoId && laHuella)
-      await EncuestaContactoModel.updateOne(
-        { telefono: laHuella },
-        { $set: { estado: "NO_LLAMAR" }, $setOnInsert: { telCifrado: cifrar(tel), telFin: tel ? finDe(tel) : null, origenCifrado: cifrar("pidió no llamar"), subidoPor: null } },
-        { upsert: true },
-      ).catch(() => null);
+    await cerrarDestinatario(c.id, contactoId, noLlamar ? "NO_LLAMAR" : estado, llamadaId);
+    // Quien pidió que no le llamen queda apuntado para TODAS las campañas, aunque su número no viniera de ninguna lista (lo
+    // mandó el panel o la API): así ninguna llamada futura le vuelve a marcar.
+    if (noLlamar && laHuella) await marcarNoLlamar(laHuella, tel);
     nuevas++;
   }
-  return { ok: true as const, nuevas, saltadas, revisadas: ids.length, problemas };
+  return { nuevas, saltadas, revisadas: ids.length, problemas };
 }
 
-/** El contacto de la base hereda el desenlace: así no se le vuelve a marcar a quien ya contestó. */
-async function cerrarContacto(contactoId: Types.ObjectId | null, estado: string, llamadaId: Types.ObjectId | null) {
+/** El destinatario hereda el desenlace en su campaña (a quien ya contestó no se le vuelve a marcar), y el contacto lo guarda como su último resultado. */
+async function cerrarDestinatario(campanaId: string | Types.ObjectId, contactoId: Types.ObjectId | null, estado: string, llamadaId: Types.ObjectId | null) {
   if (!contactoId) return;
-  await EncuestaContactoModel.updateOne({ _id: contactoId }, { $set: { estado, llamadaId: estado === "COMPLETA" ? llamadaId : null } }).catch(() => null);
+  await EncuestaDestinatarioModel.updateOne({ campanaId, contactoId, estado: { $ne: "NO_LLAMAR" } }, { $set: { estado, llamadaId: estado === "COMPLETA" ? llamadaId : null } }).catch(() => null);
+  await EncuestaContactoModel.updateOne({ _id: contactoId, estado: { $ne: "NO_LLAMAR" } }, { $set: { estado } }).catch(() => null);
 }
-/** La llamada no salió: el contacto vuelve a la fila como si no se le hubiera marcado. */
-async function devolverContacto(contactoId: Types.ObjectId) {
-  const c = await EncuestaContactoModel.findById(contactoId).select("intentos").lean<{ intentos: number }>();
-  if (c) await EncuestaContactoModel.updateOne({ _id: contactoId }, { $set: { estado: "PENDIENTE", intentos: Math.max(0, c.intentos - 1) } }).catch(() => null);
+/** La llamada no salió: el destinatario vuelve a la fila como si no se le hubiera marcado. */
+async function devolverDestinatario(campanaId: string | Types.ObjectId, contactoId: Types.ObjectId) {
+  const d = await EncuestaDestinatarioModel.findOne({ campanaId, contactoId }).select("intentos estado").lean<{ _id: Types.ObjectId; intentos: number; estado: string }>();
+  if (d && d.estado === "EN_CURSO") await EncuestaDestinatarioModel.updateOne({ _id: d._id }, { $set: { estado: d.intentos > 1 ? "NO_CONTESTO" : "PENDIENTE", intentos: Math.max(0, d.intentos - 1) } }).catch(() => null);
+}
+/** No le vuelve a llamar ninguna campaña. Se apunta por la huella; sin dueño si su número no venía de la base de nadie. */
+async function marcarNoLlamar(laHuella: string, tel: string | null) {
+  await EncuestaContactoModel.updateOne(
+    { telefono: laHuella },
+    { $set: { estado: "NO_LLAMAR" }, $setOnInsert: { telCifrado: cifrar(tel), telFin: tel ? finDe(tel) : null, origenCifrado: cifrar("pidió no llamar"), subidoPor: null } },
+    { upsert: true },
+  ).catch(() => null);
+  await EncuestaDestinatarioModel.updateMany({ huella: laHuella, estado: { $in: ALCANZABLE } }, { $set: { estado: "NO_LLAMAR" } }).catch(() => null);
 }
 
 async function leerConfig(clave: string) {
@@ -226,25 +251,30 @@ async function borrarConfig(clave: string) {
 }
 
 /**
- * EL AVISO DE QUE LAS LLAMADAS NO ESTÁN SALIENDO. Se guarda en la base para que lo vea cualquiera que abra el tablero;
- * la tanda se detiene sola (para no quemar la base) y el aviso se quita en cuanto una llamada vuelve a conectar.
+ * EL AVISO DE QUE LAS LLAMADAS NO ESTÁN SALIENDO. Es de todas las campañas (la línea es una): se guarda en la base para
+ * que lo vea cualquiera que abra el tablero y se quita en cuanto una llamada vuelve a conectar.
  */
 const CLAVE_AVISO = "agente_aviso";
 async function avisarFallaDeVoz(tipo: string, motivo = "") {
   const ya = await avisoDeVoz();
   const texto = tipo === "PAGO"
-    ? "El servicio de voz está rechazando las llamadas por un pago pendiente. La tanda se detuvo y nadie de la base perdió su turno; en cuanto se resuelva, vuelve a apretar «Llamar ahora»."
+    ? "El servicio de voz está rechazando las llamadas por un pago pendiente. Las campañas que llamaban quedaron en pausa y nadie perdió su turno; en cuanto se resuelva, dale «Reanudar» a cada una."
     : /account .* not active|authentication failed|suspend/i.test(motivo)
       ? "La línea telefónica (la cuenta de Twilio del número de salida) está inactiva o suspendida, así que ninguna llamada sale. En cuanto se reactive, el sistema retoma solo."
       : "La plataforma de llamadas no está conectando las llamadas. El sistema sigue probando solo y retoma en cuanto vuelvan a salir.";
   await guardarConfig(CLAVE_AVISO, JSON.stringify({ tipo, texto, desde: ya?.desde ?? new Date().toISOString() }));
-  // El pago se resuelve a mano; lo demás se prueba solo: la tanda se queda y marca de una en una hasta que una vuelva a salir.
-  if (tipo === "PAGO") await detenerTanda();
+  // El pago se resuelve a mano; lo demás se prueba solo: las campañas siguen y marcan de una en una hasta que una vuelva a salir.
+  if (tipo === "PAGO") {
+    const corriendo = await EncuestaCuestionarioModel.find({ estado: "CORRIENDO" }).select("_id").lean<{ _id: Types.ObjectId }[]>();
+    for (const x of corriendo) await ponerEstado(String(x._id), "PAUSADA", "Pausada sola: el servicio de voz pide un pago pendiente.");
+  }
 }
 const esNumeroNoPermitido = (motivo: string) => /not authorized to call \+?\d|is not a valid phone number|invalid ['"]?to['"]? phone/i.test(motivo);
-/** Ese número no se puede marcar: sale de la fila como número malo (no cuenta en el total de la meta). */
+/** Ese número no se puede marcar: sale de todas las filas como número malo (no cuenta en el total de la meta). */
 async function apartarNumero(tel: string) {
-  await EncuestaContactoModel.updateMany({ telefono: huella(tel), estado: { $in: ["PENDIENTE", "NO_CONTESTO", "BUZON", "EN_CURSO"] } }, { $set: { estado: "NUMERO_MALO" } });
+  const h = huella(tel);
+  await EncuestaDestinatarioModel.updateMany({ huella: h, estado: { $in: ALCANZABLE } }, { $set: { estado: "NUMERO_MALO" } });
+  await EncuestaContactoModel.updateMany({ telefono: h, estado: { $ne: "NO_LLAMAR" } }, { $set: { estado: "NUMERO_MALO" } });
 }
 async function quitarAvisoDeVoz(siConectoEn?: number) {
   if (siConectoEn !== undefined) {
@@ -258,93 +288,137 @@ export async function avisoDeVoz(): Promise<{ tipo: string; texto: string; desde
   const f = await leerConfig(CLAVE_AVISO);
   try { return f ? JSON.parse(f.valor) : null; } catch { return null; }
 }
+export async function limpiarAvisoDeVoz() {
+  await dbConnect();
+  await quitarAvisoDeVoz();
+}
 
-/** MARCARLE A UN NÚMERO. Cuesta dinero y suena el teléfono de una persona de verdad: solo lo pide alguien desde el panel o la API. */
-export async function llamarConAgente(telefono: string, { prueba = true, operadorId = null }: { prueba?: boolean; operadorId?: string | null } = {}) {
-  if (!hayAgenteDeVoz()) return { ok: false as const, error: "Falta la llave de ElevenLabs o el identificador del agente." };
+/**
+ * MARCARLE A UN NÚMERO CON LA ASISTENTE DE UNA CAMPAÑA. Cuesta dinero y suena el teléfono de una persona de verdad: solo lo
+ * pide alguien desde el panel, la API o el motor de la campaña.
+ *
+ * `destinatarioId`: el motor ya apartó a ese destinatario (lo puso EN_CURSO y le sumó el intento). Sin él, si el número es
+ * de la lista de la campaña y la llamada es de verdad, se aparta aquí mismo.
+ */
+export async function llamarConAgente(
+  telefono: string,
+  { campana: c, prueba = true, operadorId = null, destinatarioId = null }: { campana: Campana; prueba?: boolean; operadorId?: string | null; destinatarioId?: Types.ObjectId | null },
+) {
+  if (!hayAgenteDeVoz()) return { ok: false as const, error: "Falta la llave de ElevenLabs (ELEVENLABS_API_KEY)." };
   if (!numeroId()) return { ok: false as const, error: "Falta decir desde qué número se llama (ELEVENLABS_NUMERO_ID)." };
+  if (!c.agenteId) return { ok: false as const, error: "Esta campaña todavía no tiene su asistente en ElevenLabs: guarda su configuración o su guion para crearla." };
+  if (esDemo(c)) return { ok: false as const, error: "Es una campaña de demostración: no se llama con ella." };
   const digitos = telefono.replace(/\D/g, "");
   if (digitos.length < 10) return { ok: false as const, error: "El número va a diez dígitos." };
   const e164 = digitos.length === 10 ? `+52${digitos}` : `+${digitos}`;
-  const c = await cuestionarioActivo();
-  if (!c) return { ok: false as const, error: "No hay cuestionario cargado." };
-  if (esDemo(c)) return { ok: false as const, error: "Está activo un cuestionario de demostración: no se llama con él." };
-  if (!prueba && !horarioDeLlamadas().abierto) return { ok: false as const, error: fueraDeHorario() };
+  if (!prueba && !horarioDe(c).abierto) return { ok: false as const, error: fueraDeHorario(c) };
+  if (!prueba && c.estado === "TERMINADA") return { ok: false as const, error: "La campaña ya terminó: reanúdala o marca la llamada como prueba." };
   const diez = digitos.slice(-10);
-  // Quien pidió que no le llamen no recibe ninguna llamada, tampoco de prueba.
   await migrarACifrado();
   const laHuella = huella(diez);
+  // Quien pidió que no le llamen no recibe ninguna llamada, de ninguna campaña, tampoco de prueba.
   if (await EncuestaContactoModel.exists({ telefono: laHuella, estado: "NO_LLAMAR" }))
     return { ok: false as const, error: "Esa persona pidió que no le volvieran a llamar." };
+  // Un número puede estar en varias campañas, pero no se le marca mientras esté en otra llamada.
+  if (await EncuestaLlamadaModel.exists({ huella: laHuella, estado: "EN_CURSO", inicio: { $gte: new Date(Date.now() - 15 * 60_000) } }))
+    return { ok: false as const, error: "Ese número está en otra llamada ahora mismo." };
 
+  // Con varias voces en la campaña, cada llamada sale con una al azar.
+  const voz = c.voz.voces.length > 1 ? vozParaLlamada(c) : null;
   const r = await fetch(`${API}/twilio/outbound-call`, {
     method: "POST",
     headers: { ...llaves(), "Content-Type": "application/json" },
     // Si nadie contesta, se cuelga a los 20 s de timbrar: antes de que entre el buzón (en México suele entrar a los 25-30 s).
-    body: JSON.stringify({ agent_id: agenteId(), agent_phone_number_id: numeroId(), to_number: e164, telephony_call_config: { ringing_timeout_secs: timbreSeg() } }),
+    body: JSON.stringify({
+      agent_id: c.agenteId, agent_phone_number_id: numeroId(), to_number: e164,
+      telephony_call_config: { ringing_timeout_secs: timbreSeg() },
+      ...(voz ? { conversation_initiation_client_data: { conversation_config_override: { tts: { voice_id: voz } } } } : {}),
+    }),
   });
   const cuerpo = (await r.json().catch(() => ({}))) as { success?: boolean; conversation_id?: string; message?: string; detail?: unknown };
   if (!r.ok || cuerpo.success === false)
     return { ok: false as const, error: `ElevenLabs contestó ${r.status}: ${cuerpo.message ?? JSON.stringify(cuerpo.detail ?? {}).slice(0, 200)}` };
 
-  // La llamada se abre en cuanto sale: cuenta como intento aunque no contesten y al colgar se llena sola. A la base solo se
-  // liga lo real: una prueba a un número de la base no le gasta su intento.
-  const contacto = prueba ? null : await EncuestaContactoModel.findOne({ telefono: laHuella }).select("_id").lean<{ _id: Types.ObjectId }>();
+  // La llamada se abre en cuanto sale: cuenta como intento aunque no contesten y al colgar se llena sola. A la lista solo
+  // se liga lo real: una prueba a un número de la lista no le gasta su intento.
+  let contactoId: Types.ObjectId | null = null;
+  if (destinatarioId) {
+    contactoId = (await EncuestaDestinatarioModel.findById(destinatarioId).select("contactoId").lean<{ contactoId: Types.ObjectId }>())?.contactoId ?? null;
+  } else if (!prueba) {
+    const d = await EncuestaDestinatarioModel.findOneAndUpdate(
+      { campanaId: c.id, huella: laHuella, estado: { $nin: ["NO_LLAMAR", "EN_CURSO"] } },
+      { $set: { estado: "EN_CURSO", ultimoIntento: new Date() }, $inc: { intentos: 1 } },
+    ).select("contactoId").lean<{ contactoId: Types.ObjectId }>();
+    contactoId = d?.contactoId ?? null;
+  }
   const l = await EncuestaLlamadaModel.create({
     cuestionarioId: c.id, prueba, estado: "EN_CURSO",
     // undefined y no null: el índice único de externoId es disperso, y dos null chocarían.
     externoId: cuerpo.conversation_id ?? undefined,
-    ...telefonoDeLlamada(diez, prueba), contactoId: contacto?._id ?? null,
+    ...telefonoDeLlamada(diez, prueba), contactoId,
     operadorId: operadorId && Types.ObjectId.isValid(operadorId) ? operadorId : null,
     versionGuion: c.version,
   });
-  if (contacto) await EncuestaContactoModel.updateOne({ _id: contacto._id }, { $set: { estado: "EN_CURSO", ultimoIntento: new Date() }, $inc: { intentos: 1 } });
+  if (contactoId) await EncuestaContactoModel.updateOne({ _id: contactoId, estado: { $ne: "NO_LLAMAR" } }, { $set: { estado: "EN_CURSO", ultimoIntento: new Date() }, $inc: { intentos: 1 } });
   return { ok: true as const, conversationId: cuerpo.conversation_id ?? null, numero: e164, llamadaId: String(l._id) };
 }
 
 /**
- * CUÁNTAS A LA VEZ. El plan de ElevenLabs y la línea atienden un número limitado de llamadas al mismo tiempo, y lo que
- * pasa de ahí se pierde: la tanda nunca abre más de `simultaneas()` y la siguiente sale cuando una cuelga. Si el número de
- * salida se comparte con otra encuesta, se reparten las líneas (ELEVENLABS_SIMULTANEAS, 5 por omisión).
+ * CUÁNTAS A LA VEZ, ENTRE TODAS LAS CAMPAÑAS. El plan de ElevenLabs y la línea atienden un número limitado de llamadas al
+ * mismo tiempo, y lo que pasa de ahí se pierde: nunca se abren más de `simultaneas()` (ELEVENLABS_SIMULTANEAS, 5 por
+ * omisión) y la siguiente sale cuando una cuelga.
  */
 export const simultaneas = () => Math.max(1, parseInt(process.env.ELEVENLABS_SIMULTANEAS ?? "") || 5);
 const timbreSeg = () => Math.max(10, parseInt(process.env.LLAMADAS_TIMBRE_SEG ?? "") || 20);
-const lineasOcupadas = () => EncuestaLlamadaModel.countDocuments({ estado: "EN_CURSO", inicio: { $gte: new Date(Date.now() - 15 * 60_000) } });
+const quinceMin = () => new Date(Date.now() - 15 * 60_000);
+const lineasOcupadas = (campanaId?: string) => EncuestaLlamadaModel.countDocuments({ estado: "EN_CURSO", inicio: { $gte: quinceMin() }, ...(campanaId ? { cuestionarioId: campanaId } : {}) });
 
-type ContactoFila = { _id: Types.ObjectId; telefono: string; telCifrado?: string | null; telFin?: string | null };
+type Fila = { _id: Types.ObjectId; contactoId: Types.ObjectId; estado: string };
 
-/** MARCAR EN LOTE DESDE LA BASE: primero los que nunca se llamaron y después los reintentos, con sus reglas. */
-export async function marcarEnLote({ cuantas = 10, operadorId = null }: { cuantas?: number; operadorId?: string | null } = {}) {
-  if (!hayAgenteDeVoz()) return { ok: false as const, error: "Falta la llave de ElevenLabs o el identificador del agente." };
-  if (!numeroId()) return { ok: false as const, error: "Falta decir desde qué número se llama (ELEVENLABS_NUMERO_ID)." };
-  if (!horarioDeLlamadas().abierto) return { ok: false as const, error: fueraDeHorario() };
-  const libres = Math.max(0, simultaneas() - (await lineasOcupadas()));
-  const cupo = Math.min(cuantas, libres);
-
-  const primero = await EncuestaContactoModel.find({ estado: "PENDIENTE" }).sort({ intentos: 1, createdAt: 1 }).limit(Math.max(cupo, 1)).select("telefono telCifrado telFin").lean<ContactoFila[]>();
-  const reglas = await reglasDeReintento();
-  const reintentos = primero.length >= cupo ? [] : await EncuestaContactoModel.find({
-    estado: { $in: ["NO_CONTESTO", "BUZON"] }, intentos: { $lt: reglas.intentosMax }, ultimoIntento: { $lt: new Date(Date.now() - reglas.esperaMin * 60_000) },
-  }).sort({ intentos: 1, ultimoIntento: 1 }).limit(Math.max(cupo, 1)).select("telefono telCifrado telFin").lean<ContactoFila[]>();
-  const porMarcar = [...primero, ...reintentos];
-
+/**
+ * MARCAR LOS SIGUIENTES DE UNA CAMPAÑA: primero los que nunca se llamaron y después los reintentos, con sus reglas. Cada
+ * destinatario se aparta antes de marcarle (pasa a EN_CURSO de un solo golpe en la base), así dos revisiones al mismo
+ * tiempo nunca le marcan dos veces a la misma persona.
+ */
+async function marcarCampana(c: Campana, cupo: number) {
   const marcadas: string[] = [];
   const saltadas: { telefono: string; porQue: string }[] = [];
-  // Con aviso de falla activo se prueba con una sola: si sale, el aviso se quita y la siguiente vuelta usa todas las líneas.
-  const tope = (await avisoDeVoz()) ? Math.min(1, cupo) : cupo;
-  for (const c of porMarcar) {
-    if (marcadas.length >= tope) break;
+  if (cupo <= 0) return { marcadas, saltadas, sinPorMarcar: false };
+  const { intentos, esperaMin } = c.reintentos;
+  const primero = await EncuestaDestinatarioModel.find({ campanaId: c.id, estado: "PENDIENTE" }).sort({ intentos: 1, createdAt: 1 }).limit(cupo * 2).select("contactoId estado").lean<Fila[]>();
+  const reintentos = primero.length >= cupo || intentos <= 1 ? [] : await EncuestaDestinatarioModel.find({
+    campanaId: c.id, estado: { $in: POR_REMARCAR }, intentos: { $lt: intentos }, ultimoIntento: { $lt: new Date(Date.now() - esperaMin * 60_000) },
+  }).sort({ intentos: 1, ultimoIntento: 1 }).limit(cupo * 2).select("contactoId estado").lean<Fila[]>();
+  const porMarcar = [...primero, ...reintentos];
+  const contactos = new Map(
+    (await EncuestaContactoModel.find({ _id: { $in: porMarcar.map((x) => x.contactoId) } }).select("telCifrado telFin estado").lean<{ _id: Types.ObjectId; telCifrado?: string | null; telFin?: string | null; estado: string }[]>())
+      .map((x) => [String(x._id), x]),
+  );
+
+  for (const d of porMarcar) {
+    if (marcadas.length >= cupo) break;
+    const k = contactos.get(String(d.contactoId));
+    // Se aparta de un solo golpe: si otra revisión ya lo tomó, este no se marca.
+    const apartado = await EncuestaDestinatarioModel.updateOne(
+      { _id: d._id, estado: d.estado },
+      { $set: { estado: "EN_CURSO", ultimoIntento: new Date() }, $inc: { intentos: 1 } },
+    );
+    if (!apartado.modifiedCount) continue;
+    const devolver = (estado = d.estado) => EncuestaDestinatarioModel.updateOne({ _id: d._id }, { $set: { estado }, $inc: { intentos: -1 } });
     // El número se descifra aquí, para marcar, y no sale de esta vuelta: lo que se reporta son los últimos 4 dígitos.
-    const visible = `••• ${c.telFin ?? "????"}`;
-    const tel = descifrar(c.telCifrado);
+    const visible = `••• ${k?.telFin ?? "????"}`;
+    if (!k) { await devolver("NUMERO_MALO"); saltadas.push({ telefono: visible, porQue: "el contacto ya no está en la base" }); continue; }
+    if (k.estado === "NO_LLAMAR") { await devolver("NO_LLAMAR"); continue; }
+    const tel = descifrar(k.telCifrado);
     if (!tel) {
-      await EncuestaContactoModel.updateOne({ _id: c._id }, { $set: { estado: "NUMERO_MALO" } });
+      await devolver("NUMERO_MALO");
       saltadas.push({ telefono: visible, porQue: "no se pudo descifrar el número (¿cambió ENCUESTAS_CLAVE?)" });
       continue;
     }
-    const r = await llamarConAgente(tel, { prueba: false, operadorId });
+    const r = await llamarConAgente(tel, { campana: c, prueba: false, destinatarioId: d._id });
     if (!r.ok) {
-      if (esNumeroNoPermitido(r.error)) { await apartarNumero(tel); saltadas.push({ telefono: visible, porQue: "la línea no permite este número" }); continue; }
+      if (esNumeroNoPermitido(r.error)) { await devolver(); await apartarNumero(tel); saltadas.push({ telefono: visible, porQue: "la línea no permite este número" }); continue; }
+      await devolver(); // no le sonó: no se le gasta el intento
       saltadas.push({ telefono: visible, porQue: r.error.slice(0, 300) });
       continue;
     }
@@ -352,116 +426,79 @@ export async function marcarEnLote({ cuantas = 10, operadorId = null }: { cuanta
   }
   // Ninguna salió y todas porque la plataforma contestó con error: es una falla que se avisa, no «no hay a quién llamar».
   if (!marcadas.length && saltadas.length && saltadas.every((x) => /^ElevenLabs contestó/.test(x.porQue))) await avisarFallaDeVoz("SERVICIO", saltadas[0].porQue);
-  return { ok: true as const, marcadas: marcadas.length, saltadas, sinPorMarcar: porMarcar.length === 0, lineasLlenas: libres === 0 };
+  return { marcadas, saltadas, sinPorMarcar: porMarcar.length === 0 };
 }
 
 /**
- * LA TANDA QUE SIGUE SOLA. Se pide «llama a 200» y se guarda cuántas faltan. El worker (cada 2 min) y el tablero abierto
- * (cada 15 s) marcan las que quepan en las líneas libres. Antes de marcar se «aparta» el pedazo en la base, para que dos
- * revisiones al mismo tiempo no marquen a las mismas personas dos veces.
+ * CÓMO VA UNA CAMPAÑA: cuántos faltan, con cuántos ya se habló y si ya se debería terminar. «Hablar» es que alguien
+ * contestó, aunque haya sido para decir que no. A quien no contestó se le vuelve a marcar con las reglas de la campaña:
+ * máximo de intentos, espera entre uno y otro y solo en su horario.
  */
-const CLAVE_TANDA = "agente_tanda";
-type Tanda = { restante: number; operadorId: string | null; desde: string };
-
-export async function estadoTanda(): Promise<Tanda | null> {
-  await dbConnect();
-  const c = await leerConfig(CLAVE_TANDA);
-  if (!c) return null;
-  try { const t = JSON.parse(c.valor) as Tanda; return t.restante > 0 ? t : null; } catch { return null; }
-}
-export async function iniciarTanda(cuantas: number, operadorId: string | null) {
-  await quitarAvisoDeVoz();
-  await guardarConfig(CLAVE_TANDA, JSON.stringify({ restante: cuantas, operadorId, desde: new Date().toISOString() } satisfies Tanda));
-  return seguirTanda();
-}
-export async function detenerTanda() {
-  await dbConnect();
-  await borrarConfig(CLAVE_TANDA);
-}
-
-export async function seguirTanda() {
-  await dbConnect();
-  const fila = await leerConfig(CLAVE_TANDA);
-  if (!fila) return { marcadas: 0, restante: 0, sinPorMarcar: false };
-  let t: Tanda;
-  try { t = JSON.parse(fila.valor) as Tanda; } catch { return { marcadas: 0, restante: 0, sinPorMarcar: false }; }
-  // Con meta de contacto la tanda no se acaba al terminar la base: sigue remarcando a quien no contestó (con sus reglas)
-  // hasta hablar con el porcentaje pedido, o hasta que ya no quede nadie a quién volver a llamar.
-  const todaMeta = await metaDeContacto();
-  const meta = todaMeta && !todaMeta.terminada ? todaMeta : null;
-  if (meta?.alcanzada || (meta && meta.porLlamarAlgunDia === 0)) {
-    await detenerTanda();
-    await guardarMeta({ ...meta.reglas, terminada: new Date().toISOString(), motivo: meta.alcanzada ? "alcanzada" : "sin más a quién llamar" });
-    return { marcadas: 0, restante: 0, sinPorMarcar: true };
-  }
-  const sinFin = !!meta;
-  if (t.restante <= 0 && !sinFin) return { marcadas: 0, restante: 0, sinPorMarcar: false };
-  // Fuera de horario la tanda se pausa (no se borra): sigue sola en cuanto abra el horario.
-  if (!horarioDeLlamadas().abierto) return { marcadas: 0, restante: t.restante, sinPorMarcar: false, pausada: true };
-
-  const libres = Math.max(0, simultaneas() - (await lineasOcupadas()));
-  const pedazo = sinFin ? libres : Math.min(t.restante, libres);
-  if (!pedazo) return { marcadas: 0, restante: t.restante, sinPorMarcar: false };
-  const apartado = await EncuestaConfigModel.updateOne({ _id: CLAVE_TANDA, valor: fila.valor }, { $set: { valor: JSON.stringify({ ...t, restante: t.restante - pedazo }) } });
-  if (!apartado.modifiedCount) return { marcadas: 0, restante: t.restante, sinPorMarcar: false };
-
-  const r = await marcarEnLote({ cuantas: pedazo, operadorId: t.operadorId });
-  const marcadas = r.ok ? r.marcadas : 0;
-  const ahora = await estadoTanda();
-  const sinPorMarcar = r.ok && r.sinPorMarcar;
-  // Sin meta: si no se pudo marcar ninguna (no quedaba a quién llamar o hubo error), la tanda se detiene en vez de dar vueltas. Con meta,
-  // no marcar nada ahora no la termina: los reintentos se habilitan con el tiempo.
-  const restante = sinFin ? Math.max(0, t.restante - marcadas) : sinPorMarcar || !r.ok || marcadas === 0 ? 0 : (ahora?.restante ?? 0) + (pedazo - marcadas);
-  if ((sinFin && r.ok) || restante > 0) await EncuestaConfigModel.updateOne({ _id: CLAVE_TANDA }, { $set: { valor: JSON.stringify({ ...t, restante }) } });
-  else await detenerTanda();
-  return { marcadas, restante, sinPorMarcar, error: r.ok ? null : r.error };
-}
-
-/**
- * LA META DE CONTACTO: «remarca hasta hablar con el 35% de la base». «Hablar» es que alguien contestó, aunque haya sido
- * para decir que no. A quien no contestó se le vuelve a marcar con reglas que cuidan a la gente: máximo de intentos, espera
- * entre uno y otro y solo en horario. A quien ya contestó no se le vuelve a marcar.
- */
-const CLAVE_META = "agente_meta";
-type ReglasMeta = { porcentaje: number; intentosMax: number; esperaMin: number; desde: string; terminada?: string; motivo?: string };
 const HABLO = ["COMPLETA", "RECHAZO", "COLGO", "NO_LLAMAR"];
-
-async function leerMeta(): Promise<ReglasMeta | null> {
-  const f = await leerConfig(CLAVE_META);
-  try { return f ? (JSON.parse(f.valor) as ReglasMeta) : null; } catch { return null; }
-}
-async function guardarMeta(m: ReglasMeta) {
-  await guardarConfig(CLAVE_META, JSON.stringify(m));
-}
-/** Reintentos: con meta activa, las suyas; si no, 3 intentos con 2 horas entre uno y otro. */
-async function reglasDeReintento() {
-  const m = await leerMeta();
-  if (m && !m.terminada) return { intentosMax: m.intentosMax, esperaMin: m.esperaMin };
-  return { intentosMax: 3, esperaMin: 120 };
-}
-
-export async function metaDeContacto() {
+export async function progresoDe(c: Campana) {
   await dbConnect();
-  const m = await leerMeta();
-  if (!m) return null;
-  const [total, hablaron, pendientes, reintentables] = await Promise.all([
-    EncuestaContactoModel.countDocuments({ estado: { $ne: "NUMERO_MALO" } }),
-    EncuestaContactoModel.countDocuments({ estado: { $in: HABLO } }),
-    EncuestaContactoModel.countDocuments({ estado: "PENDIENTE" }),
-    EncuestaContactoModel.countDocuments({ estado: { $in: ["NO_CONTESTO", "BUZON", "EN_CURSO"] }, intentos: { $lt: m.intentosMax } }),
+  const cid = new Types.ObjectId(c.id);
+  const [total, hablaron, pendientes, reintentables, sonando, reales] = await Promise.all([
+    EncuestaDestinatarioModel.countDocuments({ campanaId: cid, estado: { $ne: "NUMERO_MALO" } }),
+    EncuestaDestinatarioModel.countDocuments({ campanaId: cid, estado: { $in: HABLO } }),
+    EncuestaDestinatarioModel.countDocuments({ campanaId: cid, estado: "PENDIENTE" }),
+    c.reintentos.intentos > 1 ? EncuestaDestinatarioModel.countDocuments({ campanaId: cid, estado: { $in: POR_REMARCAR }, intentos: { $lt: c.reintentos.intentos } }) : Promise.resolve(0),
+    EncuestaDestinatarioModel.countDocuments({ campanaId: cid, estado: "EN_CURSO" }),
+    EncuestaLlamadaModel.countDocuments({ cuestionarioId: cid, prueba: false, estado: { $ne: "NO_SALIO" } }),
   ]);
   const pct = total ? Math.round((hablaron / total) * 1000) / 10 : 0;
-  return { reglas: m, total, hablaron, pct, meta: m.porcentaje, alcanzada: pct >= m.porcentaje, terminada: !!m.terminada, porLlamarAlgunDia: pendientes + reintentables };
+  return { total, hablaron, pct, pendientes, reintentables, sonando, reales, porLlamarAlgunDia: pendientes + reintentables };
 }
 
-/** Pone la meta y deja corriendo la tanda (si no había una). */
-export async function fijarMetaDeContacto(porcentaje: number, intentosMax = 5, esperaMin = 60, operadorId: string | null = null) {
-  await dbConnect();
-  await guardarMeta({ porcentaje, intentosMax, esperaMin, desde: new Date().toISOString() });
-  if (!(await estadoTanda())) await guardarConfig(CLAVE_TANDA, JSON.stringify({ restante: 0, operadorId, desde: new Date().toISOString() } satisfies Tanda));
-  return metaDeContacto();
+/** ¿Ya se tiene que terminar? Meta alcanzada, tope de llamadas o ya no queda a quién llamar (y nadie sigue en la línea). */
+function motivoDeFin(c: Campana, p: Awaited<ReturnType<typeof progresoDe>>) {
+  if (c.meta > 0 && p.total > 0 && p.pct >= c.meta) return `Meta alcanzada: ya se habló con el ${p.pct}% de los destinatarios.`;
+  if (c.tope > 0 && p.reales >= c.tope) return `Llegó al tope de ${c.tope.toLocaleString("es-MX")} llamadas.`;
+  if (p.porLlamarAlgunDia === 0 && p.sonando === 0) return p.total ? "Ya no queda a quién llamar." : "La campaña no tiene destinatarios.";
+  return null;
 }
-export async function quitarMetaDeContacto() {
+
+/**
+ * EL MOTOR DE LAS CAMPAÑAS. El worker (cada 2 min) y el tablero abierto (cada 15 s) llaman esto: revisa cada campaña que
+ * está llamando, termina la que ya acabó y marca las que quepan en las líneas libres. Las líneas se reparten: cada
+ * campaña toma a lo más su parte (o las que tenga puestas en «llamadas a la vez») y empieza la que lleva más tiempo
+ * esperando, así ninguna se queda con todas.
+ */
+export async function seguirCampanas() {
+  if (!hayAgenteDeVoz()) return { marcadas: 0, campanas: 0, errores: [] as string[] };
+  await asegurarCampanas();
+  const lista = (await EncuestaCuestionarioModel.find({ estado: "CORRIENDO" }).sort({ ultimaVuelta: 1 }).lean<CampanaDoc[]>()).map(aCampana);
+  let marcadas = 0;
+  const errores: string[] = [];
+  const total = simultaneas();
+  const parte = Math.max(1, Math.ceil(total / Math.max(1, lista.length)));
+  // Con aviso de falla activo se prueba con una sola: si sale, el aviso se quita y la siguiente vuelta usa todas las líneas.
+  const conAviso = !!(await avisoDeVoz());
+  for (const c of lista) {
+    const fin = motivoDeFin(c, await progresoDe(c));
+    if (fin) { await ponerEstado(c.id, "TERMINADA", fin); continue; }
+    if (!horarioDe(c).abierto) continue; // fuera de su horario espera, sin dejar de estar corriendo
+    const libres = Math.max(0, total - (await lineasOcupadas()));
+    if (!libres || (conAviso && marcadas >= 1)) break;
+    const propias = await lineasOcupadas(c.id);
+    const cupo = Math.min(libres, Math.max(0, (c.lineas > 0 ? c.lineas : parte) - propias), conAviso ? 1 : Infinity);
+    if (!cupo) continue;
+    // La vuelta se aparta: si otra revisión está marcando por esta campaña en este momento, esta no.
+    const ahora = new Date();
+    const vuelta = await EncuestaCuestionarioModel.updateOne(
+      { _id: c.id, estado: "CORRIENDO", $or: [{ ultimaVuelta: null }, { ultimaVuelta: { $lt: new Date(ahora.getTime() - 8000) } }] },
+      { $set: { ultimaVuelta: ahora } },
+    );
+    if (!vuelta.modifiedCount) continue;
+    const r = await marcarCampana(c, cupo);
+    marcadas += r.marcadas.length;
+    if (!r.marcadas.length && r.saltadas.length) errores.push(`${c.nombre}: ${r.saltadas[0].porQue}`);
+  }
+  return { marcadas, campanas: lista.length, errores };
+}
+
+/** El tablero pregunta si alguna campaña está activa (llamando o con llamadas en la línea) para seguir refrescándose. */
+export async function hayLlamadasEnCurso(campanaId?: string) {
   await dbConnect();
-  await borrarConfig(CLAVE_META);
+  return lineasOcupadas(campanaId);
 }

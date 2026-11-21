@@ -1,16 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { withAuth } from "@/lib/apiHandler";
-import { cuestionarioActivo, resultadosLlamadas, respuestasDe, telefonoVisible, ESTADOS_LLAMADA } from "@/lib/encuestas/llamadas";
+import { leerCampana, campanaPorOmision, resultadosLlamadas, respuestasDe, telefonoVisible, ESTADOS_LLAMADA } from "@/lib/encuestas/llamadas";
 import { ZONA } from "@/lib/encuestas/fechas";
 import { segmentos } from "@/lib/encuestas/base";
+import { clavear } from "@/lib/encuestas/agente_voz";
 
 /** Las encuestas hechas en un archivo que abre Excel: una fila por llamada; de la campaña, solo los últimos 4 dígitos del teléfono. */
 export const GET = withAuth(async (user, req: NextRequest) => {
-  const c = await cuestionarioActivo();
-  if (!c) return NextResponse.json({ error: "Sin cuestionario" }, { status: 404 });
+  const q = req.nextUrl.searchParams;
+  const c = q.get("campana") ? await leerCampana(q.get("campana")) : await campanaPorOmision();
+  if (!c) return NextResponse.json({ error: "No existe esa campaña" }, { status: 404 });
   // Con ?pruebas=1 (lo que se esté viendo en el tablero) entran también las de prueba, marcadas en su columna.
   // Con ?municipio=, ?distrito= y ?seccion= (el filtro del tablero) solo entran las llamadas a esas personas de la base del usuario.
-  const q = req.nextUrl.searchParams;
   const municipio = q.get("municipio") ?? "", distrito = q.get("distrito") ?? "", seccion = q.get("seccion") ?? "";
   const { contactoIds } = municipio || distrito || seccion ? await segmentos(user.id, { municipio, distrito, seccion }) : { contactoIds: null };
   const r = await resultadosLlamadas(c, { conPruebas: !contactoIds && q.get("pruebas") === "1", contactoIds });
@@ -33,6 +34,6 @@ export const GET = withAuth(async (user, req: NextRequest) => {
   const csv = "﻿" + filas.map((f) => f.map(celda).join(";")).join("\r\n");
   const hoy = new Date().toLocaleDateString("en-CA", { timeZone: ZONA });
   return new NextResponse(csv, {
-    headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="encuestas-ojodedios-${hoy}.csv"`, "Cache-Control": "no-store" },
+    headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="encuesta-${clavear(c.nombre).slice(0, 40) || "campana"}-${hoy}.csv"`, "Cache-Control": "no-store" },
   });
 });

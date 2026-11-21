@@ -12,7 +12,7 @@ import { MOTORES_TOTALES, motoresConfigurados } from "@/lib/motores";
 import { findDueProjects, ingestProject } from "@/lib/listening/ingest";
 import { analyzeMentions } from "@/lib/listening/analyze";
 import { generateNextBriefWindow } from "@/lib/listening/briefSchedule";
-import { hayAgenteDeVoz, importarLlamadasDelAgente, seguirTanda } from "@/lib/encuestas/agente_voz";
+import { hayAgenteDeVoz, importarLlamadasDelAgente, seguirCampanas } from "@/lib/encuestas/agente_voz";
 
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS ?? 5000);
 
@@ -391,9 +391,9 @@ async function bucleDeMotor(motor: number) {
 
 /**
  * Encuestas: cada 2 minutos registra las llamadas que ya colgaron y marca a los
- * siguientes de la tanda en las líneas libres. Es lo que en el sistema original
- * hacía el cron de Vercel, y mantiene viva la tanda aunque nadie tenga el
- * tablero abierto (el tablero abierto hace lo mismo cada 15 s).
+ * siguientes de cada campaña que esté llamando, en las líneas libres. Es lo que
+ * en el sistema original hacía el cron de Vercel, y mantiene vivas las campañas
+ * aunque nadie tenga el tablero abierto (el tablero abierto hace lo mismo cada 15 s).
  *
  * Va con la escucha y no con los motores porque solo necesita salida a
  * internet: no toca AdsPower. Sin agente de voz configurado no hace nada.
@@ -405,10 +405,11 @@ async function bucleDeEncuestas() {
     if (hayAgenteDeVoz()) {
       try {
         const r = await importarLlamadasDelAgente({ limite: 40 });
-        const t = await seguirTanda();
+        const t = await seguirCampanas();
         if ((r.ok && r.nuevas > 0) || t.marcadas > 0) {
-          console.log(`[encuestas] ${r.ok ? r.nuevas : 0} registradas, ${t.marcadas} marcadas, ${t.restante} en la tanda`);
+          console.log(`[encuestas] ${r.ok ? r.nuevas : 0} registradas, ${t.marcadas} marcadas, ${t.campanas} campañas llamando`);
         }
+        for (const e of t.errores) console.error(`[encuestas] ${e}`);
         if (!r.ok) console.error(`[encuestas] ${r.error}`);
       } catch (err) {
         console.error("[encuestas] error en la pasada:", err);

@@ -55,10 +55,11 @@ export function textoAFilas(texto: string): string[][] {
   return lineas.map((l) => partir(l, sep));
 }
 
-export type ResumenCarga = { leidas: number; cargadas: number; repetidas: number; sinTelefono: number; columna: string | null };
+/** `huellas`: las de todos los teléfonos válidos del archivo (nuevos y los que ya estaban), para meterlos a una campaña. */
+export type ResumenCarga = { leidas: number; cargadas: number; repetidas: number; sinTelefono: number; columna: string | null; huellas: string[] };
 
 export async function cargarFilas(filas: string[][], origen: string, subidoPor: string | null): Promise<ResumenCarga> {
-  if (!filas.length) return { leidas: 0, cargadas: 0, repetidas: 0, sinTelefono: 0, columna: null };
+  if (!filas.length) return { leidas: 0, cargadas: 0, repetidas: 0, sinTelefono: 0, columna: null, huellas: [] };
   // ¿El primer renglón es encabezado? Si trae una columna que se llama «teléfono» (o parecido), sí.
   const enc = filas[0].map(limpio);
   const idx = (campo: string) => enc.findIndex((h) => SINONIMOS[campo].includes(h));
@@ -75,7 +76,7 @@ export async function cargarFilas(filas: string[][], origen: string, subidoPor: 
     }
     iTel = mejor;
   }
-  if (iTel < 0) return { leidas: cuerpo.length, cargadas: 0, repetidas: 0, sinTelefono: cuerpo.length, columna: null };
+  if (iTel < 0) return { leidas: cuerpo.length, cargadas: 0, repetidas: 0, sinTelefono: cuerpo.length, columna: null, huellas: [] };
   const iId = conEncabezado ? idx("id") : -1, iMun = conEncabezado ? idx("municipio") : -1, iDis = conEncabezado ? idx("distrito") : -1;
   const iSec = conEncabezado ? idx("seccion") : -1, iOtro = conEncabezado ? idx("otro") : -1;
   const celda = (f: string[], k: number, largo = 120) => (k >= 0 ? (f[k] ?? "").trim().slice(0, largo) || null : null);
@@ -112,7 +113,7 @@ export async function cargarFilas(filas: string[][], origen: string, subidoPor: 
     cargadas += r.upsertedCount;
   }
   repetidas += nuevos.length - cargadas;
-  return { leidas: cuerpo.length, cargadas, repetidas, sinTelefono, columna: conEncabezado ? filas[0][iTel] : null };
+  return { leidas: cuerpo.length, cargadas, repetidas, sinTelefono, columna: conEncabezado ? filas[0][iTel] : null, huellas: nuevos.map((c) => c.telefono) };
 }
 
 export type ContactoDoc = {

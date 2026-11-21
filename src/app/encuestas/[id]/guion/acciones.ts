@@ -8,7 +8,7 @@ import EncuestaCuestionarioModel from "@/lib/models/EncuestaCuestionario";
 import EncuestaLlamadaModel from "@/lib/models/EncuestaLlamada";
 import EncuestaCambioModel from "@/lib/models/EncuestaCambio";
 import { requireAdmin } from "@/lib/encuestas/acceso";
-import { cuestionarioActivo, leerOpciones, type CuestionarioActivo } from "@/lib/encuestas/llamadas";
+import { leerCampana, leerOpciones, type CuestionarioActivo } from "@/lib/encuestas/llamadas";
 import { clavear } from "@/lib/encuestas/agente_voz";
 import { ajustarFrases, ajustarNumeroDePreguntas, leerFrases, sincronizarAgente, ROTULO_FRASES, type Frases } from "@/lib/encuestas/guion";
 
@@ -62,8 +62,8 @@ export async function guardarGuion(_prev: Resultado, formData: FormData): Promis
   const s = await requireAdmin();
   let g: GuionEditado;
   try { g = JSON.parse(String(formData.get("datos") ?? "")); } catch { return { error: "No llegó el guion completo; recarga la página e inténtalo otra vez." }; }
-  const c = await cuestionarioActivo();
-  if (!c) return { error: "No hay cuestionario cargado." };
+  const c = await leerCampana(String(formData.get("campana") ?? ""));
+  if (!c) return { error: "Esa campaña ya no existe; vuelve a la lista de campañas." };
 
   let saludo = limpia(g.saludo, 400);
   const cierre = limpia(g.cierre, 300);
@@ -129,6 +129,8 @@ export async function guardarGuion(_prev: Resultado, formData: FormData): Promis
   // Primero la asistente: si ElevenLabs no lo acepta, no se guarda nada.
   const r = await sincronizarAgente(nuevo);
   if (!r.ok) return { error: `No se guardó: ${r.error}` };
+  // La campaña que todavía no tenía asistente estrena una.
+  if (r.creado && r.agenteId) await EncuestaCuestionarioModel.updateOne({ _id: c.id }, { $set: { agenteId: r.agenteId } });
 
   await dbConnect();
   // Las preguntas se reescriben con su mismo _id: las respuestas de las llamadas les apuntan por ahí.
@@ -148,10 +150,9 @@ export async function guardarGuion(_prev: Resultado, formData: FormData): Promis
     cuestionarioId: c.id, version: nuevo.version, usuarioId: s.id, nombre: s.nombre, resumen: resumen.join(" · "),
     guion: JSON.stringify({ saludo, cierre, frases, preguntas: nuevas.map((p) => ({ clave: p.clave, texto: p.texto, corto: p.corto, opciones: p.opciones, noSeLeen: p.noSeLeen, reglas: p.reglas })) }),
   });
-  revalidatePath("/encuestas");
-  revalidatePath("/encuestas/guion");
+  revalidatePath("/encuestas", "layout");
   // Se recarga la página (y el editor, que arranca de la versión nueva) con el aviso arriba.
-  redirect(`/encuestas/guion?ok=${encodeURIComponent(`Guardado (versión ${nuevo.version}). La asistente ya lo usa desde la siguiente llamada. Cambió: ${resumen.join(" · ")}.`)}`);
+  redirect(`/encuestas/${c.id}/guion?ok=${encodeURIComponent(`Guardado (versión ${nuevo.version}). La asistente ya lo usa desde la siguiente llamada. Cambió: ${resumen.join(" · ")}.`)}`);
 }
 
 /** Qué cambió, en palabras, para el historial. */

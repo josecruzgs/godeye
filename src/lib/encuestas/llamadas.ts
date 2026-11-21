@@ -2,7 +2,6 @@ import { Types } from "mongoose";
 import { dbConnect } from "@/lib/mongodb";
 import EncuestaCuestionarioModel from "@/lib/models/EncuestaCuestionario";
 import EncuestaLlamadaModel from "@/lib/models/EncuestaLlamada";
-import { ENCUESTA } from "./encuesta";
 
 /**
  * LA ENCUESTA POR TELÉFONO.
@@ -47,7 +46,27 @@ export type Pregunta = {
   orden: number;
 };
 
-export type CuestionarioActivo = {
+/** Los parámetros de una campaña (ver el modelo EncuestaCuestionario). */
+export type EstadoCampana = "BORRADOR" | "CORRIENDO" | "PAUSADA" | "TERMINADA";
+export type ConfigCampana = {
+  estado: EstadoCampana;
+  agenteId: string | null;
+  creadoPor: string | null;
+  voz: { genero: "F" | "M"; voces: string[] };
+  horario: { desde: number; hasta: number; dias: number[] };
+  reintentos: { intentos: number; esperaMin: number };
+  meta: number;
+  lineas: number;
+  tope: number;
+  buzon: boolean;
+  etiquetas: string[];
+  iniciada: Date | null;
+  terminada: Date | null;
+  motivo: string | null;
+  creada: Date | null;
+};
+
+export type Campana = ConfigCampana & {
   id: string;
   nombre: string;
   saludo: string;
@@ -57,11 +76,32 @@ export type CuestionarioActivo = {
   version: number;
   preguntas: Pregunta[];
 };
+/** El nombre de antes de las campañas: el guion es la misma cosa. */
+export type CuestionarioActivo = Campana;
+
+export const ESTADOS_CAMPANA: Record<EstadoCampana, { label: string; color: string }> = {
+  BORRADOR:  { label: "Borrador",  color: "#7C8AA5" },
+  CORRIENDO: { label: "Llamando",  color: "var(--primary)" },
+  PAUSADA:   { label: "En pausa",  color: "var(--status-warning)" },
+  TERMINADA: { label: "Terminada", color: "var(--status-good)" },
+};
 
 type PreguntaDoc = Omit<Pregunta, "id"> & { _id: Types.ObjectId };
-type CuestionarioDoc = Omit<CuestionarioActivo, "id" | "preguntas"> & { _id: Types.ObjectId; preguntas: PreguntaDoc[] };
+export type CampanaDoc = {
+  _id: Types.ObjectId;
+  nombre: string; saludo: string; cierre?: string | null; municipio?: string | null; frases?: string | null; version?: number;
+  preguntas?: PreguntaDoc[];
+  estado?: string; agenteId?: string | null; creadoPor?: Types.ObjectId | null;
+  voz?: { genero?: string; voces?: string[] }; horario?: { desde?: number; hasta?: number; dias?: number[] };
+  reintentos?: { intentos?: number; esperaMin?: number };
+  meta?: number; lineas?: number; tope?: number; buzon?: boolean; etiquetas?: string[];
+  iniciada?: Date | null; terminada?: Date | null; motivo?: string | null; createdAt?: Date;
+};
 
-function aCuestionario(d: CuestionarioDoc): CuestionarioActivo {
+const ESTADOS_VALIDOS = Object.keys(ESTADOS_CAMPANA) as EstadoCampana[];
+
+export function aCampana(d: CampanaDoc): Campana {
+  const dias = (d.horario?.dias ?? []).filter((x) => x >= 1 && x <= 7);
   return {
     id: String(d._id),
     nombre: d.nombre,
@@ -83,50 +123,43 @@ function aCuestionario(d: CuestionarioDoc): CuestionarioActivo {
         reglas: p.reglas ?? null,
         orden: p.orden ?? 0,
       })),
+    estado: ESTADOS_VALIDOS.includes(d.estado as EstadoCampana) ? (d.estado as EstadoCampana) : "BORRADOR",
+    agenteId: d.agenteId || null,
+    creadoPor: d.creadoPor ? String(d.creadoPor) : null,
+    voz: { genero: d.voz?.genero === "M" ? "M" : "F", voces: d.voz?.voces ?? [] },
+    horario: { desde: d.horario?.desde ?? 9, hasta: d.horario?.hasta ?? 20, dias: dias.length ? dias : [1, 2, 3, 4, 5, 6, 7] },
+    reintentos: { intentos: Math.max(1, d.reintentos?.intentos ?? 3), esperaMin: Math.max(5, d.reintentos?.esperaMin ?? 120) },
+    meta: d.meta ?? 0,
+    lineas: d.lineas ?? 0,
+    tope: d.tope ?? 0,
+    buzon: d.buzon ?? true,
+    etiquetas: d.etiquetas ?? [],
+    iniciada: d.iniciada ?? null,
+    terminada: d.terminada ?? null,
+    motivo: d.motivo ?? null,
+    creada: d.createdAt ?? null,
   };
 }
 
-/**
- * El cuestionario que se está levantando.
- *
- * La primera vez que alguien abre Encuestas no hay ninguno: se crea con la encuesta inicial de encuesta.ts. Así no
- * hace falta correr ningún seed en el VPS; la marca `semilla` es única, y si dos pantallas llegan a la vez, la segunda
- * se queda con el que creó la primera.
- */
-export async function cuestionarioActivo(): Promise<CuestionarioActivo | null> {
+/** Una campaña por su id. */
+export async function leerCampana(id: string | null | undefined): Promise<Campana | null> {
+  if (!id || !Types.ObjectId.isValid(id)) return null;
   await dbConnect();
-  const actual = await EncuestaCuestionarioModel.findOne({ activo: true }).sort({ createdAt: -1 }).lean<CuestionarioDoc>();
-  if (actual) return aCuestionario(actual);
-  try {
-    await EncuestaCuestionarioModel.updateOne(
-      { semilla: "inicial" },
-      {
-        $setOnInsert: {
-          nombre: ENCUESTA.nombre,
-          municipio: ENCUESTA.municipio,
-          saludo: ENCUESTA.saludo,
-          cierre: ENCUESTA.cierre,
-          activo: true,
-          version: 1,
-          preguntas: ENCUESTA.preguntas.map((p, orden) => ({
-            clave: p.clave,
-            texto: p.texto,
-            corto: p.corto,
-            opciones: [...p.opciones],
-            noSeLeen: [...p.noSeLeen],
-            reglas: p.reglas,
-            orden,
-          })),
-        },
-      },
-      { upsert: true },
-    );
-  } catch (err) {
-    // E11000: otra petición creó la semilla en el mismo instante. Sirve la suya.
-    if ((err as { code?: number }).code !== 11000) throw err;
-  }
-  const creado = await EncuestaCuestionarioModel.findOne({ activo: true }).sort({ createdAt: -1 }).lean<CuestionarioDoc>();
-  return creado ? aCuestionario(creado) : null;
+  const d = await EncuestaCuestionarioModel.findById(id).lean<CampanaDoc>();
+  return d ? aCampana(d) : null;
+}
+
+/**
+ * LA CAMPAÑA POR OMISIÓN, para lo que todavía no dice de cuál campaña habla (la API para otra plataforma sin `campana`):
+ * la que está llamando más reciente y, si ninguna llama, la última que se creó y no ha terminado.
+ */
+export async function campanaPorOmision(): Promise<Campana | null> {
+  await dbConnect();
+  const d =
+    (await EncuestaCuestionarioModel.findOne({ estado: "CORRIENDO" }).sort({ createdAt: -1 }).lean<CampanaDoc>()) ??
+    (await EncuestaCuestionarioModel.findOne({ estado: { $in: ["BORRADOR", "PAUSADA"] } }).sort({ createdAt: -1 }).lean<CampanaDoc>()) ??
+    (await EncuestaCuestionarioModel.findOne({}).sort({ createdAt: -1 }).lean<CampanaDoc>());
+  return d ? aCampana(d) : null;
 }
 
 export type Llamada = {

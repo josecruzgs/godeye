@@ -18,7 +18,6 @@ import {
   MessageCircleHeart,
   MessageSquare,
   MonitorPlay,
-  PencilLine,
   PhoneCall,
   Radar,
   ShieldCheck,
@@ -91,9 +90,8 @@ const NAV: NavSection[] = [
     label: "Encuestas",
     code: "SEC-04",
     items: [
-      { href: "/encuestas", label: "Tablero", hint: "Llamadas con la asistente de voz y resultados", icon: PhoneCall },
-      { href: "/encuestas/base", label: "Base de teléfonos", hint: "La lista a la que llama la asistente", icon: Users },
-      { href: "/encuestas/guion", label: "Guion", hint: "Lo que dice la asistente, palabra por palabra", icon: PencilLine },
+      { href: "/encuestas", label: "Campañas", hint: "Cada campaña con su guion, voz, horario, lista y resultados", icon: PhoneCall },
+      { href: "/encuestas/base", label: "Base de teléfonos", hint: "Tus contactos para las campañas", icon: Users },
     ],
   },
   {

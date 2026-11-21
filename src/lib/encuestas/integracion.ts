@@ -3,6 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
 import EncuestaLlamadaModel from "@/lib/models/EncuestaLlamada";
 import { huella } from "./cifrado";
+import { leerCampana, campanaPorOmision } from "./llamadas";
+import { asegurarCampanas } from "./campanas";
 
 /**
  * LA PUERTA PARA OTRA PLATAFORMA (/api/encuestas/v1/*): se entra con `Authorization: Bearer <INTEGRACION_TOKEN>`.
@@ -33,4 +35,13 @@ export async function frenoPorNumero(diez: string) {
   if (reciente) return "A ese número ya se le llamó hace menos de 10 minutos.";
   if (enElDia >= 3) return "A ese número ya se le llamó 3 veces en las últimas 24 horas.";
   return null;
+}
+
+/**
+ * De qué campaña habla la petición: `?campana=<id>` (o `campana` en el cuerpo). Sin ella, la campaña por omisión (la que
+ * está llamando más reciente), que es lo que hacía la API cuando había una sola encuesta.
+ */
+export async function campanaDeLaPeticion(id: string | null | undefined) {
+  await asegurarCampanas();
+  return id ? leerCampana(id) : campanaPorOmision();
 }
